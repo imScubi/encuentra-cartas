@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
-  MessageCircle, Send, ExternalLink,
+  MessageCircle, Send, ExternalLink, Shield,
 } from "lucide-react";
 
 // ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
@@ -661,6 +661,83 @@ function MyMarketPanel({ session }) {
   );
 }
 
+function AdminPanel({ session }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [tiendasSinDueno, setTiendasSinDueno] = useState([]);
+  const [perfilesDisponibles, setPerfilesDisponibles] = useState([]);
+  const [seleccion, setSeleccion] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [vinculando, setVinculando] = useState(null);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    Promise.all([
+      sb(`tiendas?select=*&perfil_id=is.null&order=nombre.asc`, session),
+      sb(`perfiles?select=*&tipo=eq.tienda&order=nombre.asc`, session),
+      sb(`tiendas?select=perfil_id&perfil_id=not.is.null`, session),
+    ])
+      .then(([sinDueno, perfilesTienda, conDueno]) => {
+        const vinculados = new Set(conDueno.map((t) => t.perfil_id));
+        setTiendasSinDueno(sinDueno);
+        setPerfilesDisponibles(perfilesTienda.filter((p) => !vinculados.has(p.id)));
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const vincular = async (tiendaId) => {
+    const perfilId = seleccion[tiendaId];
+    if (!perfilId) return;
+    setVinculando(tiendaId);
+    try {
+      await sbWrite("PATCH", `tiendas?id=eq.${tiendaId}`, { perfil_id: perfilId }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setVinculando(null); }
+  };
+
+  if (loading) return <Loading label="Cargando panel de administración..." />;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Panel de administración</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Vincula cuentas de tienda registradas con su tienda real en el directorio.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {tiendasSinDueno.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm">Todas las tiendas del directorio ya tienen una cuenta vinculada. 🎉</p>
+      ) : (
+        <div className="grid gap-3">
+          {tiendasSinDueno.map((t) => (
+            <div key={t.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <p className="font-semibold">{t.nombre}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">{t.direccion}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select value={seleccion[t.id] || ""} onChange={(e) => setSeleccion({ ...seleccion, [t.id]: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+                  <option value="">Selecciona cuenta...</option>
+                  {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                </select>
+                <button onClick={() => vincular(t.id)} disabled={!seleccion[t.id] || vinculando === t.id}
+                  style={{ background: COLORS.gold, color: COLORS.bg, opacity: seleccion[t.id] ? 1 : 0.5 }}
+                  className="rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap">
+                  {vinculando === t.id ? "Vinculando..." : "Vincular"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {perfilesDisponibles.length === 0 && tiendasSinDueno.length > 0 && (
+        <p style={{ color: COLORS.muted }} className="text-xs mt-4">No hay cuentas de tipo tienda registradas todavía para vincular.</p>
+      )}
+    </div>
+  );
+}
+
 function MyStorePanel({ session, perfil }) {
   const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
   const [inventario, setInventario] = useState([]);
@@ -1049,6 +1126,7 @@ export default function EncuentraCartas() {
     ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
     ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
     ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: ShoppingBag }] : []),
+    ...(perfil?.es_admin ? [{ id: "admin", label: "Admin", icon: Shield }] : []),
   ];
 
   return (
@@ -1362,6 +1440,9 @@ export default function EncuentraCartas() {
             )}
           </div>
         )}
+
+        {/* ADMIN */}
+        {view === "admin" && session && perfil?.es_admin && <AdminPanel session={session} />}
 
         {/* MI MERCADO */}
         {view === "myMarket" && session && <MyMarketPanel session={session} />}
