@@ -230,20 +230,46 @@ function CardPicker({ onSelect }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (!q.trim() || q.trim().length < 3) { setResults([]); return; }
     setLoading(true);
     const t = setTimeout(() => {
-      fetch(`https://api.pokemontcg.io/v2/cards?q=name:${encodeURIComponent(q.trim())}*&pageSize=8&orderBy=name`)
+      fetch(`https://api.tcgdex.net/v2/en/cards?name=${encodeURIComponent(q.trim())}&pagination:itemsPerPage=8`)
         .then((r) => r.json())
-        .then((data) => setResults(data.data || []))
+        .then((data) => setResults(Array.isArray(data) ? data : []))
         .catch(() => setResults([]))
         .finally(() => setLoading(false));
     }, 400);
     return () => clearTimeout(t);
   }, [q]);
+
+  const seleccionar = async (c) => {
+    setLoadingDetail(true);
+    try {
+      const res = await fetch(`https://api.tcgdex.net/v2/en/cards/${c.id}`);
+      const full = await res.json();
+      const total = full.set?.cardCount?.official || full.set?.cardCount?.total || "";
+      onSelect({
+        name: full.name,
+        set_nombre: `${full.set?.name || ""} ${full.localId}${total ? "/" + total : ""}`,
+        card_api_id: full.id,
+        imagen_url: full.image ? `${full.image}/low.webp` : "",
+      });
+    } catch {
+      // si falla el detalle, usamos lo que ya teníamos de la lista
+      onSelect({
+        name: c.name,
+        set_nombre: `#${c.localId}`,
+        card_api_id: c.id,
+        imagen_url: c.image ? `${c.image}/low.webp` : "",
+      });
+    } finally {
+      setQ(""); setResults([]); setOpen(false); setLoadingDetail(false);
+    }
+  };
 
   return (
     <div className="relative">
@@ -252,23 +278,25 @@ function CardPicker({ onSelect }) {
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
+        disabled={loadingDetail}
         style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
         className="rounded-lg px-2 py-2 text-sm w-full"
       />
-      {open && q.trim().length >= 3 && (
+      {loadingDetail && <p style={{ color: COLORS.muted }} className="text-xs mt-1">Cargando datos exactos de la carta...</p>}
+      {open && !loadingDetail && q.trim().length >= 3 && (
         <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.violet}66` }}
           className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg shadow-xl">
           {loading && <p style={{ color: COLORS.muted }} className="text-xs p-3">Buscando en el catálogo oficial...</p>}
           {!loading && results.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs p-3">Sin resultados. Prueba con otro nombre.</p>}
           {results.map((c) => (
             <button key={c.id} type="button"
-              onClick={() => { onSelect(c); setQ(""); setResults([]); setOpen(false); }}
+              onClick={() => seleccionar(c)}
               className="flex items-center gap-3 w-full text-left p-2 hover:brightness-125"
               style={{ borderBottom: `1px solid ${COLORS.bg}` }}>
-              {c.images?.small && <img src={c.images.small} alt={c.name} style={{ width: 32, height: 44, objectFit: "contain" }} />}
+              {c.image && <img src={`${c.image}/low.webp`} alt={c.name} style={{ width: 32, height: 44, objectFit: "contain" }} />}
               <div>
                 <p className="text-sm font-medium">{c.name}</p>
-                <p style={{ color: COLORS.muted }} className="text-xs">{c.set?.name} · {c.number}/{c.set?.printedTotal}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">#{c.localId}</p>
               </div>
             </button>
           ))}
@@ -389,9 +417,9 @@ function MyStorePanel({ session, perfil }) {
             <CardPicker onSelect={(c) => setNuevaCarta({
               ...nuevaCarta,
               carta: c.name,
-              set_nombre: `${c.set?.name} ${c.number}/${c.set?.printedTotal}`,
-              card_api_id: c.id,
-              imagen_url: c.images?.small || "",
+              set_nombre: c.set_nombre,
+              card_api_id: c.card_api_id,
+              imagen_url: c.imagen_url,
             })} />
             {nuevaCarta.card_api_id && (
               <div className="flex items-center gap-2 mt-2">
