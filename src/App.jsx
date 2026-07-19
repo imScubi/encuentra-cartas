@@ -226,6 +226,58 @@ function AccountModal({ onClose, onAuthed }) {
   );
 }
 
+function CardPicker({ onSelect }) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!q.trim() || q.trim().length < 3) { setResults([]); return; }
+    setLoading(true);
+    const t = setTimeout(() => {
+      fetch(`https://api.pokemontcg.io/v2/cards?q=name:${encodeURIComponent(q.trim())}*&pageSize=8&orderBy=name`)
+        .then((r) => r.json())
+        .then((data) => setResults(data.data || []))
+        .catch(() => setResults([]))
+        .finally(() => setLoading(false));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  return (
+    <div className="relative">
+      <input
+        placeholder="Busca la carta oficial (ej. Mega Charizard EX)"
+        value={q}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
+        className="rounded-lg px-2 py-2 text-sm w-full"
+      />
+      {open && q.trim().length >= 3 && (
+        <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.violet}66` }}
+          className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg shadow-xl">
+          {loading && <p style={{ color: COLORS.muted }} className="text-xs p-3">Buscando en el catálogo oficial...</p>}
+          {!loading && results.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs p-3">Sin resultados. Prueba con otro nombre.</p>}
+          {results.map((c) => (
+            <button key={c.id} type="button"
+              onClick={() => { onSelect(c); setQ(""); setResults([]); setOpen(false); }}
+              className="flex items-center gap-3 w-full text-left p-2 hover:brightness-125"
+              style={{ borderBottom: `1px solid ${COLORS.bg}` }}>
+              {c.images?.small && <img src={c.images.small} alt={c.name} style={{ width: 32, height: 44, objectFit: "contain" }} />}
+              <div>
+                <p className="text-sm font-medium">{c.name}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">{c.set?.name} · {c.number}/{c.set?.printedTotal}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MyStorePanel({ session, perfil }) {
   const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
   const [inventario, setInventario] = useState([]);
@@ -233,7 +285,7 @@ function MyStorePanel({ session, perfil }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1" });
+  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1", card_api_id: "", imagen_url: "" });
   const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", cantidad: "1" });
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
@@ -263,8 +315,15 @@ function MyStorePanel({ session, perfil }) {
     if (!nuevaCarta.carta || !nuevaCarta.precio) return;
     setSavingCarta(true);
     try {
-      await sbWrite("POST", "inventario_tienda", { ...nuevaCarta, precio: Number(nuevaCarta.precio), cantidad: Number(nuevaCarta.cantidad), tienda_id: tienda.id }, session);
-      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1" });
+      await sbWrite("POST", "inventario_tienda", {
+        ...nuevaCarta,
+        precio: Number(nuevaCarta.precio),
+        cantidad: Number(nuevaCarta.cantidad),
+        tienda_id: tienda.id,
+        card_api_id: nuevaCarta.card_api_id || null,
+        imagen_url: nuevaCarta.imagen_url || null,
+      }, session);
+      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1", card_api_id: "", imagen_url: "" });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingCarta(false); }
   };
@@ -321,11 +380,34 @@ function MyStorePanel({ session, perfil }) {
 
       <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-6">
-        <select value={nuevaCarta.tcg} onChange={(e) => setNuevaCarta({ ...nuevaCarta, tcg: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1">
+        <select value={nuevaCarta.tcg} onChange={(e) => setNuevaCarta({ ...nuevaCarta, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1">
           <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
         </select>
-        <input placeholder="Nombre de la carta" value={nuevaCarta.carta} onChange={(e) => setNuevaCarta({ ...nuevaCarta, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-2" />
-        <input placeholder="Set / número" value={nuevaCarta.set_nombre} onChange={(e) => setNuevaCarta({ ...nuevaCarta, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
+
+        {nuevaCarta.tcg === "pokemon" ? (
+          <div className="sm:col-span-2">
+            <CardPicker onSelect={(c) => setNuevaCarta({
+              ...nuevaCarta,
+              carta: c.name,
+              set_nombre: `${c.set?.name} ${c.number}/${c.set?.printedTotal}`,
+              card_api_id: c.id,
+              imagen_url: c.images?.small || "",
+            })} />
+            {nuevaCarta.card_api_id && (
+              <div className="flex items-center gap-2 mt-2">
+                {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 28, height: 38, objectFit: "contain" }} />}
+                <Badge color={COLORS.gold}>{nuevaCarta.carta}</Badge>
+                <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={{ color: COLORS.muted }} className="text-xs">Cambiar</button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <input placeholder="Nombre de la carta" value={nuevaCarta.carta} onChange={(e) => setNuevaCarta({ ...nuevaCarta, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
+            <input placeholder="Set / número" value={nuevaCarta.set_nombre} onChange={(e) => setNuevaCarta({ ...nuevaCarta, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
+          </>
+        )}
+
         <input placeholder="Condición" value={nuevaCarta.condicion} onChange={(e) => setNuevaCarta({ ...nuevaCarta, condicion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio" type="number" value={nuevaCarta.precio} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <button onClick={agregarCarta} disabled={savingCarta} style={{ background: COLORS.gold, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
@@ -336,6 +418,7 @@ function MyStorePanel({ session, perfil }) {
         {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
         {inventario.map((item) => (
           <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+            {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 32, height: 44, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               <p className="font-medium text-sm">{item.carta}</p>
               <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion}</p>
@@ -566,10 +649,13 @@ export default function EncuentraCartas() {
               {searchResults.tiendas.map((r) => (
                 <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
                   className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
-                  <div>
-                    <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.gold}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p></div>
-                    <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
-                    <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
+                  <div className="flex items-center gap-3">
+                    {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 44, height: 60, objectFit: "contain" }} />}
+                    <div>
+                      <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.gold}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p></div>
+                      <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
+                      <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
+                    </div>
                   </div>
                   <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                 </div>
@@ -577,10 +663,13 @@ export default function EncuentraCartas() {
               {searchResults.mercado.map((r) => (
                 <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
                   className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
-                  <div>
-                    <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.cyan}>Vendedor individual</Badge><p className="font-semibold text-lg">{r.carta}</p></div>
-                    <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
-                    <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
+                  <div className="flex items-center gap-3">
+                    {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 44, height: 60, objectFit: "contain" }} />}
+                    <div>
+                      <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.cyan}>Vendedor individual</Badge><p className="font-semibold text-lg">{r.carta}</p></div>
+                      <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
+                      <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
+                    </div>
                   </div>
                   <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                 </div>
@@ -679,9 +768,12 @@ export default function EncuentraCartas() {
                   {storeInventory.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Esta tienda todavía no ha subido inventario.</p>}
                   {storeInventory.map((item) => (
                     <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
-                      <div>
-                        <p className="font-medium">{item.carta}</p>
-                        <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion} · {item.idioma}</p>
+                      <div className="flex items-center gap-3">
+                        {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 40, height: 55, objectFit: "contain" }} />}
+                        <div>
+                          <p className="font-medium">{item.carta}</p>
+                          <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion} · {item.idioma}</p>
+                        </div>
                       </div>
                       <p style={{ color: COLORS.gold }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
                     </div>
