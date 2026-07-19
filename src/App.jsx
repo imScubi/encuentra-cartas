@@ -433,6 +433,89 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
   );
 }
 
+function SealedPicker({ onSelect }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [grupos, setGrupos] = useState([]);
+  const [loadingGrupos, setLoadingGrupos] = useState(true);
+  const [grupoId, setGrupoId] = useState("");
+  const [productos, setProductos] = useState([]);
+  const [precios, setPrecios] = useState([]);
+  const [loadingProductos, setLoadingProductos] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/tcgcsv?path=tcgplayer/3/groups")
+      .then((r) => r.json())
+      .then((d) => setGrupos((d.results || []).slice().sort((a, b) => (b.publishedOn || "").localeCompare(a.publishedOn || ""))))
+      .catch(() => {})
+      .finally(() => setLoadingGrupos(false));
+  }, []);
+
+  useEffect(() => {
+    if (!grupoId) { setProductos([]); setPrecios([]); return; }
+    setLoadingProductos(true);
+    Promise.all([
+      fetch(`/api/tcgcsv?path=tcgplayer/3/${grupoId}/products`).then((r) => r.json()),
+      fetch(`/api/tcgcsv?path=tcgplayer/3/${grupoId}/prices`).then((r) => r.json()),
+    ])
+      .then(([p, pr]) => {
+        // Filtramos: si el producto NO tiene "Number" en sus datos, no es una carta suelta, es producto sellado
+        const sellado = (p.results || []).filter((item) => !(item.extendedData || []).some((e) => e.name === "Number"));
+        setProductos(sellado);
+        setPrecios(pr.results || []);
+      })
+      .catch(() => { setProductos([]); setPrecios([]); })
+      .finally(() => setLoadingProductos(false));
+  }, [grupoId]);
+
+  const filtrados = productos.filter((p) => p.name.toLowerCase().includes(busqueda.toLowerCase()));
+
+  const seleccionar = (p) => {
+    const precioInfo = precios.find((x) => x.productId === p.productId && x.marketPrice);
+    const precioRefMxn = precioInfo ? Math.round(precioInfo.marketPrice * USD_TO_MXN) : null;
+    onSelect({ producto: p.name, imagen_url: p.imageUrl, card_api_id: `tcgcsv-${p.productId}`, precio_ref_mxn: precioRefMxn });
+    setOpen(false); setBusqueda("");
+  };
+
+  return (
+    <div className="grid gap-2">
+      <select value={grupoId} onChange={(e) => setGrupoId(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-full">
+        <option value="">{loadingGrupos ? "Cargando sets..." : "1. Selecciona el set / expansión"}</option>
+        {grupos.map((g) => <option key={g.groupId} value={g.groupId}>{g.name}</option>)}
+      </select>
+
+      {grupoId && (
+        <div className="relative">
+          <input
+            placeholder="2. Busca el producto (ej. Elite Trainer Box)"
+            value={busqueda}
+            onChange={(e) => { setBusqueda(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            style={inputStyle}
+            className="rounded-lg px-2 py-2 text-sm w-full"
+          />
+          {open && (
+            <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.violet}66` }}
+              className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg shadow-xl">
+              {loadingProductos && <p style={{ color: COLORS.muted }} className="text-xs p-3">Cargando productos de este set...</p>}
+              {!loadingProductos && filtrados.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs p-3">Sin resultados en este set.</p>}
+              {filtrados.slice(0, 20).map((p) => (
+                <button key={p.productId} type="button" onClick={() => seleccionar(p)}
+                  className="flex items-center gap-3 w-full text-left p-2 hover:brightness-125"
+                  style={{ borderBottom: `1px solid ${COLORS.bg}` }}>
+                  {p.imageUrl && <img src={p.imageUrl} alt={p.name} style={{ width: 40, height: 56, objectFit: "contain" }} />}
+                  <p className="text-sm">{p.name}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MyStorePanel({ session, perfil }) {
   const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
   const [inventario, setInventario] = useState([]);
@@ -441,7 +524,8 @@ function MyStorePanel({ session, perfil }) {
   const [error, setError] = useState(null);
 
   const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
-  const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", cantidad: "1" });
+  const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+  const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
 
@@ -497,8 +581,16 @@ function MyStorePanel({ session, perfil }) {
     if (!nuevoSellado.producto || !nuevoSellado.precio) return;
     setSavingSellado(true);
     try {
-      await sbWrite("POST", "sellado_tienda", { ...nuevoSellado, precio: Number(nuevoSellado.precio), cantidad: Number(nuevoSellado.cantidad), tienda_id: tienda.id }, session);
-      setNuevoSellado({ producto: "", precio: "", cantidad: "1" });
+      await sbWrite("POST", "sellado_tienda", {
+        ...nuevoSellado,
+        precio: Number(nuevoSellado.precio),
+        cantidad: Number(nuevoSellado.cantidad),
+        tienda_id: tienda.id,
+        card_api_id: nuevoSellado.card_api_id || null,
+        imagen_url: nuevoSellado.imagen_url || null,
+        precio_ref_mxn: nuevoSellado.precio_ref_mxn || null,
+      }, session);
+      setNuevoSellado({ producto: "", precio: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingSellado(false); }
   };
@@ -598,17 +690,53 @@ function MyStorePanel({ session, perfil }) {
       </div>
 
       <h3 style={{ color: COLORS.cyan }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
-      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-4">
-        <input placeholder="Nombre del producto" value={nuevoSellado.producto} onChange={(e) => setNuevoSellado({ ...nuevoSellado, producto: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-2" />
-        <input placeholder="Precio" type="number" value={nuevoSellado.precio} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-        <button onClick={agregarSellado} disabled={savingSellado} style={{ background: COLORS.cyan, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
-          {savingSellado ? "Guardando..." : "+ Agregar"}
-        </button>
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2">
+        {!selladoManual ? (
+          <>
+            <SealedPicker onSelect={(p) => setNuevoSellado({
+              ...nuevoSellado,
+              producto: p.producto,
+              imagen_url: p.imagen_url,
+              card_api_id: p.card_api_id,
+              precio_ref_mxn: p.precio_ref_mxn,
+              precio: nuevoSellado.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : ""),
+            })} />
+            {nuevoSellado.card_api_id && (
+              <div className="flex items-center gap-3">
+                {nuevoSellado.imagen_url && <img src={nuevoSellado.imagen_url} alt={nuevoSellado.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                <div>
+                  <Badge color={COLORS.cyan}>{nuevoSellado.producto}</Badge>
+                  {nuevoSellado.precio_ref_mxn && (
+                    <p style={{ color: COLORS.gold }} className="text-xs mt-1">Precio de referencia: ~${nuevoSellado.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>
+                  )}
+                  <button type="button" onClick={() => setNuevoSellado({ ...nuevoSellado, producto: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                </div>
+              </div>
+            )}
+            <button type="button" onClick={() => setSelladoManual(true)} style={{ color: COLORS.muted }} className="text-xs text-left">
+              ¿No lo encuentras? Escribirlo manualmente
+            </button>
+          </>
+        ) : (
+          <>
+            <input placeholder="Nombre del producto" value={nuevoSellado.producto} onChange={(e) => setNuevoSellado({ ...nuevoSellado, producto: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <button type="button" onClick={() => setSelladoManual(false)} style={{ color: COLORS.muted }} className="text-xs text-left">
+              ← Volver a buscar en el catálogo oficial
+            </button>
+          </>
+        )}
+        <div className="grid sm:grid-cols-2 gap-2">
+          <input placeholder="Precio" type="number" value={nuevoSellado.precio} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <button onClick={agregarSellado} disabled={savingSellado} style={{ background: COLORS.cyan, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+            {savingSellado ? "Guardando..." : "+ Agregar"}
+          </button>
+        </div>
       </div>
       <div className="grid gap-2">
         {sellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado producto sellado.</p>}
         {sellado.map((item) => (
           <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+            {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 44, height: 62, objectFit: "contain" }} />}
             <p className="flex-1 min-w-[140px] font-medium text-sm">{item.producto}</p>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarSellado(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarSellado(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-16" />
@@ -1012,27 +1140,56 @@ export default function EncuentraCartas() {
                 Todavía no tienes conversaciones. En cuanto alguien te contacte por una carta, o tú contactes a alguien, va a aparecer aquí.
               </p>
             )}
-            <div className="grid gap-3">
-              {conversaciones.map((c) => (
-                <button
-                  key={`${c.otherId}::${c.contexto}`}
-                  onClick={() => setChatContext(c)}
-                  style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
-                  className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="font-semibold">{c.otherNombre}</p>
-                      <Badge color={COLORS.cyan}>{c.contexto}</Badge>
-                    </div>
-                    <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
-                  </div>
-                  <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">
-                    {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
-                  </p>
-                </button>
-              ))}
-            </div>
+
+            {!loadingInbox && conversaciones.length > 0 && (
+              <>
+                <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">Recientes</h3>
+                <div className="grid gap-3 mb-8">
+                  {conversaciones.slice(0, 3).map((c) => (
+                    <button
+                      key={`reciente-${c.otherId}::${c.contexto}`}
+                      onClick={() => setChatContext(c)}
+                      style={{ background: COLORS.surface, border: `1px solid ${COLORS.gold}55` }}
+                      className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-semibold">{c.otherNombre}</p>
+                          <Badge color={COLORS.cyan}>{c.contexto}</Badge>
+                        </div>
+                        <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
+                      </div>
+                      <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">
+                        {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+
+                <h3 style={{ color: COLORS.cyan }} className="font-semibold mb-3 text-sm uppercase">Todos tus chats</h3>
+                <div className="grid gap-3">
+                  {conversaciones.map((c) => (
+                    <button
+                      key={`${c.otherId}::${c.contexto}`}
+                      onClick={() => setChatContext(c)}
+                      style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                      className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-semibold">{c.otherNombre}</p>
+                          <Badge color={COLORS.cyan}>{c.contexto}</Badge>
+                        </div>
+                        <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
+                      </div>
+                      <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">
+                        {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -1084,8 +1241,21 @@ export default function EncuentraCartas() {
                   {storeSellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin producto sellado registrado.</p>}
                   {storeSellado.map((item) => (
                     <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
-                      <p className="font-medium">{item.producto}</p>
-                      <p style={{ color: COLORS.cyan }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+                      <div className="flex items-center gap-3">
+                        {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                        <p className="font-medium">{item.producto}</p>
+                      </div>
+                      <div className="text-right">
+                        <p style={{ color: COLORS.cyan }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+                        {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                        <button
+                          onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`)}
+                          disabled={!selectedStore.perfil_id}
+                          style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
+                          className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
+                          <MessageCircle size={12} /> Contactar
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
