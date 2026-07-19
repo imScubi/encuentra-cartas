@@ -37,11 +37,11 @@ async function sbWrite(method, path, body, session) {
   return data;
 }
 
-async function authSignUp(email, password) {
+async function authSignUp(email, password, metadata) {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
     method: "POST",
     headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, data: metadata }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.msg || data?.error_description || "No se pudo crear la cuenta");
@@ -117,7 +117,7 @@ function AccountModal({ onClose, onAuthed }) {
   const handleSignUp = async () => {
     setLoading(true); setError(null); setInfo(null);
     try {
-      const auth = await authSignUp(email, password);
+      const auth = await authSignUp(email, password, { tipo: accountType, nombre, whatsapp: whatsapp || null, facebook: facebook || null });
       if (!auth.access_token) {
         setInfo("Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.");
         setLoading(false);
@@ -991,14 +991,36 @@ export default function EncuentraCartas() {
     if (saved) {
       const s = JSON.parse(saved);
       setSession(s);
-      sb(`perfiles?select=*&id=eq.${s.user.id}`, s).then((rows) => setPerfil(rows[0] || null)).catch(() => {});
+      cargarOCrearPerfil(s);
     }
   }, []);
+
+  // Trae el perfil de la persona; si no existe (primer inicio de sesión tras confirmar su correo),
+  // lo crea usando los datos que guardamos al momento del registro.
+  const cargarOCrearPerfil = async (s) => {
+    try {
+      const rows = await sb(`perfiles?select=*&id=eq.${s.user.id}`, s);
+      let p = rows[0];
+      if (!p && s.user.user_metadata?.tipo) {
+        const creado = await sbWrite("POST", "perfiles", {
+          id: s.user.id,
+          tipo: s.user.user_metadata.tipo,
+          nombre: s.user.user_metadata.nombre,
+          whatsapp: s.user.user_metadata.whatsapp || null,
+          facebook: s.user.user_metadata.facebook || null,
+        }, s);
+        p = Array.isArray(creado) ? creado[0] : creado;
+      }
+      setPerfil(p || null);
+    } catch {
+      setPerfil(null);
+    }
+  };
 
   const handleAuthed = (s) => {
     setSession(s);
     setShowAccountModal(false);
-    sb(`perfiles?select=*&id=eq.${s.user.id}`, s).then((rows) => setPerfil(rows[0] || null)).catch(() => {});
+    cargarOCrearPerfil(s);
   };
 
   const handleLogout = () => {
