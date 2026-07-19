@@ -715,7 +715,45 @@ export default function EncuentraCartas() {
       setLoadingNews(true);
       sb("noticias?select=*&order=created_at.desc").then(setNews).finally(() => setLoadingNews(false));
     }
+    if (view === "inbox" && session) {
+      cargarInbox();
+    }
   }, [view]);
+
+  const [conversaciones, setConversaciones] = useState([]);
+  const [loadingInbox, setLoadingInbox] = useState(false);
+
+  const cargarInbox = () => {
+    setLoadingInbox(true);
+    const uid = session.user.id;
+    sb(
+      `mensajes?select=*,remitente:de_perfil_id(nombre,whatsapp,facebook),destinatario:para_perfil_id(nombre,whatsapp,facebook)&or=(de_perfil_id.eq.${uid},para_perfil_id.eq.${uid})&order=created_at.desc`,
+      session
+    )
+      .then((rows) => {
+        // Agrupamos por conversación: mismo interlocutor + mismo tema (contexto)
+        const grupos = new Map();
+        rows.forEach((m) => {
+          const soyRemitente = m.de_perfil_id === uid;
+          const otherId = soyRemitente ? m.para_perfil_id : m.de_perfil_id;
+          const otherPerfil = soyRemitente ? m.destinatario : m.remitente;
+          const key = `${otherId}::${m.contexto}`;
+          if (!grupos.has(key)) {
+            grupos.set(key, {
+              otherId,
+              otherNombre: otherPerfil?.nombre || "Usuario",
+              otherWhatsapp: otherPerfil?.whatsapp,
+              otherFacebook: otherPerfil?.facebook,
+              contexto: m.contexto,
+              ultimoMensaje: m.texto,
+              fecha: m.created_at,
+            });
+          }
+        });
+        setConversaciones(Array.from(grupos.values()));
+      })
+      .finally(() => setLoadingInbox(false));
+  };
 
   const openStore = (store) => {
     setSelectedStore(store);
@@ -734,6 +772,7 @@ export default function EncuentraCartas() {
     { id: "directory", label: "Tiendas", icon: Store },
     { id: "market", label: "Mercado", icon: ShoppingBag },
     { id: "news", label: "Anuncios y noticias", icon: Megaphone },
+    ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
     ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
   ];
 
@@ -787,7 +826,7 @@ export default function EncuentraCartas() {
           contexto={chatContext.contexto}
           otherWhatsapp={chatContext.otherWhatsapp}
           otherFacebook={chatContext.otherFacebook}
-          onClose={() => setChatContext(null)}
+          onClose={() => { setChatContext(null); if (session) cargarInbox(); }}
         />
       )}
 
@@ -958,6 +997,40 @@ export default function EncuentraCartas() {
                   <p className="font-semibold text-lg mt-2">{n.titulo}</p>
                   <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
                 </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* MENSAJES */}
+        {view === "inbox" && session && (
+          <div>
+            <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-6">Mensajes</h2>
+            {loadingInbox && <Loading label="Cargando tus conversaciones..." />}
+            {!loadingInbox && conversaciones.length === 0 && (
+              <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
+                Todavía no tienes conversaciones. En cuanto alguien te contacte por una carta, o tú contactes a alguien, va a aparecer aquí.
+              </p>
+            )}
+            <div className="grid gap-3">
+              {conversaciones.map((c) => (
+                <button
+                  key={`${c.otherId}::${c.contexto}`}
+                  onClick={() => setChatContext(c)}
+                  style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                  className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="font-semibold">{c.otherNombre}</p>
+                      <Badge color={COLORS.cyan}>{c.contexto}</Badge>
+                    </div>
+                    <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
+                  </div>
+                  <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">
+                    {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                  </p>
+                </button>
               ))}
             </div>
           </div>
