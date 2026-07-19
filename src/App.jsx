@@ -226,6 +226,152 @@ function AccountModal({ onClose, onAuthed }) {
   );
 }
 
+function MyStorePanel({ session, perfil }) {
+  const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
+  const [inventario, setInventario] = useState([]);
+  const [sellado, setSellado] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1" });
+  const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", cantidad: "1" });
+  const [savingCarta, setSavingCarta] = useState(false);
+  const [savingSellado, setSavingSellado] = useState(false);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`tiendas?select=*&perfil_id=eq.${session.user.id}`, session)
+      .then(async (rows) => {
+        const t = rows[0] || null;
+        setTienda(t);
+        if (t) {
+          const [inv, sel] = await Promise.all([
+            sb(`inventario_tienda?select=*&tienda_id=eq.${t.id}&order=carta.asc`, session),
+            sb(`sellado_tienda?select=*&tienda_id=eq.${t.id}&order=producto.asc`, session),
+          ]);
+          setInventario(inv);
+          setSellado(sel);
+        }
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const agregarCarta = async () => {
+    if (!nuevaCarta.carta || !nuevaCarta.precio) return;
+    setSavingCarta(true);
+    try {
+      await sbWrite("POST", "inventario_tienda", { ...nuevaCarta, precio: Number(nuevaCarta.precio), cantidad: Number(nuevaCarta.cantidad), tienda_id: tienda.id }, session);
+      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1" });
+      cargar();
+    } catch (e) { setError(e.message); } finally { setSavingCarta(false); }
+  };
+
+  const borrarCarta = async (id) => {
+    try { await sbWrite("DELETE", `inventario_tienda?id=eq.${id}`, {}, session); cargar(); } catch (e) { setError(e.message); }
+  };
+
+  const actualizarCarta = async (id, campo, valor) => {
+    try { await sbWrite("PATCH", `inventario_tienda?id=eq.${id}`, { [campo]: campo === "precio" || campo === "cantidad" ? Number(valor) : valor }, session); }
+    catch (e) { setError(e.message); }
+  };
+
+  const agregarSellado = async () => {
+    if (!nuevoSellado.producto || !nuevoSellado.precio) return;
+    setSavingSellado(true);
+    try {
+      await sbWrite("POST", "sellado_tienda", { ...nuevoSellado, precio: Number(nuevoSellado.precio), cantidad: Number(nuevoSellado.cantidad), tienda_id: tienda.id }, session);
+      setNuevoSellado({ producto: "", precio: "", cantidad: "1" });
+      cargar();
+    } catch (e) { setError(e.message); } finally { setSavingSellado(false); }
+  };
+
+  const borrarSellado = async (id) => {
+    try { await sbWrite("DELETE", `sellado_tienda?id=eq.${id}`, {}, session); cargar(); } catch (e) { setError(e.message); }
+  };
+
+  const actualizarSellado = async (id, campo, valor) => {
+    try { await sbWrite("PATCH", `sellado_tienda?id=eq.${id}`, { [campo]: campo === "precio" || campo === "cantidad" ? Number(valor) : valor }, session); }
+    catch (e) { setError(e.message); }
+  };
+
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+
+  if (loading) return <Loading label="Cargando tu tienda..." />;
+
+  if (!tienda) {
+    return (
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.magenta}66` }} className="rounded-xl p-6 text-center">
+        <Store size={32} color={COLORS.magenta} className="mx-auto mb-3" />
+        <p className="font-semibold mb-1">Tu cuenta todavía no está vinculada a una tienda</p>
+        <p style={{ color: COLORS.muted }} className="text-sm">
+          Pídele al administrador que conecte tu cuenta con tu tienda en el directorio. Necesita tu correo o el ID de tu cuenta ({session.user.id}).
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">{tienda.nombre}</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Administra tu inventario y producto sellado.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-6">
+        <select value={nuevaCarta.tcg} onChange={(e) => setNuevaCarta({ ...nuevaCarta, tcg: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1">
+          <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
+        </select>
+        <input placeholder="Nombre de la carta" value={nuevaCarta.carta} onChange={(e) => setNuevaCarta({ ...nuevaCarta, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-2" />
+        <input placeholder="Set / número" value={nuevaCarta.set_nombre} onChange={(e) => setNuevaCarta({ ...nuevaCarta, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
+        <input placeholder="Condición" value={nuevaCarta.condicion} onChange={(e) => setNuevaCarta({ ...nuevaCarta, condicion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
+        <input placeholder="Precio" type="number" value={nuevaCarta.precio} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
+        <button onClick={agregarCarta} disabled={savingCarta} style={{ background: COLORS.gold, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
+          {savingCarta ? "Guardando..." : "+ Agregar carta"}
+        </button>
+      </div>
+      <div className="grid gap-2 mb-8">
+        {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
+        {inventario.map((item) => (
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+            <div className="flex-1 min-w-[140px]">
+              <p className="font-medium text-sm">{item.carta}</p>
+              <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion}</p>
+            </div>
+            <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarCarta(item.id, "precio", e.target.value)}
+              style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
+            <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarCarta(item.id, "cantidad", e.target.value)}
+              style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
+            <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
+          </div>
+        ))}
+      </div>
+
+      <h3 style={{ color: COLORS.cyan }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-4">
+        <input placeholder="Nombre del producto" value={nuevoSellado.producto} onChange={(e) => setNuevoSellado({ ...nuevoSellado, producto: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-2" />
+        <input placeholder="Precio" type="number" value={nuevoSellado.precio} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        <button onClick={agregarSellado} disabled={savingSellado} style={{ background: COLORS.cyan, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          {savingSellado ? "Guardando..." : "+ Agregar"}
+        </button>
+      </div>
+      <div className="grid gap-2">
+        {sellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado producto sellado.</p>}
+        {sellado.map((item) => (
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+            <p className="flex-1 min-w-[140px] font-medium text-sm">{item.producto}</p>
+            <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarSellado(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" />
+            <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarSellado(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-16" />
+            <button onClick={() => borrarSellado(item.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
@@ -332,6 +478,7 @@ export default function EncuentraCartas() {
     { id: "directory", label: "Tiendas", icon: Store },
     { id: "market", label: "Mercado", icon: ShoppingBag },
     { id: "news", label: "Anuncios y noticias", icon: Megaphone },
+    ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
   ];
 
   return (
@@ -509,6 +656,9 @@ export default function EncuentraCartas() {
             </div>
           </div>
         )}
+
+        {/* MI TIENDA */}
+        {view === "myStore" && session && <MyStorePanel session={session} perfil={perfil} />}
 
         {/* STORE DETAIL */}
         {view === "storeDetail" && selectedStore && (
