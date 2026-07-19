@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
+  MessageCircle, Send, ExternalLink,
 } from "lucide-react";
 
 // ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
@@ -324,6 +325,114 @@ function CardPicker({ onSelect }) {
   );
 }
 
+function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, otherFacebook, onClose }) {
+  const [mensajes, setMensajes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(null);
+
+  const uid = session.user.id;
+
+  const cargarMensajes = () => {
+    const path = `mensajes?select=*&contexto=eq.${encodeURIComponent(contexto)}&or=(and(de_perfil_id.eq.${uid},para_perfil_id.eq.${otherId}),and(de_perfil_id.eq.${otherId},para_perfil_id.eq.${uid}))&order=created_at.asc`;
+    return sb(path, session);
+  };
+
+  const enviar = async (texto) => {
+    return sbWrite("POST", "mensajes", { de_perfil_id: uid, para_perfil_id: otherId, texto, contexto }, session);
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    cargarMensajes()
+      .then(async (rows) => {
+        if (rows.length === 0) {
+          // primer contacto: mandamos automáticamente un mensaje indicando qué carta/producto le interesó
+          await enviar(`Hola, me interesa: ${contexto}`);
+          const de_nuevo = await cargarMensajes();
+          setMensajes(de_nuevo);
+        } else {
+          setMensajes(rows);
+        }
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSend = async () => {
+    if (!draft.trim()) return;
+    setSending(true);
+    try {
+      await enviar(draft.trim());
+      setDraft("");
+      const rows = await cargarMensajes();
+      setMensajes(rows);
+    } catch (e) { setError(e.message); } finally { setSending(false); }
+  };
+
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ background: COLORS.surface, border: `1px solid ${COLORS.cyan}66`, boxShadow: `0 0 40px ${COLORS.cyan}33` }}
+        className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col">
+        <div style={{ borderBottom: `1px solid ${COLORS.surface2}` }} className="flex items-center justify-between p-4">
+          <div>
+            <p className="font-semibold">{otherNombre || "Vendedor"}</p>
+            <p style={{ color: COLORS.muted }} className="text-xs">{contexto}</p>
+          </div>
+          <button onClick={onClose} style={{ color: COLORS.muted }}><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 p-4 grid gap-2" style={{ minHeight: "180px", maxHeight: "300px", overflowY: "auto" }}>
+          {loading && <Loading label="Cargando conversación..." />}
+          {error && <ErrorBox message={error} />}
+          {!loading && mensajes.map((m) => (
+            <div key={m.id}
+              style={{
+                alignSelf: m.de_perfil_id === uid ? "flex-end" : "flex-start",
+                background: m.de_perfil_id === uid ? `${COLORS.magenta}33` : COLORS.surface2,
+                border: `1px solid ${m.de_perfil_id === uid ? COLORS.magenta : COLORS.surface2}`,
+              }}
+              className="px-3 py-2 rounded-lg text-sm max-w-[80%]">
+              {m.texto}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="p-3 flex items-center gap-2">
+          <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            placeholder="Escribe un mensaje..." style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
+            className="flex-1 rounded-lg px-3 py-2 text-sm outline-none" />
+          <button onClick={handleSend} disabled={sending} style={{ background: COLORS.cyan, color: COLORS.bg }} className="rounded-lg p-2">
+            <Send size={16} />
+          </button>
+        </div>
+
+        {(otherWhatsapp || otherFacebook) && (
+          <div style={{ borderTop: `1px solid ${COLORS.surface2}`, background: COLORS.bg }} className="p-3">
+            <p style={{ color: COLORS.muted }} className="text-xs mb-2">O continúa la conversación fuera de la app:</p>
+            <div className="flex gap-2">
+              {otherWhatsapp && (
+                <a href={`https://wa.me/${otherWhatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
+                  style={{ border: "1px solid #25D36688", color: "#25D366" }} className="flex-1 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1">
+                  WhatsApp <ExternalLink size={12} />
+                </a>
+              )}
+              {otherFacebook && (
+                <a href={otherFacebook} target="_blank" rel="noreferrer"
+                  style={{ border: `1px solid ${COLORS.violet}88`, color: COLORS.violet }} className="flex-1 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1">
+                  Facebook <ExternalLink size={12} />
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MyStorePanel({ session, perfil }) {
   const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
   const [inventario, setInventario] = useState([]);
@@ -517,6 +626,14 @@ export default function EncuentraCartas() {
   const [session, setSession] = useState(null);
   const [perfil, setPerfil] = useState(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [chatContext, setChatContext] = useState(null);
+
+  const abrirChat = (otherId, otherNombre, contexto, otherWhatsapp, otherFacebook) => {
+    if (!session) { setShowAccountModal(true); return; }
+    if (!otherId) return; // sin cuenta vinculada, no se puede chatear todavía
+    if (otherId === session.user.id) return; // no chatear contigo mismo
+    setChatContext({ otherId, otherNombre, contexto, otherWhatsapp, otherFacebook });
+  };
 
   // Restaurar sesión guardada al abrir la app
   useEffect(() => {
@@ -578,8 +695,8 @@ export default function EncuentraCartas() {
     setSearchError(null);
     const t = setTimeout(() => {
       Promise.all([
-        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono)&carta=ilike.*${q}*&order=precio.asc`),
-        sb(`mercado_listings?select=*&carta=ilike.*${q}*&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id)&carta=ilike.*${q}*&order=precio.asc`),
+        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook)&carta=ilike.*${q}*&order=precio.asc`),
       ])
         .then(([inv, merc]) => setSearchResults({ tiendas: inv, mercado: merc }))
         .catch((e) => { setSearchResults({ tiendas: [], mercado: [] }); setSearchError(e.message); })
@@ -592,7 +709,7 @@ export default function EncuentraCartas() {
   useEffect(() => {
     if (view === "market" && market.length === 0) {
       setLoadingMarket(true);
-      sb("mercado_listings?select=*&order=created_at.desc").then(setMarket).finally(() => setLoadingMarket(false));
+      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook)&order=created_at.desc").then(setMarket).finally(() => setLoadingMarket(false));
     }
     if (view === "news" && news.length === 0) {
       setLoadingNews(true);
@@ -662,6 +779,17 @@ export default function EncuentraCartas() {
       </header>
 
       {showAccountModal && <AccountModal onClose={() => setShowAccountModal(false)} onAuthed={handleAuthed} />}
+      {chatContext && session && (
+        <ChatModal
+          session={session}
+          otherId={chatContext.otherId}
+          otherNombre={chatContext.otherNombre}
+          contexto={chatContext.contexto}
+          otherWhatsapp={chatContext.otherWhatsapp}
+          otherFacebook={chatContext.otherFacebook}
+          onClose={() => setChatContext(null)}
+        />
+      )}
 
       <main className="max-w-5xl mx-auto px-4 sm:px-8 py-10">
         <div style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, background: `${COLORS.gold}11` }}
@@ -716,6 +844,13 @@ export default function EncuentraCartas() {
                   <div className="text-right">
                     <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                    <button
+                      onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`)}
+                      disabled={!r.tiendas?.perfil_id}
+                      style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
+                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
+                      <MessageCircle size={12} /> Contactar
+                    </button>
                   </div>
                 </div>
               ))}
@@ -733,6 +868,12 @@ export default function EncuentraCartas() {
                   <div className="text-right">
                     <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                    <button
+                      onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook)}
+                      style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55` }}
+                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
+                      <MessageCircle size={12} /> Contactar
+                    </button>
                   </div>
                 </div>
               ))}
@@ -776,10 +917,24 @@ export default function EncuentraCartas() {
             )}
             <div className="grid gap-3">
               {market.map((r) => (
-                <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
-                  <p className="font-semibold">{r.carta}</p>
-                  <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre} · {r.zona}</p>
-                  <p style={{ color: COLORS.gold }} className="font-bold mt-1">${Number(r.precio).toLocaleString("es-MX")}</p>
+                <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
+                    <div>
+                      <p className="font-semibold">{r.carta}</p>
+                      <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre} · {r.zona}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p style={{ color: COLORS.gold }} className="font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                    <button
+                      onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook)}
+                      style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55` }}
+                      className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
+                      <MessageCircle size={12} /> Contactar
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -840,6 +995,13 @@ export default function EncuentraCartas() {
                       <div className="text-right">
                         <p style={{ color: COLORS.gold }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                        <button
+                          onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`)}
+                          disabled={!selectedStore.perfil_id}
+                          style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
+                          className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
+                          <MessageCircle size={12} /> Contactar
+                        </button>
                       </div>
                     </div>
                   ))}
