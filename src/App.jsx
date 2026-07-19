@@ -62,6 +62,10 @@ const FONTS = `
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
 `;
 
+// Tipos de cambio aproximados, solo para calcular un precio de referencia (no es una tasa en tiempo real)
+const USD_TO_MXN = 18.5;
+const EUR_TO_MXN = 20;
+
 const COLORS = {
   bg: "#0B0713", surface: "#171025", surface2: "#1F1730",
   magenta: "#FF2E9A", cyan: "#29F1FF", violet: "#B14EFF",
@@ -252,11 +256,24 @@ function CardPicker({ onSelect }) {
       const res = await fetch(`https://api.tcgdex.net/v2/en/cards/${c.id}`);
       const full = await res.json();
       const total = full.set?.cardCount?.official || full.set?.cardCount?.total || "";
+
+      // Buscamos un precio de referencia: primero TCGPlayer (USD), si no hay, Cardmarket (EUR)
+      let precioRefMxn = null;
+      const tp = full.pricing?.tcgplayer;
+      if (tp) {
+        const variante = tp.normal || tp.holofoil || tp["reverse-holofoil"] || tp.unlimited || tp["1st-edition"];
+        if (variante?.marketPrice) precioRefMxn = Math.round(variante.marketPrice * USD_TO_MXN);
+      }
+      if (!precioRefMxn && full.pricing?.cardmarket?.trend) {
+        precioRefMxn = Math.round(full.pricing.cardmarket.trend * EUR_TO_MXN);
+      }
+
       onSelect({
         name: full.name,
         set_nombre: `${full.set?.name || ""} ${full.localId}${total ? "/" + total : ""}`,
         card_api_id: full.id,
-        imagen_url: full.image ? `${full.image}/low.webp` : "",
+        imagen_url: full.image ? `${full.image}/high.webp` : "",
+        precio_ref_mxn: precioRefMxn,
       });
     } catch {
       // si falla el detalle, usamos lo que ya teníamos de la lista
@@ -264,7 +281,8 @@ function CardPicker({ onSelect }) {
         name: c.name,
         set_nombre: `#${c.localId}`,
         card_api_id: c.id,
-        imagen_url: c.image ? `${c.image}/low.webp` : "",
+        imagen_url: c.image ? `${c.image}/high.webp` : "",
+        precio_ref_mxn: null,
       });
     } finally {
       setQ(""); setResults([]); setOpen(false); setLoadingDetail(false);
@@ -293,7 +311,7 @@ function CardPicker({ onSelect }) {
               onClick={() => seleccionar(c)}
               className="flex items-center gap-3 w-full text-left p-2 hover:brightness-125"
               style={{ borderBottom: `1px solid ${COLORS.bg}` }}>
-              {c.image && <img src={`${c.image}/low.webp`} alt={c.name} style={{ width: 32, height: 44, objectFit: "contain" }} />}
+              {c.image && <img src={`${c.image}/low.webp`} alt={c.name} style={{ width: 48, height: 66, objectFit: "contain" }} />}
               <div>
                 <p className="text-sm font-medium">{c.name}</p>
                 <p style={{ color: COLORS.muted }} className="text-xs">#{c.localId}</p>
@@ -313,7 +331,7 @@ function MyStorePanel({ session, perfil }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1", card_api_id: "", imagen_url: "" });
+  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
   const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", cantidad: "1" });
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
@@ -350,8 +368,9 @@ function MyStorePanel({ session, perfil }) {
         tienda_id: tienda.id,
         card_api_id: nuevaCarta.card_api_id || null,
         imagen_url: nuevaCarta.imagen_url || null,
+        precio_ref_mxn: nuevaCarta.precio_ref_mxn || null,
       }, session);
-      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1", card_api_id: "", imagen_url: "" });
+      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingCarta(false); }
   };
@@ -420,12 +439,21 @@ function MyStorePanel({ session, perfil }) {
               set_nombre: c.set_nombre,
               card_api_id: c.card_api_id,
               imagen_url: c.imagen_url,
+              precio_ref_mxn: c.precio_ref_mxn,
+              precio: nuevaCarta.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : ""),
             })} />
             {nuevaCarta.card_api_id && (
-              <div className="flex items-center gap-2 mt-2">
-                {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 28, height: 38, objectFit: "contain" }} />}
-                <Badge color={COLORS.gold}>{nuevaCarta.carta}</Badge>
-                <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={{ color: COLORS.muted }} className="text-xs">Cambiar</button>
+              <div className="flex items-center gap-3 mt-2">
+                {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
+                <div>
+                  <Badge color={COLORS.gold}>{nuevaCarta.carta}</Badge>
+                  {nuevaCarta.precio_ref_mxn && (
+                    <p style={{ color: COLORS.cyan }} className="text-xs mt-1">
+                      Precio de referencia en mercado: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
+                    </p>
+                  )}
+                  <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                </div>
               </div>
             )}
           </div>
@@ -446,7 +474,7 @@ function MyStorePanel({ session, perfil }) {
         {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
         {inventario.map((item) => (
           <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
-            {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 32, height: 44, objectFit: "contain" }} />}
+            {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               <p className="font-medium text-sm">{item.carta}</p>
               <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion}</p>
@@ -678,28 +706,34 @@ export default function EncuentraCartas() {
                 <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
                   className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-3">
-                    {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 44, height: 60, objectFit: "contain" }} />}
+                    {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
                       <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.gold}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
                     </div>
                   </div>
-                  <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                  <div className="text-right">
+                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                  </div>
                 </div>
               ))}
               {searchResults.mercado.map((r) => (
                 <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
                   className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-3">
-                    {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 44, height: 60, objectFit: "contain" }} />}
+                    {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
                       <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.cyan}>Vendedor individual</Badge><p className="font-semibold text-lg">{r.carta}</p></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
                     </div>
                   </div>
-                  <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                  <div className="text-right">
+                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                  </div>
                 </div>
               ))}
             </div>
@@ -797,13 +831,16 @@ export default function EncuentraCartas() {
                   {storeInventory.map((item) => (
                     <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
                       <div className="flex items-center gap-3">
-                        {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 40, height: 55, objectFit: "contain" }} />}
+                        {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                         <div>
                           <p className="font-medium">{item.carta}</p>
                           <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion} · {item.idioma}</p>
                         </div>
                       </div>
-                      <p style={{ color: COLORS.gold }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+                      <div className="text-right">
+                        <p style={{ color: COLORS.gold }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+                        {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                      </div>
                     </div>
                   ))}
                 </div>
