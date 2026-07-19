@@ -9,15 +9,53 @@ const SUPABASE_URL = "https://nulypgaaekexlbxbxdwq.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51bHlwZ2FhZWtleGxieGJ4ZHdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzOTk3OTcsImV4cCI6MjA5OTk3NTc5N30.9qxfcmUx5k1br1CH3DIFI2EplFJWYeRyg6HFeZNN7og";
 
-async function sb(path) {
+async function sb(path, session) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     headers: {
       apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`,
     },
   });
   if (!res.ok) throw new Error(`Error consultando la base de datos (${res.status})`);
   return res.json();
+}
+
+async function sbWrite(method, path, body, session) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method,
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.message || `Error guardando (${res.status})`);
+  return data;
+}
+
+async function authSignUp(email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.msg || data?.error_description || "No se pudo crear la cuenta");
+  return data; // incluye access_token si la confirmación por correo está desactivada
+}
+
+async function authSignIn(email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.msg || data?.error_description || "Correo o contraseña incorrectos");
+  return data;
 }
 
 const FONTS = `
@@ -59,9 +97,164 @@ function ErrorBox({ message }) {
   );
 }
 
+function AccountModal({ onClose, onAuthed }) {
+  const [mode, setMode] = useState("choose"); // choose | signupForm | login
+  const [accountType, setAccountType] = useState(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [facebook, setFacebook] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [info, setInfo] = useState(null);
+
+  const handleSignUp = async () => {
+    setLoading(true); setError(null); setInfo(null);
+    try {
+      const auth = await authSignUp(email, password);
+      if (!auth.access_token) {
+        setInfo("Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.");
+        setLoading(false);
+        return;
+      }
+      const session = { access_token: auth.access_token, user: auth.user };
+      await sbWrite("POST", "perfiles", {
+        id: auth.user.id, tipo: accountType, nombre,
+        whatsapp: whatsapp || null, facebook: facebook || null,
+      }, session);
+      localStorage.setItem("ec_session", JSON.stringify(session));
+      onAuthed(session);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    setLoading(true); setError(null);
+    try {
+      const auth = await authSignIn(email, password);
+      const session = { access_token: auth.access_token, user: auth.user };
+      localStorage.setItem("ec_session", JSON.stringify(session));
+      onAuthed(session);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ background: COLORS.surface, border: `1px solid ${COLORS.violet}66`, boxShadow: `0 0 40px ${COLORS.violet}33` }}
+        className="w-full max-w-md rounded-2xl p-6 relative">
+        <button onClick={onClose} style={{ color: COLORS.muted }} className="absolute top-4 right-4"><X size={20} /></button>
+
+        {mode === "choose" && (
+          <>
+            <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Mi cuenta</h2>
+            <p style={{ color: COLORS.muted }} className="text-sm mb-5">Crea una cuenta o inicia sesión.</p>
+            <div className="grid gap-3">
+              <button onClick={() => { setAccountType("tienda"); setMode("signupForm"); }}
+                style={{ background: COLORS.surface2, border: `1px solid ${COLORS.magenta}` }} className="rounded-xl p-4 text-left flex items-center gap-3">
+                <Store size={22} color={COLORS.magenta} />
+                <div><p className="font-semibold">Crear cuenta de tienda</p></div>
+              </button>
+              <button onClick={() => { setAccountType("individual"); setMode("signupForm"); }}
+                style={{ background: COLORS.surface2, border: `1px solid ${COLORS.cyan}` }} className="rounded-xl p-4 text-left flex items-center gap-3">
+                <User size={22} color={COLORS.cyan} />
+                <div><p className="font-semibold">Crear cuenta individual</p></div>
+              </button>
+              <button onClick={() => setMode("login")} style={{ color: COLORS.gold }} className="text-sm mt-2">
+                Ya tengo cuenta, iniciar sesión
+              </button>
+            </div>
+          </>
+        )}
+
+        {mode === "signupForm" && (
+          <div className="grid gap-3">
+            <Badge color={accountType === "tienda" ? COLORS.magenta : COLORS.cyan}>
+              {accountType === "tienda" ? "Cuenta de tienda" : "Cuenta individual"}
+            </Badge>
+            <input placeholder={accountType === "tienda" ? "Nombre de la tienda" : "Nombre de usuario"} value={nombre} onChange={(e) => setNombre(e.target.value)}
+              style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+            <input placeholder="Correo electrónico" value={email} onChange={(e) => setEmail(e.target.value)}
+              style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+            <input placeholder="Contraseña (mínimo 6 caracteres)" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+            {accountType === "individual" && (
+              <>
+                <input placeholder="WhatsApp (opcional)" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)}
+                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+                <input placeholder="Enlace de Facebook (opcional)" value={facebook} onChange={(e) => setFacebook(e.target.value)}
+                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+              </>
+            )}
+            {error && <ErrorBox message={error} />}
+            {info && <p style={{ color: COLORS.gold }} className="text-xs">{info}</p>}
+            <button onClick={handleSignUp} disabled={loading || !email || !password || !nombre}
+              style={{ background: accountType === "tienda" ? COLORS.magenta : COLORS.cyan, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
+              className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
+              {loading && <Loader2 size={16} className="animate-spin" />} Crear cuenta
+            </button>
+            <button onClick={() => setMode("choose")} style={{ color: COLORS.muted }} className="text-xs">← Volver</button>
+          </div>
+        )}
+
+        {mode === "login" && (
+          <div className="grid gap-3">
+            <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Iniciar sesión</h2>
+            <input placeholder="Correo electrónico" value={email} onChange={(e) => setEmail(e.target.value)}
+              style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+            <input placeholder="Contraseña" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+            {error && <ErrorBox message={error} />}
+            <button onClick={handleLogin} disabled={loading || !email || !password}
+              style={{ background: COLORS.gold, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
+              className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
+              {loading && <Loader2 size={16} className="animate-spin" />} Entrar
+            </button>
+            <button onClick={() => setMode("choose")} style={{ color: COLORS.muted }} className="text-xs">← Volver</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
+  const [session, setSession] = useState(null);
+  const [perfil, setPerfil] = useState(null);
+  const [showAccountModal, setShowAccountModal] = useState(false);
+
+  // Restaurar sesión guardada al abrir la app
+  useEffect(() => {
+    const saved = localStorage.getItem("ec_session");
+    if (saved) {
+      const s = JSON.parse(saved);
+      setSession(s);
+      sb(`perfiles?select=*&id=eq.${s.user.id}`, s).then((rows) => setPerfil(rows[0] || null)).catch(() => {});
+    }
+  }, []);
+
+  const handleAuthed = (s) => {
+    setSession(s);
+    setShowAccountModal(false);
+    sb(`perfiles?select=*&id=eq.${s.user.id}`, s).then((rows) => setPerfil(rows[0] || null)).catch(() => {});
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("ec_session");
+    setSession(null);
+    setPerfil(null);
+  };
+
   const [tiendas, setTiendas] = useState([]);
   const [loadingTiendas, setLoadingTiendas] = useState(true);
   const [errorTiendas, setErrorTiendas] = useState(null);
@@ -154,7 +347,7 @@ export default function EncuentraCartas() {
               Encuentra <span style={{ color: COLORS.cyan }}>Cartas</span>
             </h1>
           </div>
-          <nav className="flex gap-2 flex-wrap">
+          <nav className="flex gap-2 flex-wrap items-center">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = view === item.id;
@@ -166,9 +359,23 @@ export default function EncuentraCartas() {
                 </button>
               );
             })}
+            {session ? (
+              <div className="flex items-center gap-2">
+                <Badge color={COLORS.gold}>{perfil?.nombre || "Mi cuenta"}</Badge>
+                <button onClick={handleLogout} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="px-3 py-2 rounded-lg text-xs">
+                  Cerrar sesión
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setShowAccountModal(true)} style={{ background: COLORS.gold, color: COLORS.bg }} className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
+                <User size={15} /> Mi cuenta
+              </button>
+            )}
           </nav>
         </div>
       </header>
+
+      {showAccountModal && <AccountModal onClose={() => setShowAccountModal(false)} onAuthed={handleAuthed} />}
 
       <main className="max-w-5xl mx-auto px-4 sm:px-8 py-10">
         <div style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, background: `${COLORS.gold}11` }}
