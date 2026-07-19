@@ -516,6 +516,151 @@ function SealedPicker({ onSelect }) {
   );
 }
 
+function MyMarketPanel({ session }) {
+  const [publicaciones, setPublicaciones] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [tipo, setTipo] = useState("carta"); // carta | sellado
+
+  const vacio = { tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", precio: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null };
+  const [nueva, setNueva] = useState(vacio);
+
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`mercado_listings?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
+      .then(setPublicaciones)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const agregar = async () => {
+    if (!nueva.carta || !nueva.precio || !nueva.zona) return;
+    setSaving(true);
+    try {
+      await sbWrite("POST", "mercado_listings", {
+        perfil_id: session.user.id,
+        tipo,
+        tcg: nueva.tcg,
+        carta: nueva.carta,
+        set_nombre: nueva.set_nombre || null,
+        condicion: tipo === "carta" ? nueva.condicion : null,
+        precio: Number(nueva.precio),
+        cantidad: Number(nueva.cantidad),
+        zona: nueva.zona,
+        card_api_id: nueva.card_api_id || null,
+        imagen_url: nueva.imagen_url || null,
+        precio_ref_mxn: nueva.precio_ref_mxn || null,
+      }, session);
+      setNueva(vacio);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setSaving(false); }
+  };
+
+  const borrar = async (id) => {
+    try { await sbWrite("DELETE", `mercado_listings?id=eq.${id}`, {}, session); cargar(); } catch (e) { setError(e.message); }
+  };
+
+  const actualizar = async (id, campo, valor) => {
+    try { await sbWrite("PATCH", `mercado_listings?id=eq.${id}`, { [campo]: campo === "precio" || campo === "cantidad" ? Number(valor) : valor }, session); }
+    catch (e) { setError(e.message); }
+  };
+
+  if (loading) return <Loading label="Cargando tus publicaciones..." />;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Vender en el Mercado</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Publica cartas sueltas o producto sellado para que otros usuarios te encuentren.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid gap-3">
+        <div className="flex gap-2">
+          <button type="button" onClick={() => { setTipo("carta"); setNueva(vacio); }}
+            style={{ background: tipo === "carta" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "carta" ? COLORS.gold : COLORS.surface2}`, color: tipo === "carta" ? COLORS.gold : COLORS.muted }}
+            className="px-3 py-1.5 rounded-full text-sm font-semibold">Carta suelta</button>
+          <button type="button" onClick={() => { setTipo("sellado"); setNueva(vacio); }}
+            style={{ background: tipo === "sellado" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "sellado" ? COLORS.cyan : COLORS.surface2}`, color: tipo === "sellado" ? COLORS.cyan : COLORS.muted }}
+            className="px-3 py-1.5 rounded-full text-sm font-semibold">Producto sellado</button>
+        </div>
+
+        {tipo === "carta" ? (
+          <>
+            <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+              <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
+            </select>
+            {nueva.tcg === "pokemon" ? (
+              <div>
+                <CardPicker onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+                {nueva.card_api_id && (
+                  <div className="flex items-center gap-3 mt-2">
+                    {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                    <div>
+                      <Badge color={COLORS.gold}>{nueva.carta}</Badge>
+                      {nueva.precio_ref_mxn && <p style={{ color: COLORS.cyan }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                      <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-2">
+                <input placeholder="Nombre de la carta" value={nueva.carta} onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+                <input placeholder="Set / número" value={nueva.set_nombre} onChange={(e) => setNueva({ ...nueva, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+              </div>
+            )}
+            <input placeholder="Condición (ej. NM, LP)" value={nueva.condicion} onChange={(e) => setNueva({ ...nueva, condicion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          </>
+        ) : (
+          <SealedPicker onSelect={(p) => setNueva({ ...nueva, carta: p.producto, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
+        )}
+
+        {tipo === "sellado" && nueva.card_api_id && (
+          <div className="flex items-center gap-3">
+            {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+            <div>
+              <Badge color={COLORS.cyan}>{nueva.carta}</Badge>
+              {nueva.precio_ref_mxn && <p style={{ color: COLORS.gold }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+              <button type="button" onClick={() => setNueva({ ...nueva, carta: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+            </div>
+          </div>
+        )}
+
+        <div className="grid sm:grid-cols-3 gap-2">
+          <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <button onClick={agregar} disabled={saving} style={{ background: COLORS.magenta, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+            {saving ? "Publicando..." : "+ Publicar"}
+          </button>
+        </div>
+      </div>
+
+      <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">Tus publicaciones</h3>
+      <div className="grid gap-2">
+        {publicaciones.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has publicado nada en el mercado.</p>}
+        {publicaciones.map((item) => (
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+            {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
+            <div className="flex-1 min-w-[140px]">
+              <div className="flex items-center gap-2">
+                <p className="font-medium text-sm">{item.carta}</p>
+                <Badge color={item.tipo === "sellado" ? COLORS.cyan : COLORS.gold}>{item.tipo === "sellado" ? "Sellado" : "Carta"}</Badge>
+              </div>
+              <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} {item.condicion ? `· ${item.condicion}` : ""} · {item.zona}</p>
+            </div>
+            <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
+            <button onClick={() => borrar(item.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MyStorePanel({ session, perfil }) {
   const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
   const [inventario, setInventario] = useState([]);
@@ -903,6 +1048,7 @@ export default function EncuentraCartas() {
     { id: "news", label: "Anuncios y noticias", icon: Megaphone },
     ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
     ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
+    ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: ShoppingBag }] : []),
   ];
 
   return (
@@ -1028,7 +1174,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.cyan}>Vendedor individual</Badge><p className="font-semibold text-lg">{r.carta}</p></div>
+                      <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.cyan}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
                     </div>
@@ -1112,7 +1258,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
                     <div>
-                      <p className="font-semibold">{r.carta}</p>
+                      <div className="flex items-center gap-2"><p className="font-semibold">{r.carta}</p>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}</div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre} · {r.zona}</p>
                     </div>
                   </div>
@@ -1216,6 +1362,9 @@ export default function EncuentraCartas() {
             )}
           </div>
         )}
+
+        {/* MI MERCADO */}
+        {view === "myMarket" && session && <MyMarketPanel session={session} />}
 
         {/* MI TIENDA */}
         {view === "myStore" && session && <MyStorePanel session={session} perfil={perfil} />}
