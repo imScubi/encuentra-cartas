@@ -789,7 +789,7 @@ export default function EncuentraCartas() {
   const [loadingTiendas, setLoadingTiendas] = useState(true);
   const [errorTiendas, setErrorTiendas] = useState(null);
 
-  const [searchResults, setSearchResults] = useState({ tiendas: [], mercado: [] });
+  const [searchResults, setSearchResults] = useState({ tiendas: [], mercado: [], sellado: [] });
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
 
@@ -812,10 +812,10 @@ export default function EncuentraCartas() {
       .finally(() => setLoadingTiendas(false));
   }, []);
 
-  // Búsqueda en vivo (tiendas + mercado)
+  // Búsqueda en vivo (tiendas + mercado + producto sellado)
   useEffect(() => {
     if (!query.trim()) {
-      setSearchResults({ tiendas: [], mercado: [] });
+      setSearchResults({ tiendas: [], mercado: [], sellado: [] });
       return;
     }
     const q = encodeURIComponent(query.trim());
@@ -825,9 +825,10 @@ export default function EncuentraCartas() {
       Promise.all([
         sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id)&carta=ilike.*${q}*&order=precio.asc`),
         sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook)&carta=ilike.*${q}*&order=precio.asc`),
+        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id)&producto=ilike.*${q}*&order=precio.asc`),
       ])
-        .then(([inv, merc]) => setSearchResults({ tiendas: inv, mercado: merc }))
-        .catch((e) => { setSearchResults({ tiendas: [], mercado: [] }); setSearchError(e.message); })
+        .then(([inv, merc, sel]) => setSearchResults({ tiendas: inv, mercado: merc, sellado: sel }))
+        .catch((e) => { setSearchResults({ tiendas: [], mercado: [], sellado: [] }); setSearchError(e.message); })
         .finally(() => setSearching(false));
     }, 350); // pequeña espera para no saturar mientras escribes
     return () => clearTimeout(t);
@@ -990,7 +991,7 @@ export default function EncuentraCartas() {
               </div>
             )}
 
-            {!searching && query.trim() && searchResults.tiendas.length === 0 && searchResults.mercado.length === 0 && (
+            {!searching && query.trim() && searchResults.tiendas.length === 0 && searchResults.mercado.length === 0 && searchResults.sellado.length === 0 && (
               <p style={{ color: COLORS.muted }} className="text-center py-16 text-sm">
                 Nadie tiene "{query}" registrado todavía.
               </p>
@@ -1038,6 +1039,29 @@ export default function EncuentraCartas() {
                     <button
                       onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook)}
                       style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55` }}
+                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
+                      <MessageCircle size={12} /> Contactar
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {searchResults.sellado.map((r) => (
+                <div key={`sel-${r.id}`} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                  className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    {r.imagen_url && <img src={r.imagen_url} alt={r.producto} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                    <div>
+                      <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.gold}>Tienda</Badge><Badge color={COLORS.violet}>Sellado</Badge><p className="font-semibold text-lg">{r.producto}</p></div>
+                      <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                    <button
+                      onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`)}
+                      disabled={!r.tiendas?.perfil_id}
+                      style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
                       <MessageCircle size={12} /> Contactar
                     </button>
