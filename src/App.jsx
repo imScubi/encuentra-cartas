@@ -105,7 +105,10 @@ async function sb(path, session) {
       res = await pedir(nueva);
     }
   }
-  if (!res.ok) throw new Error(`Error consultando la base de datos (${res.status})`);
+  if (!res.ok) {
+    const data = await res.clone().json().catch(() => null);
+    throw new Error(`Error consultando la base de datos (${res.status}) en ${path}: ${data?.message || data?.hint || JSON.stringify(data) || "sin detalle"}`);
+  }
   return res.json();
 }
 
