@@ -2209,10 +2209,11 @@ function TorneosView({ session, onRequireLogin }) {
   const [interesados, setInteresados] = useState(new Set());
   const [conteos, setConteos] = useState({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [marcando, setMarcando] = useState(null);
 
   const cargar = () => {
-    setLoading(true);
+    setLoading(true); setError(null);
     const ahora = new Date().toISOString();
     Promise.all([
       sb(`torneos?select=*,tiendas(nombre,direccion,lat,lng,perfiles(avatar_url))&fecha=gte.${ahora}&order=fecha.asc`, session),
@@ -2226,7 +2227,7 @@ function TorneosView({ session, onRequireLogin }) {
         setConteos(c);
         setInteresados(new Set((mios || []).map((i) => i.torneo_id)));
       })
-      .catch(() => {})
+      .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
 
@@ -2253,7 +2254,8 @@ function TorneosView({ session, onRequireLogin }) {
     <div>
       <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-6">📅 Calendario de torneos</h2>
       {loading && <Loading label="Cargando torneos..." />}
-      {!loading && torneos.length === 0 && (
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+      {!loading && !error && torneos.length === 0 && (
         <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
           Todavía no hay torneos programados. Las tiendas los publican desde "Mi tienda".
         </p>
@@ -2294,6 +2296,75 @@ function TorneosView({ session, onRequireLogin }) {
   );
 }
 
+const DIAS_SEMANA_CORTOS = ["D", "L", "M", "M", "J", "V", "S"];
+
+function CalendarioPicker({ value, onChange }) {
+  const [abierto, setAbierto] = useState(false);
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const seleccionada = value ? new Date(value + "T00:00:00") : null;
+  const [mesVisible, setMesVisible] = useState(seleccionada || hoy);
+
+  const anio = mesVisible.getFullYear();
+  const mes = mesVisible.getMonth();
+  const primerDiaSemana = new Date(anio, mes, 1).getDay();
+  const diasEnMes = new Date(anio, mes + 1, 0).getDate();
+  const celdas = [...Array(primerDiaSemana).fill(null), ...Array(diasEnMes).keys()].map((d) => (d === null ? null : d + 1));
+
+  const elegir = (d) => {
+    const fecha = new Date(anio, mes, d);
+    const iso = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
+    onChange(iso);
+    setAbierto(false);
+  };
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setAbierto((v) => !v)}
+        style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
+        className="rounded-lg px-3 py-2 text-sm w-full text-left flex items-center gap-2">
+        <Calendar size={14} color={COLORS.muted} />
+        {seleccionada ? seleccionada.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" }) : "Elegir fecha"}
+      </button>
+      {abierto && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setAbierto(false)} />
+          <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33` }}
+            className="absolute z-40 mt-1 rounded-xl p-3 w-64">
+            <div className="flex items-center justify-between mb-2">
+              <button type="button" onClick={() => setMesVisible(new Date(anio, mes - 1, 1))} style={{ color: COLORS.azulPalido }} className="px-2">‹</button>
+              <p className="text-sm font-semibold capitalize">{mesVisible.toLocaleDateString("es-MX", { month: "long", year: "numeric" })}</p>
+              <button type="button" onClick={() => setMesVisible(new Date(anio, mes + 1, 1))} style={{ color: COLORS.azulPalido }} className="px-2">›</button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center mb-1">
+              {DIAS_SEMANA_CORTOS.map((d, i) => <p key={i} style={{ color: COLORS.muted }} className="text-[10px]">{d}</p>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {celdas.map((d, i) => {
+                if (d === null) return <div key={i} />;
+                const fechaDia = new Date(anio, mes, d);
+                const esSeleccionado = seleccionada && fechaDia.getTime() === seleccionada.getTime();
+                const esPasado = fechaDia < hoy;
+                return (
+                  <button key={i} type="button" disabled={esPasado} onClick={() => elegir(d)}
+                    style={{
+                      background: esSeleccionado ? COLORS.azulPalido : "transparent",
+                      color: esSeleccionado ? COLORS.bg : esPasado ? COLORS.muted : COLORS.text,
+                      opacity: esPasado ? 0.35 : 1,
+                    }}
+                    className="rounded-lg py-1.5 text-xs">
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function CrearTorneo({ session, tiendaId }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [nombre, setNombre] = useState("");
@@ -2312,7 +2383,7 @@ function CrearTorneo({ session, tiendaId }) {
     setLoading(true);
     sb(`torneos?select=*&tienda_id=eq.${tiendaId}&order=fecha.desc`, session)
       .then(setMisTorneos)
-      .catch(() => {})
+      .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
 
@@ -2352,7 +2423,7 @@ function CrearTorneo({ session, tiendaId }) {
             {Object.entries(JUEGOS_TORNEO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-2">
-            <input type="date" value={fechaDia} onChange={(e) => setFechaDia(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <CalendarioPicker value={fechaDia} onChange={setFechaDia} />
             <input type="time" value={fechaHora} onChange={(e) => setFechaHora(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           </div>
         </div>
