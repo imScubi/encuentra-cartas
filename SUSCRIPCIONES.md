@@ -214,11 +214,11 @@ un pago de prueba.
 Corre `supabase/migrations/011_notificaciones.sql`. Con eso:
 
 - El encabezado ahora separa lo esencial (Buscar, Tiendas, Mercado, Mensajes
-  — siempre visible) de lo secundario (Anuncios, Wishlist, Planes, Mis
-  pagos, Mi tienda/Vender, Admin). En escritorio lo secundario se sigue
-  viendo en la misma barra; en celular vive dentro de un menú lateral
-  (ícono ☰) que también incluye Editar perfil y Cerrar sesión, para no
-  repetir botones.
+  — siempre visible) de todo lo demás (Anuncios, Torneos, Wishlist, Planes,
+  Mis pagos, Mi tienda/Vender, Ayuda, Admin, Editar perfil, Cerrar sesión),
+  que vive en un único menú lateral — en escritorio y en celular por
+  igual, para no repetir botones ni saturar la barra. Se abre con tu foto
+  de perfil (o el ícono ☰ si no has iniciado sesión).
 - La campanita 🔔 junto al menú muestra un contador de notificaciones no
   leídas y una lista con lo más reciente: coincidencias de Wishlist,
   Anuncios publicados, y mensajes nuevos. Al abrir/hacer click se marcan
