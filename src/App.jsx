@@ -2299,7 +2299,8 @@ function CrearTorneo({ session, tiendaId }) {
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [juego, setJuego] = useState("pokemon");
-  const [fecha, setFecha] = useState("");
+  const [fechaDia, setFechaDia] = useState("");
+  const [fechaHora, setFechaHora] = useState("");
   const [direccion, setDireccion] = useState("");
   const [costo, setCosto] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -2318,7 +2319,7 @@ function CrearTorneo({ session, tiendaId }) {
   useEffect(() => { cargar(); }, []);
 
   const crear = async () => {
-    if (!nombre.trim() || !fecha) return;
+    if (!nombre.trim() || !fechaDia || !fechaHora) return;
     setEnviando(true); setError(null);
     try {
       await sbWrite("POST", "torneos", {
@@ -2326,11 +2327,11 @@ function CrearTorneo({ session, tiendaId }) {
         nombre: nombre.trim(),
         descripcion: descripcion.trim() || null,
         juego,
-        fecha: new Date(fecha).toISOString(),
+        fecha: new Date(`${fechaDia}T${fechaHora}`).toISOString(),
         direccion: direccion.trim() || null,
         costo: costo ? Number(costo) : null,
       }, session);
-      setNombre(""); setDescripcion(""); setFecha(""); setDireccion(""); setCosto("");
+      setNombre(""); setDescripcion(""); setFechaDia(""); setFechaHora(""); setDireccion(""); setCosto("");
       cargar();
     } catch (e) { setError(e.message); } finally { setEnviando(false); }
   };
@@ -2350,13 +2351,16 @@ function CrearTorneo({ session, tiendaId }) {
           <select value={juego} onChange={(e) => setJuego(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
             {Object.entries(JUEGOS_TORNEO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-          <input type="datetime-local" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <div className="grid grid-cols-2 gap-2">
+            <input type="date" value={fechaDia} onChange={(e) => setFechaDia(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <input type="time" value={fechaHora} onChange={(e) => setFechaHora(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          </div>
         </div>
         <div className="grid sm:grid-cols-2 gap-2">
           <input placeholder="Dirección (si es distinta a la de tu tienda)" value={direccion} onChange={(e) => setDireccion(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input type="number" placeholder="Costo de inscripción (opcional)" value={costo} onChange={(e) => setCosto(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
         </div>
-        <button onClick={crear} disabled={enviando || !nombre.trim() || !fecha}
+        <button onClick={crear} disabled={enviando || !nombre.trim() || !fechaDia || !fechaHora}
           style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
           {enviando ? "Publicando..." : "Publicar torneo"}
         </button>
@@ -2930,53 +2934,7 @@ function NotificationBell({ session, onNavigate }) {
   );
 }
 
-function AccountMenu({ session, perfil, onNavigate, onEditarPerfil, onLogout }) {
-  const [abierto, setAbierto] = useState(false);
-
-  const item = (label, onClick) => (
-    <button
-      onClick={() => { setAbierto(false); onClick(); }}
-      style={{ color: COLORS.text }}
-      className="text-left px-4 py-2 text-sm hover:brightness-125 w-full"
-    >
-      {label}
-    </button>
-  );
-
-  return (
-    <div className="relative">
-      <button onClick={() => setAbierto((v) => !v)} className="flex items-center gap-2">
-        <AvatarImg url={perfil?.avatar_url} size={32} />
-        <Badge color={COLORS.azulPalido}>{perfil?.nombre || "Mi cuenta"}</Badge>
-        <PlanBadge perfil={perfil} />
-      </button>
-
-      {abierto && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setAbierto(false)} />
-          <div
-            style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33` }}
-            className="absolute right-0 mt-2 w-56 rounded-xl overflow-hidden z-40 grid py-1"
-          >
-            {item("Editar perfil", onEditarPerfil)}
-            {item("Planes / Suscripción", () => onNavigate("planes"))}
-            {item("Mis pagos", () => onNavigate("misPagos"))}
-            {perfil?.tipo === "tienda" && item("Mi tienda", () => onNavigate("myStore"))}
-            {perfil?.tipo === "individual" && item("Vender en el Mercado", () => onNavigate("myMarket"))}
-            {item("Wishlist", () => onNavigate("alertas"))}
-            {perfil?.es_admin && item("Admin", () => onNavigate("admin"))}
-            <div style={{ borderTop: `1px solid ${COLORS.surface}` }} className="my-1" />
-            <button onClick={() => { setAbierto(false); onLogout(); }} style={{ color: COLORS.azulPalido }} className="text-left px-4 py-2 text-sm hover:brightness-125 w-full">
-              Cerrar sesión
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function MobileDrawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil, onLogout, onLogin, onClose }) {
+function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil, onLogout, onLogin, onClose }) {
   const renglon = (id, label, Icon, onClick) => (
     <button
       key={id}
@@ -2989,7 +2947,7 @@ function MobileDrawer({ session, perfil, secundarios, view, onNavigate, onEditar
   );
 
   return (
-    <div className="fixed inset-0 z-50 sm:hidden">
+    <div className="fixed inset-0 z-50">
       <div style={{ background: "#00000099" }} className="absolute inset-0" onClick={onClose} />
       <div style={{ background: COLORS.surface, borderLeft: `1px solid ${COLORS.azulMedio}66` }}
         className="absolute right-0 top-0 bottom-0 w-72 max-w-[85vw] overflow-y-auto">
@@ -3295,37 +3253,21 @@ export default function EncuentraCartas() {
           </div>
           <nav className="relative flex gap-2 items-center">
             {navEsenciales.map(navButton)}
-            <div className="hidden sm:flex gap-2 items-center">
-              {navSecundarios.map(navButton)}
-            </div>
 
             <NotificationBell session={session} onNavigate={setView} />
 
-            <div className="hidden sm:block">
-              {session ? (
-                <AccountMenu
-                  session={session}
-                  perfil={perfil}
-                  onNavigate={setView}
-                  onEditarPerfil={() => setShowEditarPerfil(true)}
-                  onLogout={handleLogout}
-                />
-              ) : (
-                <button onClick={() => setShowAccountModal(true)} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
-                  <User size={15} /> Mi cuenta
-                </button>
-              )}
-            </div>
-
-            <button onClick={() => setShowDrawer(true)} style={{ color: COLORS.muted }} className="sm:hidden p-2 rounded-lg">
-              <Menu size={20} />
+            {/* Todo lo demás (Anuncios, Torneos, Wishlist, Planes, Mis pagos, Mi
+                tienda/Vender, Ayuda, Admin, Editar perfil, Cerrar sesión) vive en
+                el menú lateral, para no saturar el encabezado con botones. */}
+            <button onClick={() => setShowDrawer(true)} style={{ color: COLORS.muted }} className="p-1 rounded-lg flex items-center">
+              {session ? <AvatarImg url={perfil?.avatar_url} size={32} /> : <Menu size={20} />}
             </button>
           </nav>
         </div>
       </header>
 
       {showDrawer && (
-        <MobileDrawer
+        <Drawer
           session={session}
           perfil={perfil}
           secundarios={navSecundarios}
