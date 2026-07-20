@@ -420,7 +420,10 @@ async function activarPush(session) {
   const permiso = await Notification.requestPermission();
   if (permiso !== "granted") throw new Error("No diste permiso para recibir notificaciones.");
 
-  const registro = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.register("/sw.js");
+  // Espera a que el Service Worker quede realmente ACTIVO antes de suscribir
+  // (justo después de registrar por primera vez, puede seguir "installing").
+  const registro = await navigator.serviceWorker.ready;
   const sub = await registro.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
