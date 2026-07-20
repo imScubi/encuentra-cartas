@@ -42,6 +42,55 @@ async function refrescarSesion(session) {
   return refrescandoPromesa;
 }
 
+// ---- Captura de errores: avisa al admin sin que nadie tenga que reportarlo a mano ----
+let uidActual = null; // lo actualiza EncuentraCartas cuando hay sesión, para poder incluirlo en el reporte
+
+function reportarError(mensaje, stack) {
+  if (!mensaje) return;
+  try {
+    fetch("/api/errores/reportar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mensaje: String(mensaje).slice(0, 500), stack, url: window.location.href, perfilId: uidActual }),
+    }).catch(() => {});
+  } catch {}
+}
+
+if (typeof window !== "undefined" && !window.__ecErroresListo) {
+  window.__ecErroresListo = true;
+  window.addEventListener("error", (e) => reportarError(e.message, e.error?.stack));
+  window.addEventListener("unhandledrejection", (e) => reportarError(e.reason?.message || String(e.reason), e.reason?.stack));
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    reportarError(error.message, `${error.stack || ""}\n${info?.componentStack || ""}`);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ minHeight: "100vh", background: "#000", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div className="text-center max-w-sm">
+            <p className="text-lg font-semibold mb-2">Algo salió mal</p>
+            <p style={{ color: "#7A8BA8" }} className="text-sm mb-4">Ya avisamos al equipo. Intenta recargar la página.</p>
+            <button onClick={() => window.location.reload()} style={{ background: "#9EC0EE", color: "#000" }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+              Recargar
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 async function sb(path, session) {
   const pedir = (s) =>
     fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -1405,6 +1454,29 @@ function AdminPanel({ session }) {
     } catch (e) { setErrorAnuncio(e.message); } finally { setProcesando(null); }
   };
 
+  // ---- Errores detectados ----
+  const [errores, setErrores] = useState([]);
+  const [loadingErrores, setLoadingErrores] = useState(true);
+  const [marcandoError, setMarcandoError] = useState(null);
+
+  const cargarErrores = () => {
+    setLoadingErrores(true);
+    sb(`errores_app?select=*&resuelto=eq.false&order=created_at.desc&limit=30`, session)
+      .then(setErrores)
+      .catch(() => {})
+      .finally(() => setLoadingErrores(false));
+  };
+
+  useEffect(() => { cargarErrores(); }, []);
+
+  const marcarErrorResuelto = async (id) => {
+    setMarcandoError(id);
+    try {
+      await sbWrite("PATCH", `errores_app?id=eq.${id}`, { resuelto: true }, session);
+      setErrores((prev) => prev.filter((e) => e.id !== id));
+    } catch {} finally { setMarcandoError(null); }
+  };
+
   if (loading) return <Loading label="Cargando panel de administración..." />;
 
   return (
@@ -1531,6 +1603,38 @@ function AdminPanel({ session }) {
             ))}
           </div>
         </>
+      )}
+
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1 mt-10">🐞 Errores detectados</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">Errores capturados automáticamente del navegador de los usuarios. Al resolverlos, márcalos para que desaparezcan de esta lista.</p>
+      {loadingErrores ? <Loading label="Cargando errores..." /> : errores.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm">Sin errores pendientes. 🎉</p>
+      ) : (
+        <div className="grid gap-3">
+          {errores.map((e) => (
+            <div key={e.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{e.mensaje}</p>
+                  {e.url && <p style={{ color: COLORS.muted }} className="text-xs mt-1 break-all">{e.url}</p>}
+                  <p style={{ color: COLORS.muted }} className="text-xs mt-1">
+                    {new Date(e.created_at).toLocaleString("es-MX")}
+                  </p>
+                  {e.stack && (
+                    <details className="mt-2">
+                      <summary style={{ color: COLORS.azulPalido }} className="text-xs cursor-pointer">Ver detalle técnico</summary>
+                      <pre style={{ color: COLORS.muted, whiteSpace: "pre-wrap" }} className="text-xs mt-1">{e.stack}</pre>
+                    </details>
+                  )}
+                </div>
+                <button onClick={() => marcarErrorResuelto(e.id)} disabled={marcandoError === e.id}
+                  style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                  {marcandoError === e.id ? "..." : "Marcar resuelto"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -2439,7 +2543,7 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
   );
 }
 
-const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Shield };
+const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Shield, error: AlertCircle };
 
 function NotificationBell({ session, onNavigate }) {
   const [abierto, setAbierto] = useState(false);
@@ -2645,6 +2749,8 @@ function MobileDrawer({ session, perfil, secundarios, view, onNavigate, onEditar
   );
 }
 
+export { ErrorBoundary };
+
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
@@ -2661,6 +2767,11 @@ export default function EncuentraCartas() {
     onSesionRefrescada = (nueva) => setSession(nueva);
     return () => { onSesionRefrescada = null; };
   }, []);
+
+  // Para poder incluir quién estaba conectado si algo truena (reportarError).
+  useEffect(() => {
+    uidActual = session?.user?.id || null;
+  }, [session]);
 
   const abrirChat = (otherId, otherNombre, contexto, otherWhatsapp, otherFacebook, otherAvatar) => {
     if (!session) { setShowAccountModal(true); return; }
