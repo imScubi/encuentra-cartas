@@ -512,7 +512,7 @@ function AccountModal({ onClose, onAuthed }) {
       const session = { access_token: auth.access_token, refresh_token: auth.refresh_token, user: auth.user };
       const avatarUrl = avatarFile ? await subirAvatar(avatarFile, session) : avatarUrlPokemonFinal;
       await sbWrite("POST", "perfiles", {
-        id: auth.user.id, tipo: accountType, nombre,
+        id: auth.user.id, tipo: accountType, nombre, email: auth.user.email,
         whatsapp: whatsapp || null, facebook: facebook || null, avatar_url: avatarUrl,
       }, session);
       localStorage.setItem("ec_session", JSON.stringify(session));
@@ -736,7 +736,7 @@ function CardPicker({ onSelect }) {
   );
 }
 
-function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, otherFacebook, onClose }) {
+function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, otherFacebook, otherAvatar, onClose }) {
   const [mensajes, setMensajes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
@@ -788,9 +788,12 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
         style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}66`, boxShadow: `0 0 40px ${COLORS.azulClaro}33` }}
         className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col">
         <div style={{ borderBottom: `1px solid ${COLORS.surface2}` }} className="flex items-center justify-between p-4 gap-2">
-          <div className="min-w-0">
-            <p className="font-semibold truncate">{otherNombre || "Vendedor"}</p>
-            <p style={{ color: COLORS.muted }} className="text-xs truncate">{contexto}</p>
+          <div className="min-w-0 flex items-center gap-2">
+            <AvatarImg url={otherAvatar} size={32} />
+            <div className="min-w-0">
+              <p className="font-semibold truncate">{otherNombre || "Vendedor"}</p>
+              <p style={{ color: COLORS.muted }} className="text-xs truncate">{contexto}</p>
+            </div>
           </div>
           <button onClick={onClose} style={{ color: COLORS.muted }} className="shrink-0"><X size={18} /></button>
         </div>
@@ -1169,6 +1172,84 @@ function AdminPanel({ session }) {
     } catch (e) { setError(e.message); } finally { setVinculando(null); }
   };
 
+  // ---- Anuncios ----
+  const inputStyleAnuncio = inputStyle;
+  const [tituloAnuncio, setTituloAnuncio] = useState("");
+  const [contenidoAnuncio, setContenidoAnuncio] = useState("");
+  const [modoAnuncio, setModoAnuncio] = useState("ahora"); // ahora | programar
+  const [programarFecha, setProgramarFecha] = useState("");
+  const [creandoAnuncio, setCreandoAnuncio] = useState(false);
+  const [errorAnuncio, setErrorAnuncio] = useState(null);
+  const [pendientes, setPendientes] = useState([]);
+  const [programados, setProgramados] = useState([]);
+  const [loadingAnuncios, setLoadingAnuncios] = useState(true);
+  const [procesando, setProcesando] = useState(null);
+
+  const cargarAnuncios = () => {
+    setLoadingAnuncios(true);
+    Promise.all([
+      sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.pendiente&order=created_at.desc`, session),
+      sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.programado&order=fecha_publicacion.asc`, session),
+    ])
+      .then(([p, prog]) => { setPendientes(p); setProgramados(prog); })
+      .catch((e) => setErrorAnuncio(e.message))
+      .finally(() => setLoadingAnuncios(false));
+  };
+
+  useEffect(() => { cargarAnuncios(); }, []);
+
+  const notificarAnuncio = async (anuncioId) => {
+    try {
+      await fetch("/api/anuncios/notificar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ anuncioId }),
+      });
+    } catch { /* el anuncio ya quedó publicado aunque el push falle */ }
+  };
+
+  const crearAnuncio = async () => {
+    if (!tituloAnuncio.trim() || !contenidoAnuncio.trim()) return;
+    const esProgramado = modoAnuncio === "programar" && programarFecha;
+    if (modoAnuncio === "programar" && !programarFecha) { setErrorAnuncio("Elige la fecha y hora de publicación."); return; }
+    setCreandoAnuncio(true); setErrorAnuncio(null);
+    try {
+      const creado = await sbWrite("POST", "noticias", {
+        tipo: "anuncio",
+        titulo: tituloAnuncio.trim(),
+        contenido: contenidoAnuncio.trim(),
+        tienda_id: null,
+        creado_por: session.user.id,
+        estado: esProgramado ? "programado" : "publicado",
+        publicado: !esProgramado,
+        fecha_publicacion: esProgramado ? new Date(programarFecha).toISOString() : new Date().toISOString(),
+      }, session);
+      const fila = Array.isArray(creado) ? creado[0] : creado;
+      if (!esProgramado && fila?.id) await notificarAnuncio(fila.id);
+      setTituloAnuncio(""); setContenidoAnuncio(""); setProgramarFecha(""); setModoAnuncio("ahora");
+      cargarAnuncios();
+    } catch (e) { setErrorAnuncio(e.message); } finally { setCreandoAnuncio(false); }
+  };
+
+  const aprobarAnuncio = async (anuncio) => {
+    setProcesando(anuncio.id);
+    try {
+      await sbWrite("PATCH", `noticias?id=eq.${anuncio.id}`, {
+        estado: "publicado", publicado: true, fecha_publicacion: new Date().toISOString(), aprobado_por: session.user.id,
+      }, session);
+      await notificarAnuncio(anuncio.id);
+      cargarAnuncios();
+    } catch (e) { setErrorAnuncio(e.message); } finally { setProcesando(null); }
+  };
+
+  const rechazarAnuncio = async (anuncio) => {
+    setProcesando(anuncio.id);
+    try {
+      await sbWrite("PATCH", `noticias?id=eq.${anuncio.id}`, { estado: "rechazado", aprobado_por: session.user.id }, session);
+      cargarAnuncios();
+    } catch (e) { setErrorAnuncio(e.message); } finally { setProcesando(null); }
+  };
+
   if (loading) return <Loading label="Cargando panel de administración..." />;
 
   return (
@@ -1204,6 +1285,76 @@ function AdminPanel({ session }) {
       )}
       {perfilesDisponibles.length === 0 && tiendasSinDueno.length > 0 && (
         <p style={{ color: COLORS.muted }} className="text-xs mt-4">No hay cuentas de tipo tienda registradas todavía para vincular.</p>
+      )}
+
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1 mt-10">📢 Anuncios</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">Crea un anuncio para publicarlo de inmediato o programarlo, y revisa los que proponen las tiendas.</p>
+      {errorAnuncio && <div className="mb-4"><ErrorBox message={errorAnuncio} /></div>}
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-6 grid gap-3">
+        <input placeholder="Título del anuncio" value={tituloAnuncio} onChange={(e) => setTituloAnuncio(e.target.value)}
+          style={inputStyleAnuncio} className="rounded-lg px-3 py-2 text-sm" />
+        <textarea placeholder="Contenido del anuncio" rows={3} value={contenidoAnuncio} onChange={(e) => setContenidoAnuncio(e.target.value)}
+          style={inputStyleAnuncio} className="rounded-lg px-3 py-2 text-sm" />
+        <div className="flex items-center gap-4 flex-wrap text-sm">
+          <label className="flex items-center gap-1.5">
+            <input type="radio" checked={modoAnuncio === "ahora"} onChange={() => setModoAnuncio("ahora")} /> Publicar ahora
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input type="radio" checked={modoAnuncio === "programar"} onChange={() => setModoAnuncio("programar")} /> Programar
+          </label>
+          {modoAnuncio === "programar" && (
+            <input type="datetime-local" value={programarFecha} onChange={(e) => setProgramarFecha(e.target.value)}
+              style={inputStyleAnuncio} className="rounded-lg px-2 py-1.5 text-sm" />
+          )}
+        </div>
+        <button onClick={crearAnuncio} disabled={creandoAnuncio || !tituloAnuncio.trim() || !contenidoAnuncio.trim()}
+          style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          {creandoAnuncio ? "Guardando..." : modoAnuncio === "programar" ? "Programar anuncio" : "Publicar ahora"}
+        </button>
+      </div>
+
+      {loadingAnuncios ? <Loading label="Cargando anuncios..." /> : (
+        <>
+          <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Pendientes de aprobación (propuestos por tiendas)</h3>
+          {pendientes.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm mb-6">No hay anuncios esperando aprobación.</p>}
+          <div className="grid gap-3 mb-8">
+            {pendientes.map((n) => (
+              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <AvatarImg url={n.tiendas?.perfiles?.avatar_url} size={24} />
+                  <p className="text-sm font-semibold">{n.tiendas?.nombre || "Tienda"}</p>
+                </div>
+                <p className="font-semibold">{n.titulo}</p>
+                <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => aprobarAnuncio(n)} disabled={procesando === n.id}
+                    style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    {procesando === n.id ? "..." : "Aprobar y publicar"}
+                  </button>
+                  <button onClick={() => rechazarAnuncio(n)} disabled={procesando === n.id}
+                    style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    Rechazar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Programados</h3>
+          {programados.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">No hay anuncios programados.</p>}
+          <div className="grid gap-3">
+            {programados.map((n) => (
+              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+                <p style={{ color: COLORS.muted }} className="text-xs mb-1">
+                  Se publica: {new Date(n.fecha_publicacion).toLocaleString("es-MX")}
+                </p>
+                <p className="font-semibold">{n.titulo}</p>
+                <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -1558,6 +1709,88 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
           </div>
         ))}
       </div>
+
+      <ProponerAnuncio session={session} tiendaId={tienda.id} />
+    </div>
+  );
+}
+
+const ESTADO_ANUNCIO_INFO = {
+  pendiente: { label: "Esperando aprobación", color: "#CCA43B" },
+  publicado: { label: "Publicado", color: "#3BA45C" },
+  programado: { label: "Programado", color: "#4F7FD1" },
+  rechazado: { label: "Rechazado", color: "#C24444" },
+};
+
+function ProponerAnuncio({ session, tiendaId }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [titulo, setTitulo] = useState("");
+  const [contenido, setContenido] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState(null);
+  const [misAnuncios, setMisAnuncios] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const cargar = () => {
+    setLoading(true);
+    sb(`noticias?select=*&tienda_id=eq.${tiendaId}&order=created_at.desc`, session)
+      .then(setMisAnuncios)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const enviar = async () => {
+    if (!titulo.trim() || !contenido.trim()) return;
+    setEnviando(true); setError(null);
+    try {
+      await sbWrite("POST", "noticias", {
+        tipo: "anuncio",
+        titulo: titulo.trim(),
+        contenido: contenido.trim(),
+        tienda_id: tiendaId,
+        creado_por: session.user.id,
+        estado: "pendiente",
+        publicado: false,
+      }, session);
+      setTitulo(""); setContenido("");
+      cargar();
+    } catch (e) { setError(e.message); } finally { setEnviando(false); }
+  };
+
+  return (
+    <div className="mt-10">
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">📢 Proponer un anuncio</h3>
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2">
+        <p style={{ color: COLORS.muted }} className="text-xs">
+          Tu anuncio se lo manda al administrador para revisión. En cuanto lo apruebe, se publica con el nombre y la foto de tu tienda.
+        </p>
+        {error && <ErrorBox message={error} />}
+        <input placeholder="Título del anuncio" value={titulo} onChange={(e) => setTitulo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+        <textarea placeholder="Contenido del anuncio" rows={3} value={contenido} onChange={(e) => setContenido(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+        <button onClick={enviar} disabled={enviando || !titulo.trim() || !contenido.trim()}
+          style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          {enviando ? "Enviando..." : "Enviar para aprobación"}
+        </button>
+      </div>
+
+      {!loading && misAnuncios.length > 0 && (
+        <div className="grid gap-2">
+          {misAnuncios.map((n) => {
+            const info = ESTADO_ANUNCIO_INFO[n.estado] || ESTADO_ANUNCIO_INFO.pendiente;
+            return (
+              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="font-medium text-sm">{n.titulo}</p>
+                  <Badge color={info.color}>{info.label}</Badge>
+                </div>
+                <p style={{ color: COLORS.muted }} className="text-xs mt-1">{n.contenido}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -2070,11 +2303,11 @@ export default function EncuentraCartas() {
     return () => { onSesionRefrescada = null; };
   }, []);
 
-  const abrirChat = (otherId, otherNombre, contexto, otherWhatsapp, otherFacebook) => {
+  const abrirChat = (otherId, otherNombre, contexto, otherWhatsapp, otherFacebook, otherAvatar) => {
     if (!session) { setShowAccountModal(true); return; }
     if (!otherId) return; // sin cuenta vinculada, no se puede chatear todavía
     if (otherId === session.user.id) return; // no chatear contigo mismo
-    setChatContext({ otherId, otherNombre, contexto, otherWhatsapp, otherFacebook });
+    setChatContext({ otherId, otherNombre, contexto, otherWhatsapp, otherFacebook, otherAvatar });
   };
 
   // Si volvemos de Mercado Pago (plan, boost o suscripción), refrescamos el perfil
@@ -2109,6 +2342,7 @@ export default function EncuentraCartas() {
           whatsapp: s.user.user_metadata.whatsapp || null,
           facebook: s.user.user_metadata.facebook || null,
           avatar_url: s.user.user_metadata.avatar_url || randomPokemonAvatar(),
+          email: s.user.email || null,
         }, s);
         p = Array.isArray(creado) ? creado[0] : creado;
       }
@@ -2187,7 +2421,7 @@ export default function EncuentraCartas() {
     }
     if (view === "news" && news.length === 0) {
       setLoadingNews(true);
-      sb("noticias?select=*&order=created_at.desc").then(setNews).finally(() => setLoadingNews(false));
+      sb("noticias?select=*,tiendas(nombre,perfiles(avatar_url))&publicado=eq.true&order=fecha_publicacion.desc").then(setNews).finally(() => setLoadingNews(false));
     }
     if (view === "inbox" && session) {
       cargarInbox();
@@ -2201,7 +2435,7 @@ export default function EncuentraCartas() {
     setLoadingInbox(true);
     const uid = session.user.id;
     sb(
-      `mensajes?select=*,remitente:de_perfil_id(nombre,whatsapp,facebook),destinatario:para_perfil_id(nombre,whatsapp,facebook)&or=(de_perfil_id.eq.${uid},para_perfil_id.eq.${uid})&order=created_at.desc`,
+      `mensajes?select=*,remitente:de_perfil_id(nombre,whatsapp,facebook,avatar_url),destinatario:para_perfil_id(nombre,whatsapp,facebook,avatar_url)&or=(de_perfil_id.eq.${uid},para_perfil_id.eq.${uid})&order=created_at.desc`,
       session
     )
       .then((rows) => {
@@ -2218,6 +2452,7 @@ export default function EncuentraCartas() {
               otherNombre: otherPerfil?.nombre || "Usuario",
               otherWhatsapp: otherPerfil?.whatsapp,
               otherFacebook: otherPerfil?.facebook,
+              otherAvatar: otherPerfil?.avatar_url,
               contexto: m.contexto,
               ultimoMensaje: m.texto,
               fecha: m.created_at,
@@ -2334,6 +2569,7 @@ export default function EncuentraCartas() {
           contexto={chatContext.contexto}
           otherWhatsapp={chatContext.otherWhatsapp}
           otherFacebook={chatContext.otherFacebook}
+          otherAvatar={chatContext.otherAvatar}
           onClose={() => { setChatContext(null); if (session) cargarInbox(); }}
         />
       )}
@@ -2385,14 +2621,17 @@ export default function EncuentraCartas() {
                     <div>
                       <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
-                      <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <AvatarImg url={r.tiendas?.perfiles?.avatar_url} size={20} />
+                        <p style={{ color: COLORS.muted }} className="text-xs">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">
                     <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
-                      onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`)}
+                      onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url)}
                       disabled={!r.tiendas?.perfil_id}
                       style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
@@ -2420,7 +2659,7 @@ export default function EncuentraCartas() {
                     <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
-                      onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook)}
+                      onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url)}
                       style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
                       <MessageCircle size={12} /> Contactar
@@ -2435,14 +2674,17 @@ export default function EncuentraCartas() {
                     {r.imagen_url && <img src={r.imagen_url} alt={r.producto} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
                       <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><Badge color={COLORS.azulMedio}>Sellado</Badge><p className="font-semibold text-lg">{r.producto}</p><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
-                      <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <AvatarImg url={r.tiendas?.perfiles?.avatar_url} size={20} />
+                        <p style={{ color: COLORS.muted }} className="text-xs">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">
                     <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
-                      onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`)}
+                      onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url)}
                       disabled={!r.tiendas?.perfil_id}
                       style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
@@ -2521,7 +2763,7 @@ export default function EncuentraCartas() {
                       <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.perfiles?.nombre || "Usuario"}</p>
                     </div>
                     <button
-                      onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook)}
+                      onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url)}
                       style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center justify-center gap-1 w-full"
                     >
@@ -2541,15 +2783,24 @@ export default function EncuentraCartas() {
             {loadingNews && <Loading label="Cargando..." />}
             {!loadingNews && news.length === 0 && (
               <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
-                Todavía no has publicado ningún anuncio o noticia. Los agregas desde la tabla "noticias" en Supabase.
+                Todavía no hay anuncios publicados.
               </p>
             )}
             <div className="grid gap-4">
               {news.map((n) => (
                 <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-5">
-                  <Badge color={n.tipo === "anuncio" ? COLORS.azulPalido : COLORS.azulMedio}>{n.tipo}</Badge>
-                  <p className="font-semibold text-lg mt-2">{n.titulo}</p>
+                  <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                    <div className="flex items-center gap-2">
+                      <AvatarImg url={n.tiendas?.perfiles?.avatar_url} size={24} />
+                      <p style={{ color: COLORS.muted }} className="text-xs font-semibold">{n.tiendas?.nombre || "Encuentra Cartas"}</p>
+                    </div>
+                    <Badge color={n.tipo === "anuncio" ? COLORS.azulPalido : COLORS.azulMedio}>{n.tipo}</Badge>
+                  </div>
+                  <p className="font-semibold text-lg">{n.titulo}</p>
                   <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs mt-2">
+                    {new Date(n.fecha_publicacion || n.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
                 </div>
               ))}
             </div>
@@ -2578,12 +2829,15 @@ export default function EncuentraCartas() {
                       style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulPalido}55` }}
                       className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110 overflow-hidden"
                     >
-                      <div className="min-w-0 overflow-hidden">
-                        <div className="flex items-center gap-2 mb-1 min-w-0">
-                          <p className="font-semibold shrink-0">{c.otherNombre}</p>
-                          <Badge color={COLORS.azulClaro}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
+                      <div className="min-w-0 overflow-hidden flex items-center gap-3">
+                        <AvatarImg url={c.otherAvatar} size={36} />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-1 min-w-0">
+                            <p className="font-semibold shrink-0">{c.otherNombre}</p>
+                            <Badge color={COLORS.azulClaro}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
+                          </div>
+                          <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
                         </div>
-                        <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
                       </div>
                       <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap shrink-0">
                         {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
@@ -2601,12 +2855,15 @@ export default function EncuentraCartas() {
                       style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
                       className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110 overflow-hidden"
                     >
-                      <div className="min-w-0 overflow-hidden">
-                        <div className="flex items-center gap-2 mb-1 min-w-0">
-                          <p className="font-semibold shrink-0">{c.otherNombre}</p>
-                          <Badge color={COLORS.azulClaro}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
+                      <div className="min-w-0 overflow-hidden flex items-center gap-3">
+                        <AvatarImg url={c.otherAvatar} size={36} />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-1 min-w-0">
+                            <p className="font-semibold shrink-0">{c.otherNombre}</p>
+                            <Badge color={COLORS.azulClaro}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
+                          </div>
+                          <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
                         </div>
-                        <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
                       </div>
                       <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap shrink-0">
                         {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
@@ -2712,7 +2969,7 @@ export default function EncuentraCartas() {
                         <p style={{ color: COLORS.azulPalido }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                         <button
-                          onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`)}
+                          onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url)}
                           disabled={!selectedStore.perfil_id}
                           style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
                           className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
@@ -2738,7 +2995,7 @@ export default function EncuentraCartas() {
                         <p style={{ color: COLORS.azulClaro }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                         <button
-                          onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`)}
+                          onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url)}
                           disabled={!selectedStore.perfil_id}
                           style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
                           className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
