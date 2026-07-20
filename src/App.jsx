@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
-  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell,
+  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle,
 } from "lucide-react";
 
 // ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
@@ -593,7 +593,7 @@ function AccountModal({ onClose, onAuthed }) {
         whatsapp: whatsapp || null, facebook: facebook || null, avatar_url: avatarUrl,
       }, session);
       localStorage.setItem("ec_session", JSON.stringify(session));
-      onAuthed(session);
+      onAuthed(session, { esNuevo: true });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -2097,6 +2097,102 @@ function ProponerAnuncio({ session, tiendaId }) {
   );
 }
 
+function SeccionAyuda({ titulo, children }) {
+  return (
+    <details style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 group">
+      <summary style={{ color: COLORS.azulPalido }} className="font-semibold cursor-pointer list-none flex items-center justify-between">
+        {titulo}
+        <span className="text-xs group-open:rotate-180 transition-transform">▾</span>
+      </summary>
+      <div style={{ color: COLORS.muted }} className="text-sm mt-3 grid gap-2">{children}</div>
+    </details>
+  );
+}
+
+function AyudaView({ perfil }) {
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">❓ Ayuda / Tutorial</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Un repaso rápido de todo lo que puedes hacer en Encuentra Cartas.</p>
+
+      <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Primeros pasos</h3>
+      <div className="grid gap-3 mb-8">
+        <SeccionAyuda titulo="🔍 Buscar una carta o producto">
+          <p>Ve a "Buscar" y escribe el nombre. Te muestra lo que hay en tiendas registradas y lo que otros usuarios están vendiendo en el Mercado.</p>
+        </SeccionAyuda>
+        <SeccionAyuda titulo="🏪 Directorio de tiendas">
+          <p>Explora las tiendas de Monterrey, con su ubicación en el mapa, plan/insignia y si están verificadas.</p>
+        </SeccionAyuda>
+        <SeccionAyuda titulo="🛍️ Mercado">
+          <p>Aquí aparece todo lo que venden cuentas individuales (no tiendas). Cualquiera puede publicar una carta o producto sellado.</p>
+        </SeccionAyuda>
+        <SeccionAyuda titulo="💬 Contactar a un vendedor">
+          <p>Dale click a "Contactar" en cualquier resultado — se abre un chat directo dentro de la app, y si el vendedor puso WhatsApp o Facebook, también puedes seguir la conversación ahí.</p>
+        </SeccionAyuda>
+        <SeccionAyuda titulo="🔔 Notificaciones">
+          <p>La campanita del encabezado avisa cuando aparece algo de tu Wishlist, se publica un anuncio, o te llega un mensaje. También puedes activar notificaciones push del navegador desde "Wishlist" para recibir el aviso aunque no tengas la app abierta.</p>
+        </SeccionAyuda>
+        <SeccionAyuda titulo="⚪🔵🟣🟡🔴 Planes / rangos">
+          <p>Poké Ball es gratis. Los planes pagados (Super/Ultra/Master/Ente Ball) desbloquean insignia de verificado, Wishlist Premium, más publicaciones y beneficios exclusivos. Se renuevan solos cada mes hasta que los canceles.</p>
+        </SeccionAyuda>
+      </div>
+
+      {perfil?.tipo !== "tienda" && (
+        <>
+          <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Para compradores y coleccionistas</h3>
+          <div className="grid gap-3 mb-8">
+            <SeccionAyuda titulo="⭐ Vender en el Mercado">
+              <p>Si tu cuenta es individual, tienes la pestaña "Vender en el Mercado" para publicar tus propias cartas o producto sellado.</p>
+            </SeccionAyuda>
+            <SeccionAyuda titulo="❤️ Wishlist Premium">
+              <p>Con plan Ultra Ball o superior, crea alertas de las cartas que buscas (con precio máximo y, si quieres, zona). En cuanto alguien la publique, te avisamos por push y por correo.</p>
+            </SeccionAyuda>
+            <SeccionAyuda titulo="🚀 Destacar tu publicación (Boost)">
+              <p>Paga para que tu carta o producto aparezca primero en resultados y en el Mercado durante 3 o 7 días.</p>
+            </SeccionAyuda>
+          </div>
+        </>
+      )}
+
+      {perfil?.tipo === "tienda" && (
+        <>
+          <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Para tiendas</h3>
+          <div className="grid gap-3 mb-8">
+            <SeccionAyuda titulo="🔗 Vincular tu cuenta con tu tienda">
+              <p>Si "Mi tienda" te dice que tu cuenta no está vinculada, pide al administrador que la conecte con tu tienda del directorio (necesita tu correo o ID de cuenta, que aparece ahí mismo).</p>
+            </SeccionAyuda>
+            <SeccionAyuda titulo="📦 Agregar inventario">
+              <p>Desde "Mi tienda" agrega cartas sueltas o producto sellado uno por uno, con precio, condición y cantidad.</p>
+            </SeccionAyuda>
+            <SeccionAyuda titulo="📊 Importador masivo (Ente Ball)">
+              <p>Con plan Ente Ball puedes pegar una lista de texto o subir un Excel/CSV para cargar muchas cartas de golpe.</p>
+            </SeccionAyuda>
+            <SeccionAyuda titulo="🚀 Destacar publicaciones (Boost)">
+              <p>Igual que las cuentas individuales, puedes pagar para que una publicación aparezca primero por 3 o 7 días.</p>
+            </SeccionAyuda>
+            <SeccionAyuda titulo="📢 Proponer un anuncio">
+              <p>Desde "Mi tienda" puedes proponer un anuncio — el administrador lo revisa y, si lo aprueba, se publica con el nombre y la foto de tu tienda.</p>
+            </SeccionAyuda>
+            <SeccionAyuda titulo="✓ Insignia de verificado">
+              <p>Disponible desde Super Ball en adelante — le da más confianza a quien te contacta.</p>
+            </SeccionAyuda>
+          </div>
+        </>
+      )}
+
+      <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Tu cuenta</h3>
+      <div className="grid gap-3">
+        <SeccionAyuda titulo="🧑 Editar perfil">
+          <p>Cambia tu nombre, foto (subida o de Pokémon), WhatsApp, Facebook, Instagram y ubicación de Google Maps desde el menú de tu cuenta.</p>
+        </SeccionAyuda>
+        <SeccionAyuda titulo="💳 Mis pagos">
+          <p>Ahí ves el historial de tus suscripciones de plan y publicaciones destacadas, con fecha, monto y si se aprobó, quedó pendiente o se rechazó.</p>
+        </SeccionAyuda>
+      </div>
+    </div>
+  );
+}
+
 function UpsellCard({ requiere, plan, children, onIrAPlanes }) {
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${requiere.color}66` }} className="rounded-xl p-6 text-center">
@@ -2822,10 +2918,11 @@ export default function EncuentraCartas() {
     }
   };
 
-  const handleAuthed = (s) => {
+  const handleAuthed = (s, { esNuevo } = {}) => {
     setSession(s);
     setShowAccountModal(false);
     cargarOCrearPerfil(s);
+    if (esNuevo) setView("ayuda");
   };
 
   const handleLogout = () => {
@@ -2961,6 +3058,7 @@ export default function EncuentraCartas() {
     ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
     ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
     ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: ShoppingBag }] : []),
+    { id: "ayuda", label: "Ayuda", icon: HelpCircle },
     ...(perfil?.es_admin ? [{ id: "admin", label: "Admin", icon: Shield }] : []),
   ];
   const navButton = (item) => {
@@ -3387,6 +3485,9 @@ export default function EncuentraCartas() {
         {view === "alertas" && session && (
           <AlertasPanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />
         )}
+
+        {/* AYUDA */}
+        {view === "ayuda" && <AyudaView perfil={perfil} />}
 
         {/* MIS PAGOS */}
         {view === "misPagos" && session && <MisPagosPanel session={session} />}
