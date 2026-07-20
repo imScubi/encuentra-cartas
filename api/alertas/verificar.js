@@ -37,7 +37,10 @@ export default async function handler(req, res) {
     const coincidencias = (alertas || [])
       .filter((a) => PLANES_CON_WISHLIST.includes(a.perfiles?.plan))
       // Si la alerta pide una zona específica y la publicación trae zona, deben coincidir.
-      .filter((a) => !a.zona || !record.zona || a.zona.toLowerCase() === String(record.zona).toLowerCase());
+      .filter((a) => !a.zona || !record.zona || a.zona.toLowerCase() === String(record.zona).toLowerCase())
+      // Si la alerta se creó seleccionando una carta/producto exacto (tiene card_api_id),
+      // exigimos que sea la misma carta y no solo un nombre parecido (ej. "Charizard V" vs "Charizard VMAX").
+      .filter((a) => !a.card_api_id || a.card_api_id === record.card_api_id);
 
     if (coincidencias.length === 0) return res.status(200).json({ ok: true });
 
