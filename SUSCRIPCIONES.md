@@ -49,15 +49,20 @@ Mercado Pago (`preapproval`) se puede agregar después si la quieres.
 ## 4. Notificaciones push reales (Wishlist Premium)
 
 Ya está el código (service worker, VAPID, botón "Activar notificaciones").
-Falta un paso manual en Supabase para que se disparen automáticamente:
+Falta conectar Supabase para que avise a `/api/alertas/verificar` cada vez
+que se publica algo nuevo.
 
-1. Supabase → **Database** → **Webhooks** → *Create a new hook*.
-2. Repite esto 3 veces, una por cada tabla: `mercado_listings`, `inventario_tienda`, `sellado_tienda`.
-   - Evento: `INSERT`
-   - Tipo: `HTTP Request`
-   - URL: `https://TU-DOMINIO/api/alertas/verificar`
-   - Método: `POST`
-3. Guarda. Desde ese momento, cada vez que alguien publique una carta, se revisan las alertas de los usuarios Ultra Ball+ y se les manda push si coincide.
+Si encuentras la sección **Database → Webhooks** en tu proyecto, puedes
+crearlos ahí a mano (evento `INSERT`, tipo `HTTP Request`, método `POST`,
+URL `https://TU-DOMINIO/api/alertas/verificar`) — repite para las tablas
+`mercado_listings`, `inventario_tienda` y `sellado_tienda`.
+
+Si no la encuentras (algunas versiones de la interfaz la escondieron o la
+movieron), usa el atajo por SQL: abre
+`supabase/migrations/003_webhooks.sql`, reemplaza `TU-DOMINIO` por tu URL
+real de Vercel, y corre el archivo completo en el **SQL Editor** de
+Supabase. Hace exactamente lo mismo (crea los triggers) sin depender de la
+interfaz.
 
 ## 5. Importador masivo (Ente Ball)
 
