@@ -156,6 +156,31 @@ async function subirAvatar(file, session) {
   return `${SUPABASE_URL}/storage/v1/object/public/avatars/${path}?t=${Date.now()}`;
 }
 
+async function subirImagenAnuncio(file, session) {
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${session.user.id}/${Date.now()}.${ext}`;
+  const subir = (s) =>
+    fetch(`${SUPABASE_URL}/storage/v1/object/anuncios/${path}`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${s.access_token}`, "Content-Type": file.type || "image/jpeg" },
+      body: file,
+    });
+
+  let res = await subir(session);
+  if (!res.ok) {
+    const data = await res.clone().json().catch(() => null);
+    if (pareceSesionExpirada(res.status, data)) {
+      const nueva = await refrescarSesion(session);
+      res = await subir(nueva);
+    }
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || "No se pudo subir la imagen");
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/anuncios/${path}`;
+}
+
 function AvatarImg({ url, size = 36 }) {
   const [error, setError] = useState(false);
   return (
@@ -1303,6 +1328,8 @@ function AdminPanel({ session }) {
   const [contenidoAnuncio, setContenidoAnuncio] = useState("");
   const [modoAnuncio, setModoAnuncio] = useState("ahora"); // ahora | programar
   const [programarFecha, setProgramarFecha] = useState("");
+  const [imagenAnuncio, setImagenAnuncio] = useState(null);
+  const [imagenAnuncioPreview, setImagenAnuncioPreview] = useState(null);
   const [creandoAnuncio, setCreandoAnuncio] = useState(false);
   const [errorAnuncio, setErrorAnuncio] = useState(null);
   const [pendientes, setPendientes] = useState([]);
@@ -1339,10 +1366,12 @@ function AdminPanel({ session }) {
     if (modoAnuncio === "programar" && !programarFecha) { setErrorAnuncio("Elige la fecha y hora de publicación."); return; }
     setCreandoAnuncio(true); setErrorAnuncio(null);
     try {
+      const imagen_url = imagenAnuncio ? await subirImagenAnuncio(imagenAnuncio, session) : null;
       const creado = await sbWrite("POST", "noticias", {
         tipo: "anuncio",
         titulo: tituloAnuncio.trim(),
         contenido: contenidoAnuncio.trim(),
+        imagen_url,
         tienda_id: null,
         creado_por: session.user.id,
         estado: esProgramado ? "programado" : "publicado",
@@ -1352,6 +1381,7 @@ function AdminPanel({ session }) {
       const fila = Array.isArray(creado) ? creado[0] : creado;
       if (!esProgramado && fila?.id) await notificarAnuncio(fila.id);
       setTituloAnuncio(""); setContenidoAnuncio(""); setProgramarFecha(""); setModoAnuncio("ahora");
+      setImagenAnuncio(null); setImagenAnuncioPreview(null);
       cargarAnuncios();
     } catch (e) { setErrorAnuncio(e.message); } finally { setCreandoAnuncio(false); }
   };
@@ -1425,6 +1455,21 @@ function AdminPanel({ session }) {
           style={inputStyleAnuncio} className="rounded-lg px-3 py-2 text-sm" />
         <textarea placeholder="Contenido del anuncio" rows={3} value={contenidoAnuncio} onChange={(e) => setContenidoAnuncio(e.target.value)}
           style={inputStyleAnuncio} className="rounded-lg px-3 py-2 text-sm" />
+        <div className="flex items-center gap-3">
+          {imagenAnuncioPreview && <img src={imagenAnuncioPreview} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />}
+          <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer">
+            {imagenAnuncioPreview ? "Cambiar imagen" : "+ Agregar imagen (opcional)"}
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setImagenAnuncio(file);
+              setImagenAnuncioPreview(URL.createObjectURL(file));
+            }} />
+          </label>
+          {imagenAnuncioPreview && (
+            <button type="button" onClick={() => { setImagenAnuncio(null); setImagenAnuncioPreview(null); }} style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
+          )}
+        </div>
         <div className="flex items-center gap-4 flex-wrap text-sm">
           <label className="flex items-center gap-1.5">
             <input type="radio" checked={modoAnuncio === "ahora"} onChange={() => setModoAnuncio("ahora")} /> Publicar ahora
@@ -1454,6 +1499,7 @@ function AdminPanel({ session }) {
                   <AvatarImg url={n.tiendas?.perfiles?.avatar_url} size={24} />
                   <p className="text-sm font-semibold">{n.tiendas?.nombre || "Tienda"}</p>
                 </div>
+                {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 140, objectFit: "cover" }} className="rounded-lg mb-2 w-full" />}
                 <p className="font-semibold">{n.titulo}</p>
                 <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
                 <div className="flex gap-2 mt-3">
@@ -1478,6 +1524,7 @@ function AdminPanel({ session }) {
                 <p style={{ color: COLORS.muted }} className="text-xs mb-1">
                   Se publica: {new Date(n.fecha_publicacion).toLocaleString("es-MX")}
                 </p>
+                {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 140, objectFit: "cover" }} className="rounded-lg mb-2 w-full" />}
                 <p className="font-semibold">{n.titulo}</p>
                 <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
               </div>
@@ -1855,6 +1902,8 @@ function ProponerAnuncio({ session, tiendaId }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [titulo, setTitulo] = useState("");
   const [contenido, setContenido] = useState("");
+  const [imagen, setImagen] = useState(null);
+  const [imagenPreview, setImagenPreview] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(null);
   const [misAnuncios, setMisAnuncios] = useState([]);
@@ -1874,16 +1923,18 @@ function ProponerAnuncio({ session, tiendaId }) {
     if (!titulo.trim() || !contenido.trim()) return;
     setEnviando(true); setError(null);
     try {
+      const imagen_url = imagen ? await subirImagenAnuncio(imagen, session) : null;
       await sbWrite("POST", "noticias", {
         tipo: "anuncio",
         titulo: titulo.trim(),
         contenido: contenido.trim(),
+        imagen_url,
         tienda_id: tiendaId,
         creado_por: session.user.id,
         estado: "pendiente",
         publicado: false,
       }, session);
-      setTitulo(""); setContenido("");
+      setTitulo(""); setContenido(""); setImagen(null); setImagenPreview(null);
       cargar();
     } catch (e) { setError(e.message); } finally { setEnviando(false); }
   };
@@ -1898,6 +1949,21 @@ function ProponerAnuncio({ session, tiendaId }) {
         {error && <ErrorBox message={error} />}
         <input placeholder="Título del anuncio" value={titulo} onChange={(e) => setTitulo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
         <textarea placeholder="Contenido del anuncio" rows={3} value={contenido} onChange={(e) => setContenido(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+        <div className="flex items-center gap-3">
+          {imagenPreview && <img src={imagenPreview} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />}
+          <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer">
+            {imagenPreview ? "Cambiar imagen" : "+ Agregar imagen (opcional)"}
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setImagen(file);
+              setImagenPreview(URL.createObjectURL(file));
+            }} />
+          </label>
+          {imagenPreview && (
+            <button type="button" onClick={() => { setImagen(null); setImagenPreview(null); }} style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
+          )}
+        </div>
         <button onClick={enviar} disabled={enviando || !titulo.trim() || !contenido.trim()}
           style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
           {enviando ? "Enviando..." : "Enviar para aprobación"}
@@ -1909,12 +1975,15 @@ function ProponerAnuncio({ session, tiendaId }) {
           {misAnuncios.map((n) => {
             const info = ESTADO_ANUNCIO_INFO[n.estado] || ESTADO_ANUNCIO_INFO.pendiente;
             return (
-              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <p className="font-medium text-sm">{n.titulo}</p>
-                  <Badge color={info.color}>{info.label}</Badge>
+              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex gap-3">
+                {n.imagen_url && <img src={n.imagen_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded-lg shrink-0" />}
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="font-medium text-sm">{n.titulo}</p>
+                    <Badge color={info.color}>{info.label}</Badge>
+                  </div>
+                  <p style={{ color: COLORS.muted }} className="text-xs mt-1">{n.contenido}</p>
                 </div>
-                <p style={{ color: COLORS.muted }} className="text-xs mt-1">{n.contenido}</p>
               </div>
             );
           })}
@@ -3117,6 +3186,7 @@ export default function EncuentraCartas() {
                     </div>
                     <Badge color={n.tipo === "anuncio" ? COLORS.azulPalido : COLORS.azulMedio}>{n.tipo}</Badge>
                   </div>
+                  {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 260, objectFit: "cover" }} className="rounded-lg mb-3 w-full" />}
                   <p className="font-semibold text-lg">{n.titulo}</p>
                   <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
                   <p style={{ color: COLORS.muted }} className="text-xs mt-2">

@@ -224,6 +224,15 @@ Corre `supabase/migrations/011_notificaciones.sql`. Con eso:
   Anuncios publicados, y mensajes nuevos. Al abrir/hacer click se marcan
   como leídas.
 
+## 15. Imágenes en anuncios
+
+Corre `supabase/migrations/012_anuncios_imagen.sql` (agrega
+`noticias.imagen_url` y crea el bucket de Storage `anuncios`). Con eso, al
+crear un anuncio (admin) o proponer uno (tienda) aparece un botón "+
+Agregar imagen (opcional)" — la imagen se ve en la vista pública de
+Anuncios, en el panel de aprobación del admin, y en la lista de "Tus
+anuncios" de la tienda.
+
 ## Qué falta / próximos pasos posibles
 
 - Permitir que la tienda adjunte una imagen a su anuncio.
