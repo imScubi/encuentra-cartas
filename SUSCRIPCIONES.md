@@ -24,6 +24,7 @@ También corre (en el mismo SQL Editor, uno por uno, en orden):
 - `supabase/migrations/003_webhooks.sql` (si no lo has corrido ya — conecta la Wishlist con las publicaciones nuevas)
 - `supabase/migrations/004_alertas_carta_exacta.sql` (permite que una alerta apunte a una carta/producto exacto, con imagen y precio de referencia)
 - `supabase/migrations/005_boost.sql` (agrega el sistema de "Destacar" publicaciones por 3 o 7 días)
+- `supabase/migrations/006_renovacion_automatica.sql` (agrega `perfiles.mp_preapproval_id`, para la renovación automática)
 
 ## 2. Variables de entorno (en Vercel → tu proyecto → Settings → Environment Variables)
 
@@ -36,6 +37,7 @@ También corre (en el mismo SQL Editor, uno por uno, en orden):
 | `VAPID_PUBLIC_KEY` | `BBPa0Sb2JnCX1McAm78espGKsZw8B7lYD2CFV4F_-F_9EghLKVjuhmSnVYh8YRkLgTibA5l5b5OKoujZD3_Dn8c` | ya generada, coincide con la que está en `src/App.jsx` |
 | `VAPID_PRIVATE_KEY` | te la doy en el resumen de este chat (no está en ningún archivo del repo) | cópiala directo a Vercel, no la subas a git |
 | `VAPID_SUBJECT` | `mailto:tu-correo@dominio.com` | cualquier correo de contacto |
+| `CRON_SECRET` | invéntala tú, ej. una contraseña larga random | Vercel la manda sola como header cuando corre el cron; protege `/api/cron/recordatorios` de que cualquiera la llame |
 
 ## 3. Crear tu cuenta de Mercado Pago
 
@@ -46,10 +48,8 @@ También corre (en el mismo SQL Editor, uno por uno, en orden):
 5. Cuando quieras cobrar de verdad: activa tu cuenta de Mercado Pago para producción (te van a pedir datos fiscales/bancarios) y cambia `MP_ACCESS_TOKEN` por el **Access Token de producción**.
 
 El flujo ya está construido: "Planes" → Suscribirme → Mercado Pago Checkout →
-al aprobarse el pago, `api/mercadopago/webhook.js` activa el plan en Supabase
-por 30 días automáticamente. Por ahora la renovación es manual (el usuario
-vuelve a pagar cada mes); una suscripción recurrente automática con
-Mercado Pago (`preapproval`) se puede agregar después si la quieres.
+al autorizar el pago, `api/mercadopago/webhook.js` activa el plan en Supabase
+y **se renueva solo cada mes** (ver sección 7).
 
 ## 4. Notificaciones push reales (Wishlist Premium)
 
@@ -87,7 +87,50 @@ Al pagar, esa publicación aparece primero en los resultados de búsqueda,
 en el Mercado y en el detalle de tienda, con una insignia dorada
 "🚀 Destacado", mientras dure el periodo pagado.
 
+## 7. Renovación automática
+
+Los planes pagados ahora son una **suscripción recurrente real** de Mercado
+Pago (`Preapproval`), no un pago único: al suscribirse, el usuario autoriza
+un cobro mensual que se repite solo hasta que lo cancele. En "Planes", si
+tiene una renovación activa, ve un aviso "🔁 Tu plan se renueva
+automáticamente" con un botón para cancelarla (cancelar no le quita el plan
+de inmediato, solo evita el próximo cobro — el plan sigue activo hasta la
+fecha ya pagada).
+
+⚠️ **Importante para probar esto:** a diferencia de un pago único, una
+suscripción recurrente es difícil de probar de punta a punta sin esperar un
+mes real (el primer cobro sí es inmediato, pero la *renovación* solo se
+dispara cuando Mercado Pago la cobra automáticamente al mes siguiente).
+Cosas que sí puedes verificar ahora:
+- Que "Suscribirme" te lleve a una pantalla de Mercado Pago que dice que
+  autorizas un **cobro recurrente mensual** (no un pago único).
+- Que, en tu panel de Mercado Pago, bajo **"Tu negocio" → "Suscripciones"**
+  (o "Preapprovals"), aparezca la suscripción como "Autorizada" después de
+  pagar.
+- Que el botón "Cancelar renovación automática" en tu app sí la cambie a
+  "Cancelada" en ese mismo panel de Mercado Pago.
+
+## 8. Recordatorios de vencimiento
+
+Un cron job (`api/cron/recordatorios.js`, configurado en `vercel.json` para
+correr todos los días) revisa:
+- Perfiles cuyo plan vence en los próximos 3 días → push avisando (y
+  aclarando si se va a renovar solo o si hay que renovarlo a mano).
+- Publicaciones destacadas (Boost) que dejan de estarlo en menos de 1 día → push al dueño.
+
+Vercel debe recoger `vercel.json` automáticamente en el próximo deploy. Para
+confirmar que el cron está activo: Vercel → tu proyecto → pestaña **Cron
+Jobs** (o **Settings → Cron Jobs**) — debe aparecer `/api/cron/recordatorios`
+corriendo una vez al día. También puedes darle **"Run"** manual ahí mismo
+para probarlo sin esperar al horario programado.
+
+## 9. Panel "Mis pagos"
+
+Nueva pestaña **"Mis pagos"** (visible si iniciaste sesión): muestra el
+historial combinado de tus suscripciones de plan y tus publicaciones
+destacadas, con fecha, monto y si se aprobó, quedó pendiente o se rechazó.
+
 ## Qué falta / próximos pasos posibles
 
-- **Renovación automática** de la suscripción (Mercado Pago `preapproval`) en vez de pago manual mes a mes.
 - Insignia de plan en el encabezado del chat (hoy solo aparece en directorio, búsqueda, mercado y detalle de tienda).
+- Recordatorios por correo además de push (hoy solo push, para quien no lo haya activado no le llega nada).
