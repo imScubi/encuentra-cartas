@@ -67,6 +67,8 @@ export default async function handler(req, res) {
             // Suscripción vencida o inválida: la borramos para no seguir intentando.
             if (err.statusCode === 404 || err.statusCode === 410) {
               await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?id=eq.${s.id}`, { method: "DELETE", headers });
+            } else {
+              console.error("Error mandando push:", err.statusCode, err.body || err.message);
             }
           })
       )
