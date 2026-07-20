@@ -68,13 +68,15 @@ const USD_TO_MXN = 18.5;
 const EUR_TO_MXN = 20;
 
 const COLORS = {
-  bg: "#0B0713", surface: "#171025", surface2: "#1F1730",
-  magenta: "#FF2E9A", cyan: "#29F1FF", violet: "#B14EFF",
-  gold: "#FFC94D", text: "#F1EAFF", muted: "#9A8FBF",
+  bg: "#000000", surface: "#060B18", surface2: "#0C1830",
+  azul: "#002770", azulClaro: "#4F7FD1", azulMedio: "#1B4A9E",
+  azulPalido: "#9EC0EE", text: "#FFFFFF", muted: "#7A8BA8",
 };
 
-const STORE_COLORS = [COLORS.magenta, COLORS.cyan, COLORS.violet, COLORS.gold];
+const STORE_COLORS = [COLORS.azul, COLORS.azulClaro, COLORS.azulMedio, COLORS.azulPalido];
 const colorFor = (i) => STORE_COLORS[i % STORE_COLORS.length];
+// De los tonos de la paleta, azul y azulMedio son oscuros: sobre ellos el texto debe ir blanco, no negro.
+const textoSobre = (fondo) => (fondo === COLORS.azul || fondo === COLORS.azulMedio ? COLORS.text : COLORS.bg);
 
 // ---- Llave pública VAPID para notificaciones push (la privada vive solo en el servidor) ----
 const VAPID_PUBLIC_KEY = "BBPa0Sb2JnCX1McAm78espGKsZw8B7lYD2CFV4F_-F_9EghLKVjuhmSnVYh8YRkLgTibA5l5b5OKoujZD3_Dn8c";
@@ -90,25 +92,25 @@ const PLAN_INFO = {
     limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, importadorMasivo: false, soloTienda: false,
   },
   superball: {
-    nombre: "Super Ball", emoji: "🔵", precio: 49, color: COLORS.cyan,
+    nombre: "Super Ball", emoji: "🔵", precio: 49, color: COLORS.azulClaro,
     resumen: "Insignia verificado + redes directas",
     beneficios: ["Todo lo de Poké Ball", "Insignia de perfil verificado", "Enlace directo a Instagram y Google Maps"],
     limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false,
   },
   ultraball: {
-    nombre: "Ultra Ball", emoji: "🟣", precio: 89, color: COLORS.violet,
+    nombre: "Ultra Ball", emoji: "🟣", precio: 89, color: COLORS.azulMedio,
     resumen: "Todo Super Ball + Wishlist Premium",
     beneficios: ["Todo lo de Super Ball", "Alertas de precio con notificación push"],
     limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false,
   },
   masterball: {
-    nombre: "Master Ball", emoji: "🟡", precio: 149, color: COLORS.gold,
+    nombre: "Master Ball", emoji: "🟡", precio: 149, color: COLORS.azulPalido,
     resumen: "Todos los beneficios, inventario ilimitado",
     beneficios: ["Todo lo de Ultra Ball", "Publicaciones ilimitadas (una por una)"],
     limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false,
   },
   enteball: {
-    nombre: "Ente Ball", emoji: "🔴", precio: 349, color: COLORS.magenta,
+    nombre: "Ente Ball", emoji: "🔴", precio: 349, color: COLORS.text,
     resumen: "Exclusivo tiendas: todo + importador masivo",
     beneficios: ["Todo lo de Master Ball", "Importador masivo de inventario (texto o Excel)", "Solo disponible para cuentas de tienda"],
     limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: true, soloTienda: true,
@@ -137,7 +139,7 @@ function BoostBadge({ item }) {
   return (
     <span
       title={`Destacado hasta ${new Date(item.destacado_hasta).toLocaleDateString("es-MX")}`}
-      style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.gold, boxShadow: `0 0 8px ${COLORS.gold}66` }}
+      style={{ border: `1px solid ${COLORS.azulPalido}`, color: COLORS.azulPalido, boxShadow: `0 0 8px ${COLORS.azulPalido}66` }}
       className="inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap px-2 py-0.5 text-xs"
     >
       🚀 Destacado
@@ -152,7 +154,7 @@ function BoostButton({ session, tabla, item, onBoosted }) {
 
   if (estaDestacado(item)) {
     return (
-      <p style={{ color: COLORS.gold }} className="text-xs">
+      <p style={{ color: COLORS.azulPalido }} className="text-xs">
         🚀 Destacado hasta {new Date(item.destacado_hasta).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
       </p>
     );
@@ -177,7 +179,7 @@ function BoostButton({ session, tabla, item, onBoosted }) {
 
   if (!abierto) {
     return (
-      <button onClick={() => setAbierto(true)} style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55` }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+      <button onClick={() => setAbierto(true)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
         🚀 Destacar
       </button>
     );
@@ -185,11 +187,11 @@ function BoostButton({ session, tabla, item, onBoosted }) {
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
-      {error && <span style={{ color: COLORS.magenta }} className="text-xs">{error}</span>}
-      <button onClick={() => destacar(3)} disabled={pagando !== null} style={{ background: COLORS.gold, color: COLORS.bg }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+      {error && <span style={{ color: COLORS.azulPalido }} className="text-xs">{error}</span>}
+      <button onClick={() => destacar(3)} disabled={pagando !== null} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
         {pagando === 3 ? "..." : `3 días · $${BOOST_PRECIOS[3]}`}
       </button>
-      <button onClick={() => destacar(7)} disabled={pagando !== null} style={{ background: COLORS.gold, color: COLORS.bg }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+      <button onClick={() => destacar(7)} disabled={pagando !== null} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
         {pagando === 7 ? "..." : `7 días · $${BOOST_PRECIOS[7]}`}
       </button>
       <button onClick={() => setAbierto(false)} style={{ color: COLORS.muted }} className="text-xs px-1">✕</button>
@@ -278,9 +280,9 @@ function Loading({ label }) {
 
 function ErrorBox({ message }) {
   return (
-    <div style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}66`, background: `${COLORS.magenta}11` }}
+    <div style={{ color: COLORS.text, border: `1px solid ${COLORS.azulPalido}88`, background: `${COLORS.azul}22` }}
       className="rounded-lg p-4 flex items-center gap-2 text-sm">
-      <AlertCircle size={18} /> {message}
+      <AlertCircle size={18} color={COLORS.azulPalido} /> {message}
     </div>
   );
 }
@@ -337,7 +339,7 @@ function AccountModal({ onClose, onAuthed }) {
   return (
     <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
-        style={{ background: COLORS.surface, border: `1px solid ${COLORS.violet}66`, boxShadow: `0 0 40px ${COLORS.violet}33` }}
+        style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 40px ${COLORS.azulMedio}33` }}
         className="w-full max-w-md rounded-2xl p-6 relative">
         <button onClick={onClose} style={{ color: COLORS.muted }} className="absolute top-4 right-4"><X size={20} /></button>
 
@@ -347,16 +349,16 @@ function AccountModal({ onClose, onAuthed }) {
             <p style={{ color: COLORS.muted }} className="text-sm mb-5">Crea una cuenta o inicia sesión.</p>
             <div className="grid gap-3">
               <button onClick={() => { setAccountType("tienda"); setMode("signupForm"); }}
-                style={{ background: COLORS.surface2, border: `1px solid ${COLORS.magenta}` }} className="rounded-xl p-4 text-left flex items-center gap-3">
-                <Store size={22} color={COLORS.magenta} />
+                style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azul}` }} className="rounded-xl p-4 text-left flex items-center gap-3">
+                <Store size={22} color={COLORS.azulPalido} />
                 <div><p className="font-semibold">Crear cuenta de tienda</p></div>
               </button>
               <button onClick={() => { setAccountType("individual"); setMode("signupForm"); }}
-                style={{ background: COLORS.surface2, border: `1px solid ${COLORS.cyan}` }} className="rounded-xl p-4 text-left flex items-center gap-3">
-                <User size={22} color={COLORS.cyan} />
+                style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulClaro}` }} className="rounded-xl p-4 text-left flex items-center gap-3">
+                <User size={22} color={COLORS.azulClaro} />
                 <div><p className="font-semibold">Crear cuenta individual</p></div>
               </button>
-              <button onClick={() => setMode("login")} style={{ color: COLORS.gold }} className="text-sm mt-2">
+              <button onClick={() => setMode("login")} style={{ color: COLORS.azulPalido }} className="text-sm mt-2">
                 Ya tengo cuenta, iniciar sesión
               </button>
             </div>
@@ -365,7 +367,7 @@ function AccountModal({ onClose, onAuthed }) {
 
         {mode === "signupForm" && (
           <div className="grid gap-3">
-            <Badge color={accountType === "tienda" ? COLORS.magenta : COLORS.cyan}>
+            <Badge color={accountType === "tienda" ? COLORS.azulPalido : COLORS.azulClaro}>
               {accountType === "tienda" ? "Cuenta de tienda" : "Cuenta individual"}
             </Badge>
             <input placeholder={accountType === "tienda" ? "Nombre de la tienda" : "Nombre de usuario"} value={nombre} onChange={(e) => setNombre(e.target.value)}
@@ -383,9 +385,9 @@ function AccountModal({ onClose, onAuthed }) {
               </>
             )}
             {error && <ErrorBox message={error} />}
-            {info && <p style={{ color: COLORS.gold }} className="text-xs">{info}</p>}
+            {info && <p style={{ color: COLORS.azulPalido }} className="text-xs">{info}</p>}
             <button onClick={handleSignUp} disabled={loading || !email || !password || !nombre}
-              style={{ background: accountType === "tienda" ? COLORS.magenta : COLORS.cyan, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
+              style={{ background: accountType === "tienda" ? COLORS.azulPalido : COLORS.azulClaro, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
               className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
               {loading && <Loader2 size={16} className="animate-spin" />} Crear cuenta
             </button>
@@ -402,7 +404,7 @@ function AccountModal({ onClose, onAuthed }) {
               style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
             {error && <ErrorBox message={error} />}
             <button onClick={handleLogin} disabled={loading || !email || !password}
-              style={{ background: COLORS.gold, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
+              style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
               className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
               {loading && <Loader2 size={16} className="animate-spin" />} Entrar
             </button>
@@ -486,7 +488,7 @@ function CardPicker({ onSelect }) {
       />
       {loadingDetail && <p style={{ color: COLORS.muted }} className="text-xs mt-1">Cargando datos exactos de la carta...</p>}
       {open && !loadingDetail && q.trim().length >= 3 && (
-        <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.violet}66` }}
+        <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66` }}
           className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg shadow-xl">
           {loading && <p style={{ color: COLORS.muted }} className="text-xs p-3">Buscando en el catálogo oficial...</p>}
           {!loading && results.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs p-3">Sin resultados. Prueba con otro nombre.</p>}
@@ -557,7 +559,7 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
   return (
     <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
-        style={{ background: COLORS.surface, border: `1px solid ${COLORS.cyan}66`, boxShadow: `0 0 40px ${COLORS.cyan}33` }}
+        style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}66`, boxShadow: `0 0 40px ${COLORS.azulClaro}33` }}
         className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col">
         <div style={{ borderBottom: `1px solid ${COLORS.surface2}` }} className="flex items-center justify-between p-4 gap-2">
           <div className="min-w-0">
@@ -574,8 +576,8 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
             <div key={m.id}
               style={{
                 alignSelf: m.de_perfil_id === uid ? "flex-end" : "flex-start",
-                background: m.de_perfil_id === uid ? `${COLORS.magenta}33` : COLORS.surface2,
-                border: `1px solid ${m.de_perfil_id === uid ? COLORS.magenta : COLORS.surface2}`,
+                background: m.de_perfil_id === uid ? `${COLORS.azul}33` : COLORS.surface2,
+                border: `1px solid ${m.de_perfil_id === uid ? COLORS.azul : COLORS.surface2}`,
               }}
               className="px-3 py-2 rounded-lg text-sm max-w-[80%]">
               {m.texto}
@@ -587,7 +589,7 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
           <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSend()}
             placeholder="Escribe un mensaje..." style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
             className="flex-1 rounded-lg px-3 py-2 text-sm outline-none" />
-          <button onClick={handleSend} disabled={sending} style={{ background: COLORS.cyan, color: COLORS.bg }} className="rounded-lg p-2">
+          <button onClick={handleSend} disabled={sending} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg p-2">
             <Send size={16} />
           </button>
         </div>
@@ -604,7 +606,7 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
               )}
               {otherFacebook && (
                 <a href={otherFacebook} target="_blank" rel="noreferrer"
-                  style={{ border: `1px solid ${COLORS.violet}88`, color: COLORS.violet }} className="flex-1 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1">
+                  style={{ border: `1px solid ${COLORS.azulMedio}88`, color: COLORS.azulMedio }} className="flex-1 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1">
                   Facebook <ExternalLink size={12} />
                 </a>
               )}
@@ -679,7 +681,7 @@ function SealedPicker({ onSelect }) {
             className="rounded-lg px-2 py-2 text-sm w-full"
           />
           {open && (
-            <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.violet}66` }}
+            <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66` }}
               className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg shadow-xl">
               {loadingProductos && <p style={{ color: COLORS.muted }} className="text-xs p-3">Cargando productos de este set...</p>}
               {!loadingProductos && filtrados.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs p-3">Sin resultados en este set.</p>}
@@ -712,7 +714,7 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated }) {
     return (
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
         <p style={{ color: COLORS.muted }} className="text-sm">🔒 Enlaces directos a Instagram y Google Maps disponibles desde Super Ball.</p>
-        <button onClick={onIrAPlanes} style={{ color: COLORS.cyan, border: `1px solid ${COLORS.cyan}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">Ver planes</button>
+        <button onClick={onIrAPlanes} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">Ver planes</button>
       </div>
     );
   }
@@ -727,17 +729,17 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated }) {
   };
 
   return (
-    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.cyan}55` }} className="rounded-xl p-4 mb-6 grid gap-2">
-      <p style={{ color: COLORS.cyan }} className="text-sm font-semibold uppercase">Tus redes</p>
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-xl p-4 mb-6 grid gap-2">
+      <p style={{ color: COLORS.azulClaro }} className="text-sm font-semibold uppercase">Tus redes</p>
       {error && <ErrorBox message={error} />}
       <div className="grid sm:grid-cols-2 gap-2">
         <input placeholder="Enlace de Instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
         <input placeholder="Enlace de Google Maps" value={maps} onChange={(e) => setMaps(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
       </div>
-      <button onClick={guardar} disabled={saving} style={{ background: COLORS.cyan, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
+      <button onClick={guardar} disabled={saving} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
         {saving ? "Guardando..." : "Guardar"}
       </button>
-      {ok && <p style={{ color: COLORS.gold }} className="text-xs">Guardado.</p>}
+      {ok && <p style={{ color: COLORS.azulPalido }} className="text-xs">Guardado.</p>}
     </div>
   );
 }
@@ -813,19 +815,19 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         {publicaciones.length} / {planDe(perfil).limiteCartas === Infinity ? "∞" : planDe(perfil).limiteCartas} publicaciones usadas
       </p>
       {alLimite && (
-        <div style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55` }} className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
-          <p style={{ color: COLORS.gold }} className="text-sm">Alcanzaste el límite de tu plan. Mejora a Master Ball para publicaciones ilimitadas.</p>
-          <button onClick={onIrAPlanes} style={{ background: COLORS.gold, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
+        <div style={{ background: `${COLORS.azulPalido}11`, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
+          <p style={{ color: COLORS.azulPalido }} className="text-sm">Alcanzaste el límite de tu plan. Mejora a Master Ball para publicaciones ilimitadas.</p>
+          <button onClick={onIrAPlanes} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
         </div>
       )}
 
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid gap-3">
         <div className="flex gap-2">
           <button type="button" onClick={() => { setTipo("carta"); setNueva(vacio); }}
-            style={{ background: tipo === "carta" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "carta" ? COLORS.gold : COLORS.surface2}`, color: tipo === "carta" ? COLORS.gold : COLORS.muted }}
+            style={{ background: tipo === "carta" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "carta" ? COLORS.azulPalido : COLORS.surface2}`, color: tipo === "carta" ? COLORS.azulPalido : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Carta suelta</button>
           <button type="button" onClick={() => { setTipo("sellado"); setNueva(vacio); }}
-            style={{ background: tipo === "sellado" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "sellado" ? COLORS.cyan : COLORS.surface2}`, color: tipo === "sellado" ? COLORS.cyan : COLORS.muted }}
+            style={{ background: tipo === "sellado" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "sellado" ? COLORS.azulClaro : COLORS.surface2}`, color: tipo === "sellado" ? COLORS.azulClaro : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Producto sellado</button>
         </div>
 
@@ -841,8 +843,8 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
                   <div className="flex items-center gap-3 mt-2">
                     {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                     <div>
-                      <Badge color={COLORS.gold}>{nueva.carta}</Badge>
-                      {nueva.precio_ref_mxn && <p style={{ color: COLORS.cyan }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                      <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
+                      {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
                       <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                     </div>
                   </div>
@@ -864,8 +866,8 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           <div className="flex items-center gap-3">
             {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
             <div>
-              <Badge color={COLORS.cyan}>{nueva.carta}</Badge>
-              {nueva.precio_ref_mxn && <p style={{ color: COLORS.gold }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+              <Badge color={COLORS.azulClaro}>{nueva.carta}</Badge>
+              {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
               <button type="button" onClick={() => setNueva({ ...nueva, carta: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
             </div>
           </div>
@@ -874,29 +876,29 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         <div className="grid sm:grid-cols-3 gap-2">
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregar} disabled={saving || alLimite} style={{ background: COLORS.magenta, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={agregar} disabled={saving || alLimite} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
           </button>
         </div>
       </div>
 
-      <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">Tus publicaciones</h3>
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Tus publicaciones</h3>
       <div className="grid gap-2">
         {publicaciones.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has publicado nada en el mercado.</p>}
         {publicaciones.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.gold + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
             {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
-                <Badge color={item.tipo === "sellado" ? COLORS.cyan : COLORS.gold}>{item.tipo === "sellado" ? "Sellado" : "Carta"}</Badge>
+                <Badge color={item.tipo === "sellado" ? COLORS.azulClaro : COLORS.azulPalido}>{item.tipo === "sellado" ? "Sellado" : "Carta"}</Badge>
                 <BoostBadge item={item} />
               </div>
               <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} {item.condicion ? `· ${item.condicion}` : ""} · {item.zona}</p>
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
-            <button onClick={() => borrar(item.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
+            <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
       </div>
@@ -965,7 +967,7 @@ function AdminPanel({ session }) {
                   {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                 </select>
                 <button onClick={() => vincular(t.id)} disabled={!seleccion[t.id] || vinculando === t.id}
-                  style={{ background: COLORS.gold, color: COLORS.bg, opacity: seleccion[t.id] ? 1 : 0.5 }}
+                  style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: seleccion[t.id] ? 1 : 0.5 }}
                   className="rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap">
                   {vinculando === t.id ? "Vinculando..." : "Vincular"}
                 </button>
@@ -1042,10 +1044,10 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
   };
 
   return (
-    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.magenta}66` }} className="rounded-xl p-4 mb-6 grid gap-3">
-      <p style={{ color: COLORS.magenta }} className="text-sm font-semibold uppercase">🔴 Importador masivo (Ente Ball)</p>
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-6 grid gap-3">
+      <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold uppercase">🔴 Importador masivo (Ente Ball)</p>
       {error && <ErrorBox message={error} />}
-      {resultado && <p style={{ color: COLORS.gold }} className="text-xs">{resultado}</p>}
+      {resultado && <p style={{ color: COLORS.azulPalido }} className="text-xs">{resultado}</p>}
 
       <textarea
         placeholder={"Pega tu lista, una carta por línea:\nCharizard ex, SV 054/198, NM, 350, 2\nPikachu VMAX, SWSH 044, LP, 180, 1"}
@@ -1054,10 +1056,10 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
       />
       <div className="flex gap-2 flex-wrap items-center">
         <button onClick={() => importar(filasDeTexto())} disabled={importando || !texto.trim()}
-          style={{ background: COLORS.magenta, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+          style={{ background: COLORS.azul, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold">
           {importando ? "Importando..." : "Importar lista de texto"}
         </button>
-        <label style={{ border: `1px solid ${COLORS.magenta}66`, color: COLORS.magenta }} className="rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer">
+        <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer">
           Subir CSV / Excel
           <input type="file" accept=".csv,.xlsx,.xls" onChange={handleArchivo} className="hidden" disabled={importando} />
         </label>
@@ -1169,8 +1171,8 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
 
   if (!tienda) {
     return (
-      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.magenta}66` }} className="rounded-xl p-6 text-center">
-        <Store size={32} color={COLORS.magenta} className="mx-auto mb-3" />
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-6 text-center">
+        <Store size={32} color={COLORS.azulPalido} className="mx-auto mb-3" />
         <p className="font-semibold mb-1">Tu cuenta todavía no está vinculada a una tienda</p>
         <p style={{ color: COLORS.muted }} className="text-sm">
           Pídele al administrador que conecte tu cuenta con tu tienda en el directorio. Necesita tu correo o el ID de tu cuenta ({session.user.id}).
@@ -1194,9 +1196,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         {totalActivos} / {planDe(perfil).limiteCartas === Infinity ? "∞" : planDe(perfil).limiteCartas} publicaciones usadas
       </p>
       {alLimite && (
-        <div style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55` }} className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
-          <p style={{ color: COLORS.gold }} className="text-sm">Alcanzaste el límite de tu plan. Mejora a Master Ball o Ente Ball para inventario ilimitado.</p>
-          <button onClick={onIrAPlanes} style={{ background: COLORS.gold, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
+        <div style={{ background: `${COLORS.azulPalido}11`, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
+          <p style={{ color: COLORS.azulPalido }} className="text-sm">Alcanzaste el límite de tu plan. Mejora a Master Ball o Ente Ball para inventario ilimitado.</p>
+          <button onClick={onIrAPlanes} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
         </div>
       )}
 
@@ -1204,7 +1206,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         <ImportadorMasivo session={session} tiendaId={tienda.id} onImportado={cargar} />
       )}
 
-      <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-6">
         <select value={nuevaCarta.tcg} onChange={(e) => setNuevaCarta({ ...nuevaCarta, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1">
           <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
@@ -1225,9 +1227,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
               <div className="flex items-center gap-3 mt-2">
                 {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
                 <div>
-                  <Badge color={COLORS.gold}>{nuevaCarta.carta}</Badge>
+                  <Badge color={COLORS.azulPalido}>{nuevaCarta.carta}</Badge>
                   {nuevaCarta.precio_ref_mxn && (
-                    <p style={{ color: COLORS.cyan }} className="text-xs mt-1">
+                    <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">
                       Precio de referencia en mercado: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
                     </p>
                   )}
@@ -1245,14 +1247,14 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
 
         <input placeholder="Condición" value={nuevaCarta.condicion} onChange={(e) => setNuevaCarta({ ...nuevaCarta, condicion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio" type="number" value={nuevaCarta.precio} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
-        <button onClick={agregarCarta} disabled={savingCarta || alLimite} style={{ background: COLORS.gold, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
+        <button onClick={agregarCarta} disabled={savingCarta || alLimite} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
           {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
       </div>
       <div className="grid gap-2 mb-8">
         {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
         {inventario.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.gold + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
             {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               <div className="flex items-center gap-2 flex-wrap">
@@ -1266,12 +1268,12 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarCarta(item.id, "cantidad", e.target.value)}
               style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
             <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
-            <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
+            <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
       </div>
 
-      <h3 style={{ color: COLORS.cyan }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
+      <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2">
         {!selladoManual ? (
           <>
@@ -1287,9 +1289,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
               <div className="flex items-center gap-3">
                 {nuevoSellado.imagen_url && <img src={nuevoSellado.imagen_url} alt={nuevoSellado.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                 <div>
-                  <Badge color={COLORS.cyan}>{nuevoSellado.producto}</Badge>
+                  <Badge color={COLORS.azulClaro}>{nuevoSellado.producto}</Badge>
                   {nuevoSellado.precio_ref_mxn && (
-                    <p style={{ color: COLORS.gold }} className="text-xs mt-1">Precio de referencia: ~${nuevoSellado.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>
+                    <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia: ~${nuevoSellado.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>
                   )}
                   <button type="button" onClick={() => setNuevoSellado({ ...nuevoSellado, producto: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                 </div>
@@ -1309,7 +1311,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         )}
         <div className="grid sm:grid-cols-2 gap-2">
           <input placeholder="Precio" type="number" value={nuevoSellado.precio} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregarSellado} disabled={savingSellado || alLimite} style={{ background: COLORS.cyan, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={agregarSellado} disabled={savingSellado || alLimite} style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : savingSellado ? "Guardando..." : "+ Agregar"}
           </button>
         </div>
@@ -1317,7 +1319,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       <div className="grid gap-2">
         {sellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado producto sellado.</p>}
         {sellado.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.gold + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
             {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 44, height: 62, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px] flex items-center gap-2 flex-wrap">
               <p className="font-medium text-sm">{item.producto}</p>
@@ -1326,7 +1328,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarSellado(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarSellado(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-16" />
             <BoostButton session={session} tabla="sellado_tienda" item={item} onBoosted={cargar} />
-            <button onClick={() => borrarSellado(item.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
+            <button onClick={() => borrarSellado(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
       </div>
@@ -1341,7 +1343,7 @@ function UpsellCard({ requiere, plan, children, onIrAPlanes }) {
         <RankIcon plan={plan} emoji={requiere.emoji} size={20} /> Esta función es de <span style={{ color: requiere.color }} className="font-semibold">{requiere.nombre}</span> en adelante.
       </p>
       {children && <p style={{ color: COLORS.muted }} className="text-sm mb-4">{children}</p>}
-      <button onClick={onIrAPlanes} style={{ background: requiere.color, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+      <button onClick={onIrAPlanes} style={{ background: requiere.color, color: textoSobre(requiere.color) }} className="rounded-lg px-4 py-2 text-sm font-semibold">
         Ver planes
       </button>
     </div>
@@ -1424,9 +1426,9 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
       {!pushOk && (
-        <div style={{ background: `${COLORS.violet}11`, border: `1px solid ${COLORS.violet}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <div style={{ background: `${COLORS.azulMedio}11`, border: `1px solid ${COLORS.azulMedio}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
           <p className="text-sm">Activa las notificaciones push en este navegador para recibir tus alertas.</p>
-          <button onClick={handleActivarPush} disabled={activandoPush} style={{ background: COLORS.violet, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+          <button onClick={handleActivarPush} disabled={activandoPush} style={{ background: COLORS.azulMedio, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
             {activandoPush ? "Activando..." : "Activar notificaciones"}
           </button>
         </div>
@@ -1435,10 +1437,10 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid gap-3">
         <div className="flex gap-2">
           <button type="button" onClick={() => { setTipo("carta"); setNueva(vacio); }}
-            style={{ background: tipo === "carta" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "carta" ? COLORS.gold : COLORS.surface2}`, color: tipo === "carta" ? COLORS.gold : COLORS.muted }}
+            style={{ background: tipo === "carta" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "carta" ? COLORS.azulPalido : COLORS.surface2}`, color: tipo === "carta" ? COLORS.azulPalido : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Carta suelta</button>
           <button type="button" onClick={() => { setTipo("sellado"); setNueva(vacio); }}
-            style={{ background: tipo === "sellado" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "sellado" ? COLORS.cyan : COLORS.surface2}`, color: tipo === "sellado" ? COLORS.cyan : COLORS.muted }}
+            style={{ background: tipo === "sellado" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "sellado" ? COLORS.azulClaro : COLORS.surface2}`, color: tipo === "sellado" ? COLORS.azulClaro : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Producto sellado</button>
         </div>
 
@@ -1454,8 +1456,8 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
                   <div className="flex items-center gap-3 mt-2">
                     {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                     <div>
-                      <Badge color={COLORS.gold}>{nueva.carta}</Badge>
-                      {nueva.precio_ref_mxn && <p style={{ color: COLORS.cyan }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                      <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
+                      {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
                       <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                     </div>
                   </div>
@@ -1472,8 +1474,8 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
               <div className="flex items-center gap-3 mt-2">
                 {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                 <div>
-                  <Badge color={COLORS.cyan}>{nueva.carta}</Badge>
-                  {nueva.precio_ref_mxn && <p style={{ color: COLORS.gold }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                  <Badge color={COLORS.azulClaro}>{nueva.carta}</Badge>
+                  {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
                   <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                 </div>
               </div>
@@ -1485,7 +1487,7 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
           <input placeholder="Precio máximo (MXN)" type="number" value={nueva.precio_max} onChange={(e) => setNueva({ ...nueva, precio_max: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Zona (opcional)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
         </div>
-        <button onClick={agregar} disabled={saving || !nueva.carta.trim()} style={{ background: COLORS.violet, color: COLORS.bg, opacity: !nueva.carta.trim() ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+        <button onClick={agregar} disabled={saving || !nueva.carta.trim()} style={{ background: COLORS.azulMedio, color: COLORS.text, opacity: !nueva.carta.trim() ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
           {saving ? "Guardando..." : "+ Crear alerta"}
         </button>
       </div>
@@ -1494,21 +1496,21 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
         <div className="grid gap-2">
           {alertas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no tienes alertas configuradas.</p>}
           {alertas.map((a) => (
-            <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${a.activa ? COLORS.violet + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+            <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${a.activa ? COLORS.azulMedio + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
               {a.imagen_url && <img src={a.imagen_url} alt={a.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
               <div className="flex-1 min-w-[140px]">
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-sm">{a.carta}</p>
-                  {a.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}
+                  {a.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
                 </div>
                 <p style={{ color: COLORS.muted }} className="text-xs">
                   {a.precio_max ? `hasta $${Number(a.precio_max).toLocaleString("es-MX")} MXN` : "cualquier precio"} {a.zona ? `· ${a.zona}` : ""}
                 </p>
               </div>
-              <button onClick={() => toggle(a.id, a.activa)} style={{ color: a.activa ? COLORS.violet : COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="text-xs px-3 py-1.5 rounded-lg">
+              <button onClick={() => toggle(a.id, a.activa)} style={{ color: a.activa ? COLORS.azulMedio : COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="text-xs px-3 py-1.5 rounded-lg">
                 {a.activa ? "Activa" : "Pausada"}
               </button>
-              <button onClick={() => borrar(a.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
+              <button onClick={() => borrar(a.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
             </div>
           ))}
         </div>
@@ -1570,9 +1572,9 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
       {renovacionActiva && (
-        <div style={{ background: `${COLORS.violet}11`, border: `1px solid ${COLORS.violet}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <div style={{ background: `${COLORS.azulMedio}11`, border: `1px solid ${COLORS.azulMedio}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
           <p className="text-sm">🔁 Tu plan se renueva automáticamente cada mes.</p>
-          <button onClick={cancelarRenovacion} disabled={cancelando} style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">
+          <button onClick={cancelarRenovacion} disabled={cancelando} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">
             {cancelando ? "Cancelando..." : "Cancelar renovación automática"}
           </button>
         </div>
@@ -1605,7 +1607,7 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
                 <p style={{ color: info.color }} className="text-xs text-center">Ya tienes este plan activo</p>
               ) : (
                 <button onClick={() => suscribirse(key)} disabled={suscribiendo === key}
-                  style={{ background: info.color, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+                  style={{ background: info.color, color: textoSobre(info.color) }} className="rounded-lg py-2 text-sm font-semibold">
                   {suscribiendo === key ? "Redirigiendo a Mercado Pago..." : "Suscribirme"}
                 </button>
               )}
@@ -1642,7 +1644,7 @@ function MisPagosPanel({ session }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const colorEstado = (status) => (ESTADOS_OK.includes(status) ? COLORS.cyan : status === "pending" ? COLORS.gold : COLORS.magenta);
+  const colorEstado = (status) => (ESTADOS_OK.includes(status) ? COLORS.azulClaro : status === "pending" ? COLORS.azulPalido : COLORS.azul);
   const textoEstado = (status) => (ESTADOS_OK.includes(status) ? "Aprobado" : status === "pending" ? "Pendiente" : "Rechazado");
 
   return (
@@ -1656,7 +1658,7 @@ function MisPagosPanel({ session }) {
           {items.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no tienes pagos registrados.</p>}
           {items.map((item) => (
             <div key={`${item._tipo}-${item.id}`} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
-              <Badge color={item._tipo === "plan" ? COLORS.violet : COLORS.gold}>{item._tipo === "plan" ? "Plan" : "Boost"}</Badge>
+              <Badge color={item._tipo === "plan" ? COLORS.azulMedio : COLORS.azulPalido}>{item._tipo === "plan" ? "Plan" : "Boost"}</Badge>
               <div className="flex-1 min-w-[140px]">
                 <p className="font-medium text-sm">
                   {item._tipo === "plan" ? (PLAN_INFO[item.plan]?.nombre || item.plan) : `${NOMBRES_TABLA_BOOST[item.tabla] || item.tabla} · ${item.dias} días`}
@@ -1894,9 +1896,9 @@ export default function EncuentraCartas() {
               <img src="/branding/logo.png" alt="Encuentra Cartas" onError={() => setLogoError(true)} style={{ height: 40, width: "auto" }} />
             ) : (
               <>
-                <Sparkles size={22} color={COLORS.gold} />
+                <Sparkles size={22} color={COLORS.azulPalido} />
                 <h1 style={{ fontFamily: "'Cinzel', serif" }} className="text-2xl sm:text-3xl font-bold">
-                  Encuentra <span style={{ color: COLORS.cyan }}>Cartas</span>
+                  Encuentra <span style={{ color: COLORS.azulClaro }}>Cartas</span>
                 </h1>
               </>
             )}
@@ -1907,7 +1909,7 @@ export default function EncuentraCartas() {
               const active = view === item.id;
               return (
                 <button key={item.id} onClick={() => setView(item.id)}
-                  style={{ background: active ? COLORS.surface2 : "transparent", border: `1px solid ${active ? COLORS.magenta : COLORS.surface2}`, color: active ? COLORS.magenta : COLORS.muted }}
+                  style={{ background: active ? COLORS.surface2 : "transparent", border: `1px solid ${active ? COLORS.azulPalido : COLORS.surface2}`, color: active ? COLORS.azulPalido : COLORS.muted }}
                   className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
                   <Icon size={15} /> <span className="hidden sm:inline">{item.label}</span>
                 </button>
@@ -1915,14 +1917,14 @@ export default function EncuentraCartas() {
             })}
             {session ? (
               <div className="flex items-center gap-2">
-                <Badge color={COLORS.gold}>{perfil?.nombre || "Mi cuenta"}</Badge>
+                <Badge color={COLORS.azulPalido}>{perfil?.nombre || "Mi cuenta"}</Badge>
                 <PlanBadge perfil={perfil} />
                 <button onClick={handleLogout} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="px-3 py-2 rounded-lg text-xs">
                   Cerrar sesión
                 </button>
               </div>
             ) : (
-              <button onClick={() => setShowAccountModal(true)} style={{ background: COLORS.gold, color: COLORS.bg }} className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
+              <button onClick={() => setShowAccountModal(true)} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
                 <User size={15} /> Mi cuenta
               </button>
             )}
@@ -1944,7 +1946,7 @@ export default function EncuentraCartas() {
       )}
 
       <main className="max-w-5xl mx-auto px-4 sm:px-8 py-10">
-        <div style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, background: `${COLORS.gold}11` }}
+        <div style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55`, background: `${COLORS.azulPalido}11` }}
           className="rounded-lg px-4 py-2 text-xs mb-6 text-center">
           🔌 Conectado en vivo a tu base de datos real de Supabase
         </div>
@@ -1953,9 +1955,9 @@ export default function EncuentraCartas() {
         {view === "search" && (
           <div>
             <div className="text-center mb-8">
-              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.violet}`, boxShadow: `0 0 24px ${COLORS.violet}44` }}
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}`, boxShadow: `0 0 24px ${COLORS.azulMedio}44` }}
                 className="max-w-xl mx-auto rounded-2xl p-2 flex items-center gap-2">
-                <Search size={20} color={COLORS.violet} className="ml-2 shrink-0" />
+                <Search size={20} color={COLORS.azulMedio} className="ml-2 shrink-0" />
                 <input value={query} onChange={(e) => setQuery(e.target.value)}
                   placeholder="Busca una carta..." style={{ color: COLORS.text }}
                   className="bg-transparent outline-none w-full py-2 text-lg" />
@@ -1988,18 +1990,18 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.gold}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
                       onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`)}
                       disabled={!r.tiendas?.perfil_id}
-                      style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
+                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
                       <MessageCircle size={12} /> Contactar
                     </button>
@@ -2012,17 +2014,17 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.cyan}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
                       onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook)}
-                      style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55` }}
+                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
                       <MessageCircle size={12} /> Contactar
                     </button>
@@ -2035,17 +2037,17 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.producto} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.gold}>Tienda</Badge><Badge color={COLORS.violet}>Sellado</Badge><p className="font-semibold text-lg">{r.producto}</p><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><Badge color={COLORS.azulMedio}>Sellado</Badge><p className="font-semibold text-lg">{r.producto}</p><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
                       onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`)}
                       disabled={!r.tiendas?.perfil_id}
-                      style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
+                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
                       <MessageCircle size={12} /> Contactar
                     </button>
@@ -2099,16 +2101,16 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex items-center gap-2 flex-wrap"><p className="font-semibold">{r.carta}</p>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex items-center gap-2 flex-wrap"><p className="font-semibold">{r.carta}</p>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre} · {r.zona}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p style={{ color: COLORS.gold }} className="font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    <p style={{ color: COLORS.azulPalido }} className="font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
                       onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook)}
-                      style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55` }}
+                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
                       <MessageCircle size={12} /> Contactar
                     </button>
@@ -2132,7 +2134,7 @@ export default function EncuentraCartas() {
             <div className="grid gap-4">
               {news.map((n) => (
                 <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-5">
-                  <Badge color={n.tipo === "anuncio" ? COLORS.gold : COLORS.violet}>{n.tipo}</Badge>
+                  <Badge color={n.tipo === "anuncio" ? COLORS.azulPalido : COLORS.azulMedio}>{n.tipo}</Badge>
                   <p className="font-semibold text-lg mt-2">{n.titulo}</p>
                   <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
                 </div>
@@ -2154,19 +2156,19 @@ export default function EncuentraCartas() {
 
             {!loadingInbox && conversaciones.length > 0 && (
               <>
-                <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">Recientes</h3>
+                <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Recientes</h3>
                 <div className="grid gap-3 mb-8">
                   {conversaciones.slice(0, 3).map((c) => (
                     <button
                       key={`reciente-${c.otherId}::${c.contexto}`}
                       onClick={() => setChatContext(c)}
-                      style={{ background: COLORS.surface, border: `1px solid ${COLORS.gold}55` }}
+                      style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulPalido}55` }}
                       className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110 overflow-hidden"
                     >
                       <div className="min-w-0 overflow-hidden">
                         <div className="flex items-center gap-2 mb-1 min-w-0">
                           <p className="font-semibold shrink-0">{c.otherNombre}</p>
-                          <Badge color={COLORS.cyan}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
+                          <Badge color={COLORS.azulClaro}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
                         </div>
                         <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
                       </div>
@@ -2177,7 +2179,7 @@ export default function EncuentraCartas() {
                   ))}
                 </div>
 
-                <h3 style={{ color: COLORS.cyan }} className="font-semibold mb-3 text-sm uppercase">Todos tus chats</h3>
+                <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Todos tus chats</h3>
                 <div className="grid gap-3">
                   {conversaciones.map((c) => (
                     <button
@@ -2189,7 +2191,7 @@ export default function EncuentraCartas() {
                       <div className="min-w-0 overflow-hidden">
                         <div className="flex items-center gap-2 mb-1 min-w-0">
                           <p className="font-semibold shrink-0">{c.otherNombre}</p>
-                          <Badge color={COLORS.cyan}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
+                          <Badge color={COLORS.azulClaro}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
                         </div>
                         <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
                       </div>
@@ -2243,13 +2245,13 @@ export default function EncuentraCartas() {
                 <div className="flex gap-2 mt-3 flex-wrap">
                   {selectedStore.perfiles?.instagram && (
                     <a href={selectedStore.perfiles.instagram} target="_blank" rel="noreferrer"
-                      style={{ border: `1px solid ${COLORS.violet}88`, color: COLORS.violet }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                      style={{ border: `1px solid ${COLORS.azulMedio}88`, color: COLORS.azulMedio }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
                       Instagram <ExternalLink size={12} />
                     </a>
                   )}
                   {selectedStore.perfiles?.google_maps_url && (
                     <a href={selectedStore.perfiles.google_maps_url} target="_blank" rel="noreferrer"
-                      style={{ border: `1px solid ${COLORS.cyan}88`, color: COLORS.cyan }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                      style={{ border: `1px solid ${COLORS.azulClaro}88`, color: COLORS.azulClaro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
                       <MapPin size={12} /> Google Maps
                     </a>
                   )}
@@ -2259,11 +2261,11 @@ export default function EncuentraCartas() {
 
             {loadingStoreDetail ? <Loading label="Cargando inventario..." /> : (
               <>
-                <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
+                <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
                 <div className="grid gap-3 mb-8">
                   {storeInventory.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Esta tienda todavía no ha subido inventario.</p>}
                   {storeInventory.map((item) => (
-                    <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.gold + "66" : COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
+                    <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
                       <div className="flex items-center gap-3">
                         {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                         <div>
@@ -2275,12 +2277,12 @@ export default function EncuentraCartas() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p style={{ color: COLORS.gold }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+                        <p style={{ color: COLORS.azulPalido }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                         <button
                           onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`)}
                           disabled={!selectedStore.perfil_id}
-                          style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
+                          style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
                           className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
                           <MessageCircle size={12} /> Contactar
                         </button>
@@ -2288,11 +2290,11 @@ export default function EncuentraCartas() {
                     </div>
                   ))}
                 </div>
-                <h3 style={{ color: COLORS.cyan }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
+                <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
                 <div className="grid gap-3">
                   {storeSellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin producto sellado registrado.</p>}
                   {storeSellado.map((item) => (
-                    <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.gold + "66" : COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
+                    <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
                       <div className="flex items-center gap-3">
                         {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                         <div className="flex items-center gap-2 flex-wrap">
@@ -2301,12 +2303,12 @@ export default function EncuentraCartas() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p style={{ color: COLORS.cyan }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+                        <p style={{ color: COLORS.azulClaro }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                         <button
                           onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`)}
                           disabled={!selectedStore.perfil_id}
-                          style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
+                          style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
                           className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
                           <MessageCircle size={12} /> Contactar
                         </button>
