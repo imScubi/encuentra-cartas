@@ -41,8 +41,8 @@ También corre (en el mismo SQL Editor, uno por uno, en orden):
 | `VAPID_PRIVATE_KEY` | te la doy en el resumen de este chat (no está en ningún archivo del repo) | cópiala directo a Vercel, no la subas a git |
 | `VAPID_SUBJECT` | `mailto:tu-correo@dominio.com` | cualquier correo de contacto |
 | `CRON_SECRET` | invéntala tú, ej. una contraseña larga random | Vercel la manda sola como header cuando corre el cron; protege `/api/cron/recordatorios` y `/api/cron/publicar-anuncios` de que cualquiera los llame |
-| `RESEND_API_KEY` | https://resend.com → crea una cuenta gratis → API Keys → Create API Key | opcional: si no la pones, la app sigue funcionando normal, solo no manda correos (el push sigue llegando igual) |
-| `RESEND_FROM` | opcional, ej. `Encuentra Cartas <onboarding@resend.dev>` | si no la pones, usa el remitente de pruebas de Resend (funciona sin verificar tu propio dominio, pero solo puede mandarte correo a ti mismo; para mandarle a cualquier usuario necesitas verificar un dominio en Resend y poner ese correo aquí) |
+| `GMAIL_USER` | el correo de Gmail que quieras usar de remitente | opcional: si no la pones, la app sigue funcionando normal, solo no manda correos (el push sigue llegando igual) |
+| `GMAIL_APP_PASSWORD` | https://myaccount.google.com/apppasswords (requiere verificación en dos pasos activada en esa cuenta) | es una "contraseña de aplicación" de 16 caracteres, **no** tu contraseña normal de Gmail |
 
 ## 3. Crear tu cuenta de Mercado Pago
 
@@ -156,14 +156,20 @@ resultados de búsqueda de tiendas.
 
 ## 11. Avisos por correo
 
-Además del push, ahora se manda un correo (vía Resend) cuando:
+Además del push, ahora se manda un correo (vía Gmail SMTP, gratis, sin
+necesitar dominio propio) cuando:
 - Aparece una carta/producto que coincide con una alerta de tu Wishlist.
 - Tu plan o tu destacado (Boost) está por vencer.
 
-Configura `RESEND_API_KEY` (sección 2) para activarlo — sin esa variable la
-app sigue funcionando exactamente igual, solo que no manda el correo (el
-push no se ve afectado). Los anuncios del administrador (sección 12) **no**
-mandan correo, solo push, tal como se pidió.
+Configura `GMAIL_USER` y `GMAIL_APP_PASSWORD` (sección 2) para activarlo —
+sin esas variables la app sigue funcionando exactamente igual, solo que no
+manda el correo (el push no se ve afectado). Los anuncios del administrador
+(sección 12) **no** mandan correo, solo push, tal como se pidió.
+
+Nota: Gmail limita a 500 correos salientes por día por cuenta — de sobra
+para el volumen actual. Si más adelante consigues un dominio propio, se
+puede migrar a un servicio como Resend para mandar volúmenes mayores con
+mejor entregabilidad.
 
 ## 12. Anuncios
 
