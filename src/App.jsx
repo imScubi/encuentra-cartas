@@ -1870,7 +1870,7 @@ export default function EncuentraCartas() {
     <div
       style={{
         backgroundColor: COLORS.bg,
-        backgroundImage: "url('/branding/fondo.jpg')",
+        backgroundImage: "url('/branding/fondo.png')",
         backgroundSize: "cover",
         backgroundPosition: "center",
         backgroundAttachment: "fixed",
