@@ -123,6 +123,80 @@ const planDe = (perfil) => {
 };
 const limiteAlcanzado = (perfil, total) => total >= planDe(perfil).limiteCartas;
 
+// ---- Boost: destacar una publicación por unos días ----
+const BOOST_PRECIOS = { 3: 15, 7: 29 };
+const estaDestacado = (item) => !!(item?.destacado_hasta && new Date(item.destacado_hasta) > new Date());
+const conBoostPrimero = (lista) => {
+  const destacados = lista.filter(estaDestacado);
+  const resto = lista.filter((x) => !estaDestacado(x));
+  return [...destacados, ...resto];
+};
+
+function BoostBadge({ item }) {
+  if (!estaDestacado(item)) return null;
+  return (
+    <span
+      title={`Destacado hasta ${new Date(item.destacado_hasta).toLocaleDateString("es-MX")}`}
+      style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.gold, boxShadow: `0 0 8px ${COLORS.gold}66` }}
+      className="inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap px-2 py-0.5 text-xs"
+    >
+      🚀 Destacado
+    </span>
+  );
+}
+
+function BoostButton({ session, tabla, item, onBoosted }) {
+  const [abierto, setAbierto] = useState(false);
+  const [pagando, setPagando] = useState(null);
+  const [error, setError] = useState(null);
+
+  if (estaDestacado(item)) {
+    return (
+      <p style={{ color: COLORS.gold }} className="text-xs">
+        🚀 Destacado hasta {new Date(item.destacado_hasta).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+      </p>
+    );
+  }
+
+  const destacar = async (dias) => {
+    setPagando(dias); setError(null);
+    try {
+      const res = await fetch("/api/mercadopago/crear-boost", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ perfilId: session.user.id, tabla, listingId: item.id, dias, email: session.user.email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo iniciar el pago");
+      window.location.href = data.init_point;
+    } catch (e) {
+      setError(e.message);
+      setPagando(null);
+    }
+  };
+
+  if (!abierto) {
+    return (
+      <button onClick={() => setAbierto(true)} style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55` }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+        🚀 Destacar
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      {error && <span style={{ color: COLORS.magenta }} className="text-xs">{error}</span>}
+      <button onClick={() => destacar(3)} disabled={pagando !== null} style={{ background: COLORS.gold, color: COLORS.bg }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+        {pagando === 3 ? "..." : `3 días · $${BOOST_PRECIOS[3]}`}
+      </button>
+      <button onClick={() => destacar(7)} disabled={pagando !== null} style={{ background: COLORS.gold, color: COLORS.bg }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+        {pagando === 7 ? "..." : `7 días · $${BOOST_PRECIOS[7]}`}
+      </button>
+      <button onClick={() => setAbierto(false)} style={{ color: COLORS.muted }} className="text-xs px-1">✕</button>
+    </div>
+  );
+}
+
 function PlanBadge({ perfil, size = "sm" }) {
   const info = planDe(perfil);
   if (info === PLAN_INFO.pokeball) return null;
@@ -796,16 +870,18 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
       <div className="grid gap-2">
         {publicaciones.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has publicado nada en el mercado.</p>}
         {publicaciones.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.gold + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
             {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
                 <Badge color={item.tipo === "sellado" ? COLORS.cyan : COLORS.gold}>{item.tipo === "sellado" ? "Sellado" : "Carta"}</Badge>
+                <BoostBadge item={item} />
               </div>
               <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} {item.condicion ? `· ${item.condicion}` : ""} · {item.zona}</p>
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
+            <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
@@ -1162,16 +1238,20 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       <div className="grid gap-2 mb-8">
         {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
         {inventario.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.gold + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
             {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
-              <p className="font-medium text-sm">{item.carta}</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-medium text-sm">{item.carta}</p>
+                <BoostBadge item={item} />
+              </div>
               <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion}</p>
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarCarta(item.id, "precio", e.target.value)}
               style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarCarta(item.id, "cantidad", e.target.value)}
               style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
+            <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
             <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
@@ -1223,11 +1303,15 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       <div className="grid gap-2">
         {sellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado producto sellado.</p>}
         {sellado.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.gold + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
             {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 44, height: 62, objectFit: "contain" }} />}
-            <p className="flex-1 min-w-[140px] font-medium text-sm">{item.producto}</p>
+            <div className="flex-1 min-w-[140px] flex items-center gap-2 flex-wrap">
+              <p className="font-medium text-sm">{item.producto}</p>
+              <BoostBadge item={item} />
+            </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarSellado(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarSellado(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-16" />
+            <BoostButton session={session} tabla="sellado_tienda" item={item} onBoosted={cargar} />
             <button onClick={() => borrarSellado(item.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
@@ -1597,7 +1681,7 @@ export default function EncuentraCartas() {
         sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence)&carta=ilike.*${q}*&order=precio.asc`),
         sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence))&producto=ilike.*${q}*&order=precio.asc`),
       ])
-        .then(([inv, merc, sel]) => setSearchResults({ tiendas: inv, mercado: merc, sellado: sel }))
+        .then(([inv, merc, sel]) => setSearchResults({ tiendas: conBoostPrimero(inv), mercado: conBoostPrimero(merc), sellado: conBoostPrimero(sel) }))
         .catch((e) => { setSearchResults({ tiendas: [], mercado: [], sellado: [] }); setSearchError(e.message); })
         .finally(() => setSearching(false));
     }, 350); // pequeña espera para no saturar mientras escribes
@@ -1608,7 +1692,7 @@ export default function EncuentraCartas() {
   useEffect(() => {
     if (view === "market" && market.length === 0) {
       setLoadingMarket(true);
-      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence)&order=created_at.desc").then(setMarket).finally(() => setLoadingMarket(false));
+      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence)&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
     }
     if (view === "news" && news.length === 0) {
       setLoadingNews(true);
@@ -1662,7 +1746,7 @@ export default function EncuentraCartas() {
       sb(`inventario_tienda?select=*&tienda_id=eq.${store.id}`),
       sb(`sellado_tienda?select=*&tienda_id=eq.${store.id}`),
     ])
-      .then(([inv, sell]) => { setStoreInventory(inv); setStoreSellado(sell); })
+      .then(([inv, sell]) => { setStoreInventory(conBoostPrimero(inv)); setStoreSellado(conBoostPrimero(sell)); })
       .finally(() => setLoadingStoreDetail(false));
   };
 
@@ -1779,7 +1863,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.gold}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.tiendas?.perfiles} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.gold}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
                     </div>
@@ -1803,7 +1887,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.cyan}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.perfiles} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.cyan}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
                     </div>
@@ -1826,7 +1910,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.producto} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.gold}>Tienda</Badge><Badge color={COLORS.violet}>Sellado</Badge><p className="font-semibold text-lg">{r.producto}</p><PlanBadge perfil={r.tiendas?.perfiles} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.gold}>Tienda</Badge><Badge color={COLORS.violet}>Sellado</Badge><p className="font-semibold text-lg">{r.producto}</p><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
                     </div>
                   </div>
@@ -1890,7 +1974,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex items-center gap-2 flex-wrap"><p className="font-semibold">{r.carta}</p>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}<PlanBadge perfil={r.perfiles} /></div>
+                      <div className="flex items-center gap-2 flex-wrap"><p className="font-semibold">{r.carta}</p>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre} · {r.zona}</p>
                     </div>
                   </div>
@@ -2051,11 +2135,14 @@ export default function EncuentraCartas() {
                 <div className="grid gap-3 mb-8">
                   {storeInventory.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Esta tienda todavía no ha subido inventario.</p>}
                   {storeInventory.map((item) => (
-                    <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
+                    <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.gold + "66" : COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
                       <div className="flex items-center gap-3">
                         {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                         <div>
-                          <p className="font-medium">{item.carta}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium">{item.carta}</p>
+                            <BoostBadge item={item} />
+                          </div>
                           <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion} · {item.idioma}</p>
                         </div>
                       </div>
@@ -2077,10 +2164,13 @@ export default function EncuentraCartas() {
                 <div className="grid gap-3">
                   {storeSellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin producto sellado registrado.</p>}
                   {storeSellado.map((item) => (
-                    <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
+                    <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.gold + "66" : COLORS.surface2}` }} className="rounded-lg p-4 flex justify-between items-center flex-wrap gap-2">
                       <div className="flex items-center gap-3">
                         {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
-                        <p className="font-medium">{item.producto}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium">{item.producto}</p>
+                          <BoostBadge item={item} />
+                        </div>
                       </div>
                       <div className="text-right">
                         <p style={{ color: COLORS.cyan }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
