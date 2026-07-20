@@ -295,8 +295,34 @@ muestra los anuncios más recientes (con imagen si tienen) y una vitrina
 de lo último publicado, mezclando Mercado y tiendas, ordenado por fecha.
 No requiere ninguna migración nueva.
 
+## 21. Panel de Admin en pestañas + moderación
+
+Corre `supabase/migrations/017_admin_modera_publicaciones.sql`. El panel
+de **Admin** ahora está dividido en pestañas (Planes, Tiendas, Anuncios,
+Publicaciones, Errores) en vez de una sola página larga. Novedades:
+
+- **Tiendas**: además de vincular cuentas, ahora ves **todas** las
+  tiendas del directorio, con las que comparten nombre marcadas en rojo
+  ("posible duplicado") y un botón para borrarlas. Si una tienda tiene
+  cartas o producto sellado, bórralos primero desde "Publicaciones" (la
+  base de datos no deja borrar la tienda si todavía tiene cosas adentro).
+- **Publicaciones**: busca por nombre cualquier carta o producto — de
+  tiendas o del Mercado entre usuarios — y bórralo directamente. Las
+  publicaciones sin imagen se marcan en rojo para encontrarlas fácil.
+
+## 22. Subir tu propia foto cuando la carta no tiene imagen
+
+Corre `supabase/migrations/018_imagen_manual_cartas.sql` (crea el bucket
+de Storage `cartas`). El catálogo oficial que usamos (TCGdex) no siempre
+tiene imagen para cartas de arte especial, promos, etc. Ahora, junto a
+cada carta o producto ya publicado (en "Mi tienda" o "Vender en el
+Mercado"), hay un botón **"📷 Sin foto" / "Cambiar foto"** — sube tu
+propia foto y se actualiza al instante, sin depender de que el catálogo
+la tenga.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
 - Permitir editar un torneo ya publicado (hoy solo se puede borrar y crear uno nuevo) y adjuntarle una imagen.
 - Mapa de Google en el detalle del torneo (hoy solo muestra la dirección en texto).
+- Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).

@@ -233,6 +233,31 @@ async function subirImagenAnuncio(file, session) {
   return `${SUPABASE_URL}/storage/v1/object/public/anuncios/${path}`;
 }
 
+async function subirImagenCarta(file, session) {
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${session.user.id}/${Date.now()}.${ext}`;
+  const subir = (s) =>
+    fetch(`${SUPABASE_URL}/storage/v1/object/cartas/${path}`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${s.access_token}`, "Content-Type": file.type || "image/jpeg" },
+      body: file,
+    });
+
+  let res = await subir(session);
+  if (!res.ok) {
+    const data = await res.clone().json().catch(() => null);
+    if (pareceSesionExpirada(res.status, data)) {
+      const nueva = await refrescarSesion(session);
+      res = await subir(nueva);
+    }
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || "No se pudo subir la imagen");
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/cartas/${path}`;
+}
+
 function AvatarImg({ url, size = 36 }) {
   const [error, setError] = useState(false);
   return (
@@ -741,6 +766,31 @@ function AccountModal({ onClose, onAuthed }) {
   );
 }
 
+function SubirFotoManual({ session, onSubido, label }) {
+  const [subiendo, setSubiendo] = useState(false);
+  const [error, setError] = useState(null);
+
+  const manejar = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSubiendo(true); setError(null);
+    try {
+      const url = await subirImagenCarta(file, session);
+      onSubido(url);
+    } catch (err) { setError(err.message); } finally { setSubiendo(false); e.target.value = ""; }
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-2 py-1.5 text-xs font-semibold cursor-pointer whitespace-nowrap">
+        {subiendo ? "Subiendo..." : label || "📷 Subir foto"}
+        <input type="file" accept="image/*" className="hidden" onChange={manejar} disabled={subiendo} />
+      </label>
+      {error && <span style={{ color: "#C24444" }} className="text-xs">{error}</span>}
+    </span>
+  );
+}
+
 function CardPicker({ onSelect }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
@@ -1230,6 +1280,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
             <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
+            <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
@@ -1363,6 +1414,7 @@ function CambiarPlanAdmin({ session }) {
 
 function AdminPanel({ session }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [tabAdmin, setTabAdmin] = useState("planes");
   const [tiendasSinDueno, setTiendasSinDueno] = useState([]);
   const [perfilesDisponibles, setPerfilesDisponibles] = useState([]);
   const [seleccion, setSeleccion] = useState({});
@@ -1504,48 +1556,162 @@ function AdminPanel({ session }) {
     } catch {} finally { setMarcandoError(null); }
   };
 
+  // ---- Todas las tiendas (para detectar duplicadas y borrar) ----
+  const [todasTiendas, setTodasTiendas] = useState([]);
+  const [loadingTodasTiendas, setLoadingTodasTiendas] = useState(true);
+  const [borrandoTienda, setBorrandoTienda] = useState(null);
+
+  const cargarTodasTiendas = () => {
+    setLoadingTodasTiendas(true);
+    sb(`tiendas?select=*&order=nombre.asc`, session)
+      .then(setTodasTiendas)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoadingTodasTiendas(false));
+  };
+
+  useEffect(() => { cargarTodasTiendas(); }, []);
+
+  const conteoNombresTienda = {};
+  todasTiendas.forEach((t) => {
+    const k = (t.nombre || "").trim().toLowerCase();
+    conteoNombresTienda[k] = (conteoNombresTienda[k] || 0) + 1;
+  });
+
+  const borrarTienda = async (t) => {
+    if (!window.confirm(`¿Borrar la tienda "${t.nombre}"? Esto no se puede deshacer. Si tiene cartas o producto sellado, primero bórralos desde "Publicaciones".`)) return;
+    setBorrandoTienda(t.id);
+    try {
+      await sbWrite("DELETE", `tiendas?id=eq.${t.id}`, {}, session);
+      cargarTodasTiendas();
+    } catch (e) { setError(e.message); } finally { setBorrandoTienda(null); }
+  };
+
+  // ---- Publicaciones: buscar y borrar cualquier carta/sellado/mercado ----
+  const [buscarPub, setBuscarPub] = useState("");
+  const [resultadosPub, setResultadosPub] = useState(null);
+  const [buscandoPub, setBuscandoPub] = useState(false);
+  const [borrandoPub, setBorrandoPub] = useState(null);
+
+  const buscarPublicaciones = async () => {
+    if (!buscarPub.trim()) return;
+    setBuscandoPub(true); setError(null);
+    try {
+      const q = encodeURIComponent(buscarPub.trim());
+      const [inv, sel, merc] = await Promise.all([
+        sb(`inventario_tienda?select=*,tiendas(nombre)&carta=ilike.*${q}*&order=carta.asc`, session),
+        sb(`sellado_tienda?select=*,tiendas(nombre)&producto=ilike.*${q}*&order=producto.asc`, session),
+        sb(`mercado_listings?select=*,perfiles(nombre)&carta=ilike.*${q}*&order=carta.asc`, session),
+      ]);
+      setResultadosPub({ inventario: inv, sellado: sel, mercado: merc });
+    } catch (e) { setError(e.message); } finally { setBuscandoPub(false); }
+  };
+
+  const borrarPublicacion = async (tabla, id) => {
+    setBorrandoPub(`${tabla}-${id}`);
+    try {
+      await sbWrite("DELETE", `${tabla}?id=eq.${id}`, {}, session);
+      setResultadosPub((prev) => ({
+        inventario: tabla === "inventario_tienda" ? prev.inventario.filter((x) => x.id !== id) : prev.inventario,
+        sellado: tabla === "sellado_tienda" ? prev.sellado.filter((x) => x.id !== id) : prev.sellado,
+        mercado: tabla === "mercado_listings" ? prev.mercado.filter((x) => x.id !== id) : prev.mercado,
+      }));
+    } catch (e) { setError(e.message); } finally { setBorrandoPub(null); }
+  };
+
   if (loading) return <Loading label="Cargando panel de administración..." />;
+
+  const tabs = [
+    { id: "planes", label: "Planes" },
+    { id: "tiendas", label: "Tiendas" },
+    { id: "anuncios", label: "Anuncios" },
+    { id: "publicaciones", label: "Publicaciones" },
+    { id: "errores", label: "Errores" },
+  ];
 
   return (
     <div>
       <h1 style={{ fontFamily: "'Cinzel', serif" }} className="text-2xl font-bold mb-6">Panel de administración</h1>
 
-      <CambiarPlanAdmin session={session} />
+      <div className="flex gap-2 flex-wrap mb-8" style={{ borderBottom: `1px solid ${COLORS.surface2}` }}>
+        {tabs.map((t) => (
+          <button key={t.id} onClick={() => setTabAdmin(t.id)}
+            style={{
+              color: tabAdmin === t.id ? COLORS.azulPalido : COLORS.muted,
+              borderBottom: `2px solid ${tabAdmin === t.id ? COLORS.azulPalido : "transparent"}`,
+            }}
+            className="px-3 py-2 text-sm font-semibold -mb-px">
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1 mt-10">Vincular tiendas</h2>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Vincula cuentas de tienda registradas con su tienda real en el directorio.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
-      {tiendasSinDueno.length === 0 ? (
-        <p style={{ color: COLORS.muted }} className="text-sm">Todas las tiendas del directorio ya tienen una cuenta vinculada. 🎉</p>
-      ) : (
-        <div className="grid gap-3">
-          {tiendasSinDueno.map((t) => (
-            <div key={t.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <p className="font-semibold">{t.nombre}</p>
-                <p style={{ color: COLORS.muted }} className="text-xs">{t.direccion}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <select value={seleccion[t.id] || ""} onChange={(e) => setSeleccion({ ...seleccion, [t.id]: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
-                  <option value="">Selecciona cuenta...</option>
-                  {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                </select>
-                <button onClick={() => vincular(t.id)} disabled={!seleccion[t.id] || vinculando === t.id}
-                  style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: seleccion[t.id] ? 1 : 0.5 }}
-                  className="rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap">
-                  {vinculando === t.id ? "Vinculando..." : "Vincular"}
-                </button>
-              </div>
+      {tabAdmin === "planes" && <CambiarPlanAdmin session={session} />}
+
+      {tabAdmin === "tiendas" && (
+        <div>
+          <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Vincular tiendas</h2>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-6">Vincula cuentas de tienda registradas con su tienda real en el directorio.</p>
+
+          {tiendasSinDueno.length === 0 ? (
+            <p style={{ color: COLORS.muted }} className="text-sm mb-8">Todas las tiendas del directorio ya tienen una cuenta vinculada. 🎉</p>
+          ) : (
+            <div className="grid gap-3 mb-8">
+              {tiendasSinDueno.map((t) => (
+                <div key={t.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <p className="font-semibold">{t.nombre}</p>
+                    <p style={{ color: COLORS.muted }} className="text-xs">{t.direccion}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select value={seleccion[t.id] || ""} onChange={(e) => setSeleccion({ ...seleccion, [t.id]: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+                      <option value="">Selecciona cuenta...</option>
+                      {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                    </select>
+                    <button onClick={() => vincular(t.id)} disabled={!seleccion[t.id] || vinculando === t.id}
+                      style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: seleccion[t.id] ? 1 : 0.5 }}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap">
+                      {vinculando === t.id ? "Vinculando..." : "Vincular"}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+          {perfilesDisponibles.length === 0 && tiendasSinDueno.length > 0 && (
+            <p style={{ color: COLORS.muted }} className="text-xs mb-8">No hay cuentas de tipo tienda registradas todavía para vincular.</p>
+          )}
+
+          <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Todas las tiendas</h2>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+            Las marcadas en rojo comparten nombre con otra — probablemente duplicadas. Bórralas desde aquí (si tienen inventario, primero bórralo en "Publicaciones").
+          </p>
+          {loadingTodasTiendas ? <Loading label="Cargando tiendas..." /> : (
+            <div className="grid gap-2">
+              {todasTiendas.map((t) => {
+                const esDuplicada = conteoNombresTienda[(t.nombre || "").trim().toLowerCase()] > 1;
+                return (
+                  <div key={t.id} style={{ background: COLORS.surface, border: `1px solid ${esDuplicada ? "#C24444" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div>
+                      <p className="font-medium text-sm">{t.nombre} {esDuplicada && <span style={{ color: "#C24444" }} className="text-xs font-semibold">· posible duplicado</span>}</p>
+                      <p style={{ color: COLORS.muted }} className="text-xs">{t.direccion}{t.zona ? ` · ${t.zona}` : ""}{t.perfil_id ? "" : " · sin cuenta vinculada"}</p>
+                    </div>
+                    <button onClick={() => borrarTienda(t)} disabled={borrandoTienda === t.id}
+                      style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                      {borrandoTienda === t.id ? "Borrando..." : "Borrar tienda"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
-      {perfilesDisponibles.length === 0 && tiendasSinDueno.length > 0 && (
-        <p style={{ color: COLORS.muted }} className="text-xs mt-4">No hay cuentas de tipo tienda registradas todavía para vincular.</p>
-      )}
 
-      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1 mt-10">📢 Anuncios</h2>
+      {tabAdmin === "anuncios" && (
+        <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">📢 Anuncios</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">Crea un anuncio para publicarlo de inmediato o programarlo, y revisa los que proponen las tiendas.</p>
       {errorAnuncio && <div className="mb-4"><ErrorBox message={errorAnuncio} /></div>}
 
@@ -1631,8 +1797,70 @@ function AdminPanel({ session }) {
           </div>
         </>
       )}
+        </div>
+      )}
 
-      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1 mt-10">🐞 Errores detectados</h2>
+      {tabAdmin === "publicaciones" && (
+        <div>
+          <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">🔎 Publicaciones</h2>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+            Busca cualquier carta o producto (de tiendas o del Mercado entre usuarios) para revisarlo o borrarlo — por ejemplo, publicaciones sin imagen o duplicadas.
+          </p>
+          <div className="flex gap-2 mb-6">
+            <input placeholder="Busca por nombre (ej. Charizard ex)" value={buscarPub}
+              onChange={(e) => setBuscarPub(e.target.value)} onKeyDown={(e) => e.key === "Enter" && buscarPublicaciones()}
+              style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1" />
+            <button onClick={buscarPublicaciones} disabled={buscandoPub || !buscarPub.trim()}
+              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+              {buscandoPub ? "Buscando..." : "Buscar"}
+            </button>
+          </div>
+
+          {resultadosPub && (
+            <div className="grid gap-6">
+              {[
+                { key: "inventario", tabla: "inventario_tienda", titulo: "Cartas de tiendas", campo: "carta", dueno: (r) => r.tiendas?.nombre },
+                { key: "sellado", tabla: "sellado_tienda", titulo: "Producto sellado de tiendas", campo: "producto", dueno: (r) => r.tiendas?.nombre },
+                { key: "mercado", tabla: "mercado_listings", titulo: "Mercado (usuarios individuales)", campo: "carta", dueno: (r) => r.perfiles?.nombre },
+              ].map((grupo) => (
+                <div key={grupo.key}>
+                  <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-2 text-sm uppercase">{grupo.titulo} ({resultadosPub[grupo.key].length})</h3>
+                  {resultadosPub[grupo.key].length === 0 ? (
+                    <p style={{ color: COLORS.muted }} className="text-xs mb-2">Sin resultados.</p>
+                  ) : (
+                    <div className="grid gap-2">
+                      {resultadosPub[grupo.key].map((r) => (
+                        <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${r.imagen_url ? COLORS.surface2 : "#C24444"}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+                          {r.imagen_url ? (
+                            <img src={r.imagen_url} alt="" style={{ width: 44, height: 62, objectFit: "contain" }} />
+                          ) : (
+                            <div style={{ width: 44, height: 62, background: COLORS.surface2 }} className="flex items-center justify-center rounded shrink-0">
+                              <Package size={18} color="#C24444" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-[140px]">
+                            <p className="text-sm font-medium">{r[grupo.campo]}</p>
+                            <p style={{ color: COLORS.muted }} className="text-xs">{grupo.dueno(r) || "(sin dueño)"} · ${Number(r.precio).toLocaleString("es-MX")}</p>
+                            {!r.imagen_url && <p style={{ color: "#C24444" }} className="text-xs font-semibold">Sin imagen</p>}
+                          </div>
+                          <button onClick={() => borrarPublicacion(grupo.tabla, r.id)} disabled={borrandoPub === `${grupo.tabla}-${r.id}`}
+                            style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                            {borrandoPub === `${grupo.tabla}-${r.id}` ? "Borrando..." : "Borrar"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tabAdmin === "errores" && (
+        <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">🐞 Errores detectados</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">Errores capturados automáticamente del navegador de los usuarios. Al resolverlos, márcalos para que desaparezcan de esta lista.</p>
       {loadingErrores ? <Loading label="Cargando errores..." /> : errores.length === 0 ? (
         <p style={{ color: COLORS.muted }} className="text-sm">Sin errores pendientes. 🎉</p>
@@ -1661,6 +1889,8 @@ function AdminPanel({ session }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
         </div>
       )}
     </div>
@@ -1960,6 +2190,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
               style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarCarta(item.id, "cantidad", e.target.value)}
               style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
+            <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />
             <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
             <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
@@ -2022,6 +2253,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarSellado(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" />
             <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizarSellado(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarSellado(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-16" />
+            <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarSellado(item.id, "imagen_url", url); cargar(); }} />
             <BoostButton session={session} tabla="sellado_tienda" item={item} onBoosted={cargar} />
             <button onClick={() => borrarSellado(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
