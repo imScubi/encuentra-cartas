@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
-  MessageCircle, Send, ExternalLink, Shield,
+  MessageCircle, Send, ExternalLink, Shield, Receipt,
 } from "lucide-react";
 
 // ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
@@ -1505,20 +1505,22 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
 
 function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
   const [suscribiendo, setSuscribiendo] = useState(null);
+  const [cancelando, setCancelando] = useState(false);
   const [error, setError] = useState(null);
   const planActual = perfil?.plan || "pokeball";
+  const renovacionActiva = !!perfil?.mp_preapproval_id;
 
   const suscribirse = async (plan) => {
     if (!session) { onRequireLogin(); return; }
     setSuscribiendo(plan); setError(null);
     try {
-      const res = await fetch("/api/mercadopago/crear-preferencia", {
+      const res = await fetch("/api/mercadopago/crear-suscripcion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ perfilId: session.user.id, plan, email: session.user.email }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "No se pudo iniciar el pago");
+      if (!res.ok) throw new Error(data.error || "No se pudo iniciar la suscripción");
       window.location.href = data.init_point;
     } catch (e) {
       setError(e.message);
@@ -1526,13 +1528,41 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
     }
   };
 
+  const cancelarRenovacion = async () => {
+    if (!session) return;
+    setCancelando(true); setError(null);
+    try {
+      const res = await fetch("/api/mercadopago/cancelar-suscripcion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ perfilId: session.user.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo cancelar la renovación");
+      onPlanActualizado?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCancelando(false);
+    }
+  };
+
   return (
     <div>
       <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Planes</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">
-        Durante el lanzamiento, tiendas y vendedores activos tienen beneficios Premium de regalo. Elige tu rango cuando quieras hacerlo permanente.
+        Durante el lanzamiento, tiendas y vendedores activos tienen beneficios Premium de regalo. Elige tu rango cuando quieras hacerlo permanente — se renueva solo cada mes, cancela cuando quieras.
       </p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {renovacionActiva && (
+        <div style={{ background: `${COLORS.violet}11`, border: `1px solid ${COLORS.violet}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+          <p className="text-sm">🔁 Tu plan se renueva automáticamente cada mes.</p>
+          <button onClick={cancelarRenovacion} disabled={cancelando} style={{ color: COLORS.magenta, border: `1px solid ${COLORS.magenta}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">
+            {cancelando ? "Cancelando..." : "Cancelar renovación automática"}
+          </button>
+        </div>
+      )}
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {PLAN_ORDER.map((key) => {
@@ -1546,9 +1576,10 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
                 {esActual && <Badge color={info.color}>Tu plan</Badge>}
               </div>
               <p style={{ color: COLORS.muted }} className="text-sm mb-3">{info.resumen}</p>
-              <p style={{ fontFamily: "'Space Mono', monospace", color: info.color }} className="text-2xl font-bold mb-3">
+              <p style={{ fontFamily: "'Space Mono', monospace", color: info.color }} className="text-2xl font-bold mb-1">
                 {info.precio === 0 ? "Gratis" : `$${info.precio} MXN/mes`}
               </p>
+              {info.precio > 0 && <p style={{ color: COLORS.muted }} className="text-xs mb-2">Se renueva solo cada mes. Cancela cuando quieras.</p>}
               <ul className="text-sm grid gap-1 mb-4 flex-1">
                 {info.beneficios.map((b, i) => <li key={i} style={{ color: COLORS.text }}>✓ {b}</li>)}
               </ul>
@@ -1572,6 +1603,64 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
   );
 }
 
+const NOMBRES_TABLA_BOOST = { mercado_listings: "Mercado", inventario_tienda: "Carta de tienda", sellado_tienda: "Sellado de tienda" };
+const ESTADOS_OK = ["approved", "processed"];
+
+function MisPagosPanel({ session }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setLoading(true); setError(null);
+    Promise.all([
+      sb(`pagos?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session),
+      sb(`boosts?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session),
+    ])
+      .then(([pagos, boosts]) => {
+        const combinados = [
+          ...pagos.map((p) => ({ ...p, _tipo: "plan" })),
+          ...boosts.map((b) => ({ ...b, _tipo: "boost" })),
+        ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        setItems(combinados);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const colorEstado = (status) => (ESTADOS_OK.includes(status) ? COLORS.cyan : status === "pending" ? COLORS.gold : COLORS.magenta);
+  const textoEstado = (status) => (ESTADOS_OK.includes(status) ? "Aprobado" : status === "pending" ? "Pendiente" : "Rechazado");
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Mis pagos</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Historial de tus suscripciones de plan y publicaciones destacadas.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {loading ? <Loading label="Cargando tu historial..." /> : (
+        <div className="grid gap-2">
+          {items.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no tienes pagos registrados.</p>}
+          {items.map((item) => (
+            <div key={`${item._tipo}-${item.id}`} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+              <Badge color={item._tipo === "plan" ? COLORS.violet : COLORS.gold}>{item._tipo === "plan" ? "Plan" : "Boost"}</Badge>
+              <div className="flex-1 min-w-[140px]">
+                <p className="font-medium text-sm">
+                  {item._tipo === "plan" ? (PLAN_INFO[item.plan]?.nombre || item.plan) : `${NOMBRES_TABLA_BOOST[item.tabla] || item.tabla} · ${item.dias} días`}
+                </p>
+                <p style={{ color: COLORS.muted }} className="text-xs">
+                  {new Date(item.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
+                </p>
+              </div>
+              <p style={{ fontFamily: "'Space Mono', monospace" }} className="font-bold text-sm">${Number(item.monto || 0).toLocaleString("es-MX")}</p>
+              <Badge color={colorEstado(item.status)}>{textoEstado(item.status)}</Badge>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
@@ -1587,10 +1676,10 @@ export default function EncuentraCartas() {
     setChatContext({ otherId, otherNombre, contexto, otherWhatsapp, otherFacebook });
   };
 
-  // Si volvemos de Mercado Pago, o si acaba de cambiar el plan, refrescamos el perfil
+  // Si volvemos de Mercado Pago (plan, boost o suscripción), refrescamos el perfil
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("pago") && session) {
+    if ((params.get("pago") || params.get("plan") || params.get("boost")) && session) {
       cargarOCrearPerfil(session);
     }
   }, [session]);
@@ -1758,6 +1847,7 @@ export default function EncuentraCartas() {
     ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
     ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
     { id: "planes", label: "Planes", icon: Shield },
+    ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
     ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
     ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: ShoppingBag }] : []),
     ...(perfil?.es_admin ? [{ id: "admin", label: "Admin", icon: Shield }] : []),
@@ -2081,13 +2171,16 @@ export default function EncuentraCartas() {
 
         {/* PLANES */}
         {view === "planes" && (
-          <PlanesView session={session} perfil={perfil} onRequireLogin={() => setShowAccountModal(true)} />
+          <PlanesView session={session} perfil={perfil} onRequireLogin={() => setShowAccountModal(true)} onPlanActualizado={() => cargarOCrearPerfil(session)} />
         )}
 
         {/* WISHLIST / ALERTAS */}
         {view === "alertas" && session && (
           <AlertasPanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />
         )}
+
+        {/* MIS PAGOS */}
+        {view === "misPagos" && session && <MisPagosPanel session={session} />}
 
         {/* ADMIN */}
         {view === "admin" && session && perfil?.es_admin && <AdminPanel session={session} />}
