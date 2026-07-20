@@ -244,7 +244,7 @@ const colorFor = (i) => STORE_COLORS[i % STORE_COLORS.length];
 const textoSobre = (fondo) => (fondo === COLORS.azul || fondo === COLORS.azulMedio ? COLORS.text : COLORS.bg);
 
 // ---- Llave pública VAPID para notificaciones push (la privada vive solo en el servidor) ----
-const VAPID_PUBLIC_KEY = "BBPa0Sb2JnCX1McAm78espGKsZw8B7lYD2CFV4F_-F_9EghLKVjuhmSnVYh8YRkLgTibA5l5b5OKoujZD3_Dn8c";
+const VAPID_PUBLIC_KEY = "BLPUA-CAQihRVApIBjAaOg6Sb83z1j2uLTL-irKRiZ0JW6XlpJ2u9S4pFCqbC15VBOsL4MmlCHUe-_LsychJOs0";
 
 // ---- Rangos / planes de suscripción ----
 const PLAN_ORDER = ["pokeball", "superball", "ultraball", "masterball", "enteball"];

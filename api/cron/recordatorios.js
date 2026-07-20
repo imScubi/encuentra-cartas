@@ -100,6 +100,8 @@ async function notificar(perfilId, title, body, supabaseUrl, headers, email) {
         .catch(async (err) => {
           if (err.statusCode === 404 || err.statusCode === 410) {
             await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?id=eq.${s.id}`, { method: "DELETE", headers });
+          } else {
+            console.error("Error mandando push:", err.statusCode, err.body || err.message);
           }
           throw err;
         })
