@@ -15,9 +15,9 @@ export default async function handler(req, res) {
   }
 
   webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || "mailto:contacto@encuentracartas.mx",
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
+    (process.env.VAPID_SUBJECT || "mailto:contacto@encuentracartas.mx").trim(),
+    (process.env.VAPID_PUBLIC_KEY || "").trim(),
+    (process.env.VAPID_PRIVATE_KEY || "").trim()
   );
 
   const supabaseUrl = process.env.SUPABASE_URL;
