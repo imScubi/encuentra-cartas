@@ -278,6 +278,23 @@ Corre `supabase/migrations/014_torneos.sql`. Con eso:
   próximos 3 días y manda un recordatorio (push + correo + en la
   campanita) a quien marcó interés, una sola vez por torneo.
 
+## 19. Ofertas / descuentos
+
+Corre `supabase/migrations/015_ofertas.sql` (agrega `precio_antes` a
+`inventario_tienda`, `sellado_tienda` y `mercado_listings`). Al agregar o
+editar una carta/producto (en Mi tienda o Vender en el Mercado), hay un
+campo opcional "Precio antes (oferta)" — si lo llenas con un número mayor
+al precio actual, esa publicación se muestra en todos lados con una
+insignia roja "-XX% Descuento" y el precio anterior tachado. Para quitar
+la oferta, deja ese campo vacío.
+
+## 20. Pantalla de inicio con vitrina
+
+La pestaña "Buscar", cuando no has escrito nada, ya no se ve vacía: ahora
+muestra los anuncios más recientes (con imagen si tienen) y una vitrina
+de lo último publicado, mezclando Mercado y tiendas, ordenado por fecha.
+No requiere ninguna migración nueva.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

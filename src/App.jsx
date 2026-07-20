@@ -525,6 +525,25 @@ function Badge({ children, color }) {
   );
 }
 
+function PrecioConOferta({ precio, precioAntes, size = "lg" }) {
+  const enOferta = precioAntes && Number(precioAntes) > Number(precio);
+  const pct = enOferta ? Math.round((1 - Number(precio) / Number(precioAntes)) * 100) : 0;
+  const claseTamano = size === "lg" ? "text-2xl" : size === "md" ? "text-lg" : "text-base";
+  return (
+    <div>
+      {enOferta && (
+        <div className="flex items-center gap-2 mb-0.5">
+          <span style={{ background: "#C24444", color: "#fff" }} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">-{pct}% Descuento</span>
+          <span style={{ color: COLORS.muted, textDecoration: "line-through" }} className="text-xs">${Number(precioAntes).toLocaleString("es-MX")}</span>
+        </div>
+      )}
+      <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className={`${claseTamano} font-bold`}>
+        ${Number(precio).toLocaleString("es-MX")}
+      </p>
+    </div>
+  );
+}
+
 function Loading({ label }) {
   return (
     <div style={{ color: COLORS.muted }} className="flex items-center justify-center gap-2 py-16 text-sm">
@@ -1057,7 +1076,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const [saving, setSaving] = useState(false);
   const [tipo, setTipo] = useState("carta"); // carta | sellado
 
-  const vacio = { tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", precio: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null };
+  const vacio = { tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null };
   const [nueva, setNueva] = useState(vacio);
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
@@ -1087,6 +1106,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         set_nombre: nueva.set_nombre || null,
         condicion: tipo === "carta" ? nueva.condicion : null,
         precio: Number(nueva.precio),
+        precio_antes: nueva.precio_antes ? Number(nueva.precio_antes) : null,
         cantidad: Number(nueva.cantidad),
         zona: nueva.zona,
         card_api_id: nueva.card_api_id || null,
@@ -1103,8 +1123,10 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   };
 
   const actualizar = async (id, campo, valor) => {
-    try { await sbWrite("PATCH", `mercado_listings?id=eq.${id}`, { [campo]: campo === "precio" || campo === "cantidad" ? Number(valor) : valor }, session); }
-    catch (e) { setError(e.message); }
+    try {
+      const numerico = ["precio", "cantidad"].includes(campo) ? Number(valor) : campo === "precio_antes" ? (valor ? Number(valor) : null) : valor;
+      await sbWrite("PATCH", `mercado_listings?id=eq.${id}`, { [campo]: numerico }, session);
+    } catch (e) { setError(e.message); }
   };
 
   if (loading) return <Loading label="Cargando tus publicaciones..." />;
@@ -1179,8 +1201,9 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           </div>
         )}
 
-        <div className="grid sm:grid-cols-3 gap-2">
+        <div className="grid sm:grid-cols-4 gap-2">
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <input placeholder="Precio antes (oferta, opcional)" type="number" value={nueva.precio_antes} onChange={(e) => setNueva({ ...nueva, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <button onClick={agregar} disabled={saving || alLimite} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
@@ -1203,6 +1226,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} {item.condicion ? `· ${item.condicion}` : ""} · {item.zona}</p>
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
+            <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
@@ -1736,8 +1760,8 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
-  const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+  const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
@@ -1774,13 +1798,14 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       await sbWrite("POST", "inventario_tienda", {
         ...nuevaCarta,
         precio: Number(nuevaCarta.precio),
+        precio_antes: nuevaCarta.precio_antes ? Number(nuevaCarta.precio_antes) : null,
         cantidad: Number(nuevaCarta.cantidad),
         tienda_id: tienda.id,
         card_api_id: nuevaCarta.card_api_id || null,
         imagen_url: nuevaCarta.imagen_url || null,
         precio_ref_mxn: nuevaCarta.precio_ref_mxn || null,
       }, session);
-      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingCarta(false); }
   };
@@ -1790,8 +1815,10 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   };
 
   const actualizarCarta = async (id, campo, valor) => {
-    try { await sbWrite("PATCH", `inventario_tienda?id=eq.${id}`, { [campo]: campo === "precio" || campo === "cantidad" ? Number(valor) : valor }, session); }
-    catch (e) { setError(e.message); }
+    try {
+      const numerico = ["precio", "cantidad"].includes(campo) ? Number(valor) : campo === "precio_antes" ? (valor ? Number(valor) : null) : valor;
+      await sbWrite("PATCH", `inventario_tienda?id=eq.${id}`, { [campo]: numerico }, session);
+    } catch (e) { setError(e.message); }
   };
 
   const agregarSellado = async () => {
@@ -1802,13 +1829,14 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       await sbWrite("POST", "sellado_tienda", {
         ...nuevoSellado,
         precio: Number(nuevoSellado.precio),
+        precio_antes: nuevoSellado.precio_antes ? Number(nuevoSellado.precio_antes) : null,
         cantidad: Number(nuevoSellado.cantidad),
         tienda_id: tienda.id,
         card_api_id: nuevoSellado.card_api_id || null,
         imagen_url: nuevoSellado.imagen_url || null,
         precio_ref_mxn: nuevoSellado.precio_ref_mxn || null,
       }, session);
-      setNuevoSellado({ producto: "", precio: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+      setNuevoSellado({ producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingSellado(false); }
   };
@@ -1818,8 +1846,10 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   };
 
   const actualizarSellado = async (id, campo, valor) => {
-    try { await sbWrite("PATCH", `sellado_tienda?id=eq.${id}`, { [campo]: campo === "precio" || campo === "cantidad" ? Number(valor) : valor }, session); }
-    catch (e) { setError(e.message); }
+    try {
+      const numerico = ["precio", "cantidad"].includes(campo) ? Number(valor) : campo === "precio_antes" ? (valor ? Number(valor) : null) : valor;
+      await sbWrite("PATCH", `sellado_tienda?id=eq.${id}`, { [campo]: numerico }, session);
+    } catch (e) { setError(e.message); }
   };
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
@@ -1904,6 +1934,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
 
         <input placeholder="Condición" value={nuevaCarta.condicion} onChange={(e) => setNuevaCarta({ ...nuevaCarta, condicion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio" type="number" value={nuevaCarta.precio} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
+        <input placeholder="Precio antes (oferta, opcional)" type="number" value={nuevaCarta.precio_antes} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" title="Si lo llenas, se muestra como oferta con el % de descuento" />
         <button onClick={agregarCarta} disabled={savingCarta || alLimite} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
           {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
@@ -1922,6 +1953,8 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarCarta(item.id, "precio", e.target.value)}
               style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
+            <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizarCarta(item.id, "precio_antes", e.target.value)}
+              style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarCarta(item.id, "cantidad", e.target.value)}
               style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
             <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
@@ -1966,8 +1999,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             </button>
           </>
         )}
-        <div className="grid sm:grid-cols-2 gap-2">
+        <div className="grid sm:grid-cols-3 gap-2">
           <input placeholder="Precio" type="number" value={nuevoSellado.precio} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <input placeholder="Precio antes (oferta, opcional)" type="number" value={nuevoSellado.precio_antes} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <button onClick={agregarSellado} disabled={savingSellado || alLimite} style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : savingSellado ? "Guardando..." : "+ Agregar"}
           </button>
@@ -1983,6 +2017,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
               <BoostBadge item={item} />
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarSellado(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" />
+            <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizarSellado(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarSellado(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-16" />
             <BoostButton session={session} tabla="sellado_tienda" item={item} onBoosted={cargar} />
             <button onClick={() => borrarSellado(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
@@ -3163,6 +3198,8 @@ export default function EncuentraCartas() {
   const [loadingMarket, setLoadingMarket] = useState(false);
   const [news, setNews] = useState([]);
   const [loadingNews, setLoadingNews] = useState(false);
+  const [inicioTienda, setInicioTienda] = useState([]);
+  const [loadingInicio, setLoadingInicio] = useState(false);
 
   // Carga inicial: lista de tiendas reales
   useEffect(() => {
@@ -3195,15 +3232,22 @@ export default function EncuentraCartas() {
     return () => clearTimeout(t);
   }, [query]);
 
-  // Mercado y noticias, al entrar a esas pestañas
+  // Mercado y noticias, al entrar a esas pestañas (y también para la vitrina de inicio)
   useEffect(() => {
-    if (view === "market" && market.length === 0) {
+    const necesitaVitrina = view === "search" && !query.trim();
+    if ((view === "market" || necesitaVitrina) && market.length === 0) {
       setLoadingMarket(true);
       sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
     }
-    if (view === "news" && news.length === 0) {
+    if ((view === "news" || necesitaVitrina) && news.length === 0) {
       setLoadingNews(true);
       sb("noticias?select=*,tiendas(nombre,perfiles(avatar_url))&publicado=eq.true&order=fecha_publicacion.desc").then(setNews).finally(() => setLoadingNews(false));
+    }
+    if (necesitaVitrina && inicioTienda.length === 0) {
+      setLoadingInicio(true);
+      sb("inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles(plan,plan_vence,avatar_url))&order=created_at.desc&limit=10")
+        .then((rows) => setInicioTienda(conBoostPrimero(rows)))
+        .finally(() => setLoadingInicio(false));
     }
     if (view === "inbox" && session) {
       cargarInbox();
@@ -3396,12 +3440,78 @@ export default function EncuentraCartas() {
             {searchError && <ErrorBox message={searchError} />}
 
             {!searching && !query.trim() && (
-              <div className="text-center py-16" style={{ color: COLORS.muted }}>
-                <Package size={40} className="mx-auto mb-3 opacity-50" />
-                <p>Escribe el nombre de una carta para buscar en la base de datos real.</p>
-                <p className="text-sm mt-2">
-                  Nota: como apenas cargamos las tiendas, todavía no hay cartas de inventario cargadas — las búsquedas estarán vacías hasta que las tiendas suban su inventario.
+              <div>
+                <p className="text-center text-sm mb-10" style={{ color: COLORS.muted }}>
+                  Escribe el nombre de una carta para buscar, o explora lo más reciente aquí abajo.
                 </p>
+
+                {news.length > 0 && (
+                  <div className="mb-10">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 style={{ color: COLORS.azulClaro }} className="font-semibold text-sm uppercase">📢 Anuncios recientes</h3>
+                      <button onClick={() => setView("news")} style={{ color: COLORS.azulPalido }} className="text-xs font-semibold">Ver todos</button>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto pb-2">
+                      {news.slice(0, 5).map((n) => (
+                        <button key={n.id} onClick={() => setView("news")}
+                          style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}`, minWidth: 220, maxWidth: 220 }}
+                          className="text-left rounded-xl overflow-hidden shrink-0">
+                          {n.imagen_url ? (
+                            <img src={n.imagen_url} alt="" style={{ height: 100, objectFit: "cover" }} className="w-full" />
+                          ) : (
+                            <div style={{ background: COLORS.surface2, height: 100 }} className="flex items-center justify-center">
+                              <Megaphone size={24} color={COLORS.muted} />
+                            </div>
+                          )}
+                          <div className="p-3">
+                            <p className="text-sm font-semibold line-clamp-1">{n.titulo}</p>
+                            <p style={{ color: COLORS.muted }} className="text-xs line-clamp-2 mt-1">{n.contenido}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(loadingMarket || loadingInicio) && market.length === 0 && inicioTienda.length === 0 && (
+                  <Loading label="Cargando lo más reciente..." />
+                )}
+
+                {(market.length > 0 || inicioTienda.length > 0) && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 style={{ color: COLORS.azulClaro }} className="font-semibold text-sm uppercase">🔥 Recién publicado</h3>
+                      <button onClick={() => setView("market")} style={{ color: COLORS.azulPalido }} className="text-xs font-semibold">Ver Mercado</button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+                      {[...market.map((r) => ({ ...r, _esTienda: false })), ...inicioTienda.map((r) => ({ ...r, _esTienda: true }))]
+                        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                        .slice(0, 10)
+                        .map((r) => (
+                          <button key={`${r._esTienda ? "t" : "m"}-${r.id}`}
+                            onClick={() => setView(r._esTienda ? "directory" : "market")}
+                            style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}` }}
+                            className="text-left rounded-xl overflow-hidden flex flex-col">
+                            <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
+                              {r.imagen_url ? (
+                                <img src={r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                              ) : (
+                                <Package size={28} color={COLORS.muted} />
+                              )}
+                            </div>
+                            <div className="p-2">
+                              <div className="flex items-center gap-1 flex-wrap mb-1">
+                                <Badge color={r._esTienda ? COLORS.azulPalido : COLORS.azulClaro}>{r._esTienda ? "Tienda" : "Mercado"}</Badge>
+                                <BoostBadge item={r} />
+                              </div>
+                              <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
+                              <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="sm" />
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -3427,7 +3537,7 @@ export default function EncuentraCartas() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
                       onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url)}
@@ -3455,7 +3565,7 @@ export default function EncuentraCartas() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
                       onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url)}
@@ -3480,7 +3590,7 @@ export default function EncuentraCartas() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-2xl font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
+                    <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
                       onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url)}
@@ -3553,9 +3663,9 @@ export default function EncuentraCartas() {
                     </div>
                     <p className="font-semibold text-sm leading-snug line-clamp-2">{r.carta}</p>
                     <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.set_nombre}{r.set_nombre && r.zona ? " · " : ""}{r.zona}</p>
-                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-lg font-bold mt-1">
-                      ${Number(r.precio).toLocaleString("es-MX")}
-                    </p>
+                    <div className="mt-1">
+                      <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="md" />
+                    </div>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs -mt-1">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <div className="flex items-center gap-2 mt-auto pt-2">
                       <AvatarImg url={r.perfiles?.avatar_url} size={20} />
@@ -3774,7 +3884,7 @@ export default function EncuentraCartas() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p style={{ color: COLORS.azulPalido }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+                        <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                         <button
                           onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url)}
@@ -3800,7 +3910,7 @@ export default function EncuentraCartas() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p style={{ color: COLORS.azulClaro }} className="font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+                        <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                         <button
                           onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url)}
