@@ -61,6 +61,19 @@ export default async function handler(req, res) {
             })
         )
       );
+
+      await fetch(`${supabaseUrl}/rest/v1/notificaciones`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({
+          perfil_id: null,
+          tipo: "anuncio",
+          titulo: anuncio.titulo,
+          mensaje: anuncio.contenido?.slice(0, 200) || "",
+          url: "/",
+        }),
+      });
+
       publicados++;
     }
 

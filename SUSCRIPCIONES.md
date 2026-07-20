@@ -209,7 +209,23 @@ vencimiento, y — si tenía una renovación automática activa — cancelarla
 también desde ahí. Útil, por ejemplo, para revertir un plan si reembolsaste
 un pago de prueba.
 
+## 14. Navegación en celular y bandeja de notificaciones
+
+Corre `supabase/migrations/011_notificaciones.sql`. Con eso:
+
+- El encabezado ahora separa lo esencial (Buscar, Tiendas, Mercado, Mensajes
+  — siempre visible) de lo secundario (Anuncios, Wishlist, Planes, Mis
+  pagos, Mi tienda/Vender, Admin). En escritorio lo secundario se sigue
+  viendo en la misma barra; en celular vive dentro de un menú lateral
+  (ícono ☰) que también incluye Editar perfil y Cerrar sesión, para no
+  repetir botones.
+- La campanita 🔔 junto al menú muestra un contador de notificaciones no
+  leídas y una lista con lo más reciente: coincidencias de Wishlist,
+  Anuncios publicados, y mensajes nuevos. Al abrir/hacer click se marcan
+  como leídas.
+
 ## Qué falta / próximos pasos posibles
 
 - Permitir que la tienda adjunte una imagen a su anuncio.
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
+- Recordatorios de torneo en la bandeja de notificaciones (falta el calendario de torneos).
