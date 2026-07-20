@@ -197,9 +197,21 @@ function BoostButton({ session, tabla, item, onBoosted }) {
   );
 }
 
+function RankIcon({ plan, emoji, size = 16 }) {
+  const [iconError, setIconError] = useState(false);
+  if (iconError) return <>{emoji}</>;
+  return (
+    <img
+      src={`/branding/rango-${plan}.png`}
+      alt=""
+      onError={() => setIconError(true)}
+      style={{ width: size, height: size, display: "inline-block", objectFit: "contain" }}
+    />
+  );
+}
+
 function PlanBadge({ perfil, size = "sm" }) {
   const info = planDe(perfil);
-  const [iconError, setIconError] = useState(false);
   if (info === PLAN_INFO.pokeball) return null;
   const iconPx = size === "lg" ? 18 : 14;
   return (
@@ -208,17 +220,7 @@ function PlanBadge({ perfil, size = "sm" }) {
       style={{ border: `1px solid ${info.color}`, color: info.color, boxShadow: `0 0 8px ${info.color}66` }}
       className={`inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap ${size === "lg" ? "px-3 py-1 text-sm" : "px-2 py-0.5 text-xs"}`}
     >
-      {!iconError ? (
-        <img
-          src={`/branding/rango-${perfil.plan}.png`}
-          alt=""
-          onError={() => setIconError(true)}
-          style={{ width: iconPx, height: iconPx, display: "inline-block", objectFit: "contain" }}
-        />
-      ) : (
-        info.emoji
-      )}{" "}
-      {info.nombre}
+      <RankIcon plan={perfil.plan} emoji={info.emoji} size={iconPx} /> {info.nombre}
     </span>
   );
 }
@@ -1332,11 +1334,11 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   );
 }
 
-function UpsellCard({ requiere, children, onIrAPlanes }) {
+function UpsellCard({ requiere, plan, children, onIrAPlanes }) {
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${requiere.color}66` }} className="rounded-xl p-6 text-center">
       <p className="mb-2">
-        {requiere.emoji} Esta función es de <span style={{ color: requiere.color }} className="font-semibold">{requiere.nombre}</span> en adelante.
+        <RankIcon plan={plan} emoji={requiere.emoji} size={20} /> Esta función es de <span style={{ color: requiere.color }} className="font-semibold">{requiere.nombre}</span> en adelante.
       </p>
       {children && <p style={{ color: COLORS.muted }} className="text-sm mb-4">{children}</p>}
       <button onClick={onIrAPlanes} style={{ background: requiere.color, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">
@@ -1373,7 +1375,7 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
     return (
       <div>
         <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-6">Wishlist Premium</h2>
-        <UpsellCard requiere={PLAN_INFO.ultraball} onIrAPlanes={onIrAPlanes}>
+        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
           Configura alertas como "avísame si sale Charizard a menos de $500" y recibe una notificación push apenas alguien lo publique.
         </UpsellCard>
       </div>
@@ -1584,7 +1586,7 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
           return (
             <div key={key} style={{ background: COLORS.surface, border: `1px solid ${esActual ? info.color : COLORS.surface2}`, boxShadow: esActual ? `0 0 24px ${info.color}44` : "none" }} className="rounded-2xl p-5 flex flex-col">
               <div className="flex items-center justify-between mb-2">
-                <p className="font-bold text-lg">{info.emoji} {info.nombre}</p>
+                <p className="font-bold text-lg flex items-center gap-2"><RankIcon plan={key} emoji={info.emoji} size={22} /> {info.nombre}</p>
                 {esActual && <Badge color={info.color}>Tu plan</Badge>}
               </div>
               <p style={{ color: COLORS.muted }} className="text-sm mb-3">{info.resumen}</p>
