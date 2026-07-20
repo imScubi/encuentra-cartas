@@ -76,6 +76,19 @@ export default async function handler(req, res) {
       body: JSON.stringify({ notificado: true }),
     });
 
+    // Notificación en la bandeja de la web, para todos (perfil_id null).
+    await fetch(`${supabaseUrl}/rest/v1/notificaciones`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({
+        perfil_id: null,
+        tipo: "anuncio",
+        titulo: anuncio.titulo,
+        mensaje: anuncio.contenido?.slice(0, 200) || "",
+        url: "/",
+      }),
+    });
+
     res.status(200).json({ ok: true, enviados: resultados.filter((r) => r.status === "fulfilled").length });
   } catch (e) {
     console.error("Error notificando anuncio:", e);

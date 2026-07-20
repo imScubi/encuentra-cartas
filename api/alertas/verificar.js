@@ -89,6 +89,21 @@ export default async function handler(req, res) {
       )
     );
 
+    // Notificación en la bandeja de la web, una por perfil.
+    await fetch(`${supabaseUrl}/rest/v1/notificaciones`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(
+        perfilIds.map((perfilId) => ({
+          perfil_id: perfilId,
+          tipo: "wishlist",
+          titulo: "¡Encontramos lo que buscabas!",
+          mensaje: `${nombre} está disponible por $${precio.toLocaleString("es-MX")} MXN`,
+          url: "/",
+        }))
+      ),
+    });
+
     res.status(200).json({ ok: true, coincidencias: coincidencias.length });
   } catch (e) {
     console.error("Error verificando alertas:", e);

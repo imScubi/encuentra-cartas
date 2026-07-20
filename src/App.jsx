@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
-  MessageCircle, Send, ExternalLink, Shield, Receipt,
+  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell,
 } from "lucide-react";
 
 // ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
@@ -2370,6 +2370,108 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
   );
 }
 
+const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Shield };
+
+function NotificationBell({ session, onNavigate }) {
+  const [abierto, setAbierto] = useState(false);
+  const [notis, setNotis] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const ultimaVezKey = "ec_ultima_vez_notis";
+
+  const cargar = () => {
+    setLoading(true);
+    const path = session
+      ? `notificaciones?select=*&or=(perfil_id.eq.${session.user.id},perfil_id.is.null)&order=created_at.desc&limit=20`
+      : `notificaciones?select=*&perfil_id=is.null&order=created_at.desc&limit=20`;
+    sb(path, session)
+      .then(setNotis)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, [session?.user?.id]);
+
+  const ultimaVez = Number(localStorage.getItem(ultimaVezKey) || 0);
+  const noLeidas = notis.filter((n) => (n.perfil_id ? !n.leida : new Date(n.created_at).getTime() > ultimaVez)).length;
+
+  const abrir = () => {
+    setAbierto((v) => !v);
+    if (!abierto) cargar();
+  };
+
+  const VISTA_POR_TIPO = { wishlist: "alertas", anuncio: "news", mensaje: "inbox" };
+
+  const marcarLeida = async (n) => {
+    if (n.perfil_id && !n.leida && session) {
+      try { await sbWrite("PATCH", `notificaciones?id=eq.${n.id}`, { leida: true }, session); } catch {}
+      setNotis((prev) => prev.map((x) => (x.id === n.id ? { ...x, leida: true } : x)));
+    }
+    const vista = VISTA_POR_TIPO[n.tipo];
+    if (vista) onNavigate?.(vista);
+    setAbierto(false);
+  };
+
+  const marcarTodasLeidas = async () => {
+    localStorage.setItem(ultimaVezKey, String(Date.now()));
+    const pendientes = notis.filter((n) => n.perfil_id && !n.leida);
+    setNotis((prev) => prev.map((n) => ({ ...n, leida: true })));
+    if (session) {
+      await Promise.allSettled(pendientes.map((n) => sbWrite("PATCH", `notificaciones?id=eq.${n.id}`, { leida: true }, session)));
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button onClick={abrir} style={{ color: COLORS.muted }} className="relative p-2 rounded-lg">
+        <Bell size={18} />
+        {noLeidas > 0 && (
+          <span style={{ background: COLORS.azulPalido, color: COLORS.bg }}
+            className="absolute -top-1 -right-1 rounded-full text-[10px] font-bold w-4 h-4 flex items-center justify-center">
+            {noLeidas > 9 ? "9+" : noLeidas}
+          </span>
+        )}
+      </button>
+
+      {abierto && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setAbierto(false)} />
+          <div
+            style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33` }}
+            className="absolute right-0 mt-2 w-80 max-w-[90vw] rounded-xl overflow-hidden z-40"
+          >
+            <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: `1px solid ${COLORS.bg}` }}>
+              <p className="text-sm font-semibold">Notificaciones</p>
+              <button onClick={marcarTodasLeidas} style={{ color: COLORS.azulPalido }} className="text-xs">Marcar todo leído</button>
+            </div>
+            <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+              {loading && <p style={{ color: COLORS.muted }} className="text-xs p-4 text-center">Cargando...</p>}
+              {!loading && notis.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs p-4 text-center">Sin notificaciones todavía.</p>}
+              {!loading && notis.map((n) => {
+                const Icon = TIPO_NOTIFICACION_ICONO[n.tipo] || Bell;
+                const noLeida = n.perfil_id ? !n.leida : new Date(n.created_at).getTime() > ultimaVez;
+                return (
+                  <button key={n.id} onClick={() => marcarLeida(n)}
+                    style={{ background: noLeida ? `${COLORS.azul}22` : "transparent", borderBottom: `1px solid ${COLORS.bg}` }}
+                    className="w-full text-left px-4 py-3 flex items-start gap-3 hover:brightness-125">
+                    <Icon size={16} color={COLORS.azulPalido} className="mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{n.titulo}</p>
+                      {n.mensaje && <p style={{ color: COLORS.muted }} className="text-xs truncate">{n.mensaje}</p>}
+                      <p style={{ color: COLORS.muted }} className="text-[10px] mt-0.5">
+                        {new Date(n.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AccountMenu({ session, perfil, onNavigate, onEditarPerfil, onLogout }) {
   const [abierto, setAbierto] = useState(false);
 
@@ -2416,6 +2518,61 @@ function AccountMenu({ session, perfil, onNavigate, onEditarPerfil, onLogout }) 
   );
 }
 
+function MobileDrawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil, onLogout, onLogin, onClose }) {
+  const renglon = (id, label, Icon, onClick) => (
+    <button
+      key={id}
+      onClick={onClick}
+      style={{ color: view === id ? COLORS.azulPalido : COLORS.text, background: view === id ? `${COLORS.azul}22` : "transparent" }}
+      className="flex items-center gap-3 w-full text-left px-4 py-3 text-sm font-medium hover:brightness-125"
+    >
+      <Icon size={18} /> {label}
+    </button>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 sm:hidden">
+      <div style={{ background: "#00000099" }} className="absolute inset-0" onClick={onClose} />
+      <div style={{ background: COLORS.surface, borderLeft: `1px solid ${COLORS.azulMedio}66` }}
+        className="absolute right-0 top-0 bottom-0 w-72 max-w-[85vw] overflow-y-auto">
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: `1px solid ${COLORS.surface2}` }}>
+          {session ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <AvatarImg url={perfil?.avatar_url} size={36} />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold truncate">{perfil?.nombre || "Mi cuenta"}</p>
+                <PlanBadge perfil={perfil} />
+              </div>
+            </div>
+          ) : (
+            <p className="font-semibold">Menú</p>
+          )}
+          <button onClick={onClose} style={{ color: COLORS.muted }}><X size={20} /></button>
+        </div>
+
+        <div className="py-2">
+          {secundarios.map((item) => renglon(item.id, item.label, item.icon, () => onNavigate(item.id)))}
+        </div>
+
+        <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="py-2">
+          {session ? (
+            <>
+              {renglon("editarPerfil", "Editar perfil", User, onEditarPerfil)}
+              <button onClick={onLogout} style={{ color: COLORS.azulPalido }} className="flex items-center gap-3 w-full text-left px-4 py-3 text-sm font-medium">
+                Cerrar sesión
+              </button>
+            </>
+          ) : (
+            <button onClick={onLogin} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="mx-4 rounded-lg px-4 py-2 text-sm font-bold w-[calc(100%-2rem)]">
+              Iniciar sesión / Crear cuenta
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
@@ -2424,6 +2581,7 @@ export default function EncuentraCartas() {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showEditarPerfil, setShowEditarPerfil] = useState(false);
   const [logoError, setLogoError] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
   const [chatContext, setChatContext] = useState(null);
 
   // Cuando sb()/sbWrite() renuevan la sesión sola (el token expiró), nos enteramos aquí.
@@ -2605,12 +2763,16 @@ export default function EncuentraCartas() {
       .finally(() => setLoadingStoreDetail(false));
   };
 
-  const navItems = [
+  // Esenciales: siempre visibles, en cualquier tamaño de pantalla.
+  const navEsenciales = [
     { id: "search", label: "Buscar", icon: Search },
     { id: "directory", label: "Tiendas", icon: Store },
     { id: "market", label: "Mercado", icon: ShoppingBag },
-    { id: "news", label: "Anuncios y noticias", icon: Megaphone },
     ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
+  ];
+  // Secundarios: en escritorio se ven inline; en celular viven en el menú lateral.
+  const navSecundarios = [
+    { id: "news", label: "Anuncios y noticias", icon: Megaphone },
     ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
     { id: "planes", label: "Planes", icon: Shield },
     ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
@@ -2618,6 +2780,17 @@ export default function EncuentraCartas() {
     ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: ShoppingBag }] : []),
     ...(perfil?.es_admin ? [{ id: "admin", label: "Admin", icon: Shield }] : []),
   ];
+  const navButton = (item) => {
+    const Icon = item.icon;
+    const active = view === item.id;
+    return (
+      <button key={item.id} onClick={() => setView(item.id)}
+        style={{ background: active ? COLORS.surface2 : "transparent", border: `1px solid ${active ? COLORS.azulPalido : COLORS.surface2}`, color: active ? COLORS.azulPalido : COLORS.muted }}
+        className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+        <Icon size={15} /> <span className="hidden sm:inline">{item.label}</span>
+      </button>
+    );
+  };
 
   return (
     <div
@@ -2652,34 +2825,50 @@ export default function EncuentraCartas() {
               </>
             )}
           </div>
-          <nav className="flex gap-2 flex-wrap items-center">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = view === item.id;
-              return (
-                <button key={item.id} onClick={() => setView(item.id)}
-                  style={{ background: active ? COLORS.surface2 : "transparent", border: `1px solid ${active ? COLORS.azulPalido : COLORS.surface2}`, color: active ? COLORS.azulPalido : COLORS.muted }}
-                  className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
-                  <Icon size={15} /> <span className="hidden sm:inline">{item.label}</span>
+          <nav className="flex gap-2 items-center">
+            {navEsenciales.map(navButton)}
+            <div className="hidden sm:flex gap-2 items-center">
+              {navSecundarios.map(navButton)}
+            </div>
+
+            <NotificationBell session={session} onNavigate={setView} />
+
+            <div className="hidden sm:block">
+              {session ? (
+                <AccountMenu
+                  session={session}
+                  perfil={perfil}
+                  onNavigate={setView}
+                  onEditarPerfil={() => setShowEditarPerfil(true)}
+                  onLogout={handleLogout}
+                />
+              ) : (
+                <button onClick={() => setShowAccountModal(true)} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
+                  <User size={15} /> Mi cuenta
                 </button>
-              );
-            })}
-            {session ? (
-              <AccountMenu
-                session={session}
-                perfil={perfil}
-                onNavigate={setView}
-                onEditarPerfil={() => setShowEditarPerfil(true)}
-                onLogout={handleLogout}
-              />
-            ) : (
-              <button onClick={() => setShowAccountModal(true)} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
-                <User size={15} /> Mi cuenta
-              </button>
-            )}
+              )}
+            </div>
+
+            <button onClick={() => setShowDrawer(true)} style={{ color: COLORS.muted }} className="sm:hidden p-2 rounded-lg">
+              <Menu size={20} />
+            </button>
           </nav>
         </div>
       </header>
+
+      {showDrawer && (
+        <MobileDrawer
+          session={session}
+          perfil={perfil}
+          secundarios={navSecundarios}
+          view={view}
+          onNavigate={(id) => { setView(id); setShowDrawer(false); }}
+          onEditarPerfil={() => { setShowEditarPerfil(true); setShowDrawer(false); }}
+          onLogout={() => { handleLogout(); setShowDrawer(false); }}
+          onLogin={() => { setShowAccountModal(true); setShowDrawer(false); }}
+          onClose={() => setShowDrawer(false)}
+        />
+      )}
 
       {showAccountModal && <AccountModal onClose={() => setShowAccountModal(false)} onAuthed={handleAuthed} />}
       {showEditarPerfil && session && (
