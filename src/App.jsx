@@ -10,29 +10,76 @@ const SUPABASE_URL = "https://nulypgaaekexlbxbxdwq.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51bHlwZ2FhZWtleGxieGJ4ZHdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzOTk3OTcsImV4cCI6MjA5OTk3NTc5N30.9qxfcmUx5k1br1CH3DIFI2EplFJWYeRyg6HFeZNN7og";
 
+// El token de sesión de Supabase expira solo (~1 hora). Si una consulta falla
+// por eso, la renovamos con el refresh_token y reintentamos una sola vez.
+// onSesionRefrescada lo registra la app principal para enterarse del cambio
+// (y así no perder la renovación en el siguiente render).
+let onSesionRefrescada = null;
+let refrescandoPromesa = null;
+
+function pareceSesionExpirada(status, data) {
+  return status === 401 || /jwt expired|invalid jwt/i.test(JSON.stringify(data || {}));
+}
+
+async function refrescarSesion(session) {
+  if (!session?.refresh_token) throw new Error("Tu sesión expiró. Vuelve a iniciar sesión.");
+  if (!refrescandoPromesa) {
+    refrescandoPromesa = fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: session.refresh_token }),
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.msg || "Tu sesión expiró. Vuelve a iniciar sesión.");
+        const nueva = { access_token: data.access_token, refresh_token: data.refresh_token, user: data.user || session.user };
+        localStorage.setItem("ec_session", JSON.stringify(nueva));
+        onSesionRefrescada?.(nueva);
+        return nueva;
+      })
+      .finally(() => { refrescandoPromesa = null; });
+  }
+  return refrescandoPromesa;
+}
+
 async function sb(path, session) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`,
-    },
-  });
+  const pedir = (s) =>
+    fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${s?.access_token || SUPABASE_ANON_KEY}` },
+    });
+
+  let res = await pedir(session);
+  if (!res.ok && session) {
+    const data = await res.clone().json().catch(() => null);
+    if (pareceSesionExpirada(res.status, data)) {
+      const nueva = await refrescarSesion(session);
+      res = await pedir(nueva);
+    }
+  }
   if (!res.ok) throw new Error(`Error consultando la base de datos (${res.status})`);
   return res.json();
 }
 
 async function sbWrite(method, path, body, session) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    method,
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => null);
+  const pedir = (s) =>
+    fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      method,
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${s?.access_token || SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(body),
+    });
+
+  let res = await pedir(session);
+  let data = await res.clone().json().catch(() => null);
+  if (!res.ok && session && pareceSesionExpirada(res.status, data)) {
+    const nueva = await refrescarSesion(session);
+    res = await pedir(nueva);
+    data = await res.json().catch(() => null);
+  }
   if (!res.ok) throw new Error(data?.message || `Error guardando (${res.status})`);
   return data;
 }
@@ -82,16 +129,26 @@ async function obtenerListaPokemon() {
 async function subirAvatar(file, session) {
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
   const path = `${session.user.id}/avatar.${ext}`;
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/avatars/${path}`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${session.access_token}`,
-      "Content-Type": file.type || "image/jpeg",
-      "x-upsert": "true",
-    },
-    body: file,
-  });
+  const subir = (s) =>
+    fetch(`${SUPABASE_URL}/storage/v1/object/avatars/${path}`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${s.access_token}`,
+        "Content-Type": file.type || "image/jpeg",
+        "x-upsert": "true",
+      },
+      body: file,
+    });
+
+  let res = await subir(session);
+  if (!res.ok) {
+    const data = await res.clone().json().catch(() => null);
+    if (pareceSesionExpirada(res.status, data)) {
+      const nueva = await refrescarSesion(session);
+      res = await subir(nueva);
+    }
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.message || "No se pudo subir la foto");
@@ -439,7 +496,7 @@ function AccountModal({ onClose, onAuthed }) {
         setLoading(false);
         return;
       }
-      const session = { access_token: auth.access_token, user: auth.user };
+      const session = { access_token: auth.access_token, refresh_token: auth.refresh_token, user: auth.user };
       const avatarUrl = avatarFile ? await subirAvatar(avatarFile, session) : avatarUrlPokemonFinal;
       await sbWrite("POST", "perfiles", {
         id: auth.user.id, tipo: accountType, nombre,
@@ -458,7 +515,7 @@ function AccountModal({ onClose, onAuthed }) {
     setLoading(true); setError(null);
     try {
       const auth = await authSignIn(email, password);
-      const session = { access_token: auth.access_token, user: auth.user };
+      const session = { access_token: auth.access_token, refresh_token: auth.refresh_token, user: auth.user };
       localStorage.setItem("ec_session", JSON.stringify(session));
       onAuthed(session);
     } catch (e) {
@@ -1993,6 +2050,12 @@ export default function EncuentraCartas() {
   const [showEditarPerfil, setShowEditarPerfil] = useState(false);
   const [logoError, setLogoError] = useState(false);
   const [chatContext, setChatContext] = useState(null);
+
+  // Cuando sb()/sbWrite() renuevan la sesión sola (el token expiró), nos enteramos aquí.
+  useEffect(() => {
+    onSesionRefrescada = (nueva) => setSession(nueva);
+    return () => { onSesionRefrescada = null; };
+  }, []);
 
   const abrirChat = (otherId, otherNombre, contexto, otherWhatsapp, otherFacebook) => {
     if (!session) { setShowAccountModal(true); return; }
