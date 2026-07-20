@@ -2156,7 +2156,7 @@ export default function EncuentraCartas() {
     const t = setTimeout(() => {
       Promise.all([
         sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence))&carta=ilike.*${q}*&order=precio.asc`),
-        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence)&carta=ilike.*${q}*&order=precio.asc`),
+        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&carta=ilike.*${q}*&order=precio.asc`),
         sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence))&producto=ilike.*${q}*&order=precio.asc`),
       ])
         .then(([inv, merc, sel]) => setSearchResults({ tiendas: conBoostPrimero(inv), mercado: conBoostPrimero(merc), sellado: conBoostPrimero(sel) }))
@@ -2170,7 +2170,7 @@ export default function EncuentraCartas() {
   useEffect(() => {
     if (view === "market" && market.length === 0) {
       setLoadingMarket(true);
-      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence)&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
+      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
     }
     if (view === "news" && news.length === 0) {
       setLoadingNews(true);
@@ -2397,6 +2397,10 @@ export default function EncuentraCartas() {
                       <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <AvatarImg url={r.perfiles?.avatar_url} size={22} />
+                        <p style={{ color: COLORS.muted }} className="text-xs">{r.perfiles?.nombre || "Usuario"}</p>
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -2483,6 +2487,10 @@ export default function EncuentraCartas() {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap"><p className="font-semibold">{r.carta}</p>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre} · {r.zona}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <AvatarImg url={r.perfiles?.avatar_url} size={22} />
+                        <p style={{ color: COLORS.muted }} className="text-xs">{r.perfiles?.nombre || "Usuario"}</p>
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">
