@@ -233,8 +233,29 @@ Agregar imagen (opcional)" — la imagen se ve en la vista pública de
 Anuncios, en el panel de aprobación del admin, y en la lista de "Tus
 anuncios" de la tienda.
 
+## 16. Captura de errores + aviso al admin
+
+Corre `supabase/migrations/013_errores_app.sql`. Con eso:
+
+- La app captura sola cualquier error de JavaScript que le pase a un
+  usuario (incluyendo pantallas en blanco por un componente que truena —
+  ahora se muestra un aviso de "Algo salió mal" con botón para recargar,
+  en vez de quedar en blanco).
+- Cada error se guarda en la tabla `errores_app`, y si no se avisó ya del
+  mismo error en la última hora (para no saturarte), se te notifica como
+  admin por push, correo y en tu bandeja de notificaciones.
+- Dentro de **Admin** hay una sección "🐞 Errores detectados" con el
+  mensaje, la URL, la fecha y el detalle técnico de cada uno — al
+  resolverlo, márcalo con "Marcar resuelto" para que desaparezca de la
+  lista.
+
+No es una IA que corrija el código sola en producción (eso no es posible
+técnicamente) — lo que hace es avisarte automáticamente para que tú (o yo,
+si me pides que lo revise) lo arreglemos.
+
 ## Qué falta / próximos pasos posibles
 
-- Permitir que la tienda adjunte una imagen a su anuncio.
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
+- Tutorial para usuarios y tiendas dentro de la app.
+- Calendario de torneos con recordatorio por correo y notificación.
 - Recordatorios de torneo en la bandeja de notificaciones (falta el calendario de torneos).
