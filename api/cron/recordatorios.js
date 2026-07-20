@@ -1,11 +1,12 @@
 // Corre una vez al día (ver vercel.json) y manda notificaciones push de
-// aviso cuando: (a) el plan de un perfil está por vencer, o (b) un boost
-// (publicación destacada) está por dejar de estar destacado.
+// aviso cuando: (a) el plan de un perfil está por vencer, (b) un boost
+// (publicación destacada) está por dejar de estar destacado, o (c) un
+// torneo que marcaste con "Me interesa" es en los próximos 3 días.
 //
 // Requiere: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, VAPID_PUBLIC_KEY,
 // VAPID_PRIVATE_KEY, VAPID_SUBJECT, y CRON_SECRET (Vercel la manda sola
 // como header Authorization cuando configuras esa variable de entorno).
-// RESEND_API_KEY (opcional) para además mandar correo.
+// GMAIL_USER/GMAIL_APP_PASSWORD (opcional) para además mandar correo.
 import webpush from "web-push";
 import { enviarCorreo } from "../../lib/email.js";
 
@@ -52,7 +53,7 @@ export default async function handler(req, res) {
       const mensaje = p.mp_preapproval_id
         ? `Tu plan ${nombrePlan} se renueva solo en ${dias} día(s). No necesitas hacer nada.`
         : `Tu plan ${nombrePlan} vence en ${dias} día(s). Renuévalo para no perder tus beneficios.`;
-      const enviados = await notificar(p.id, "Tu plan está por vencer", mensaje, supabaseUrl, headers, p.email);
+      const enviados = await notificar(p.id, "plan", "Tu plan está por vencer", mensaje, supabaseUrl, headers, p.email);
       avisos += enviados;
     }
 
@@ -71,6 +72,7 @@ export default async function handler(req, res) {
         const nombre = item.carta || item.producto;
         const enviados = await notificar(
           perfilId,
+          "boost",
           "Tu destacado está por vencer",
           `"${nombre}" deja de estar destacado pronto. Destácalo de nuevo si quieres seguir arriba en resultados.`,
           supabaseUrl,
@@ -81,6 +83,32 @@ export default async function handler(req, res) {
       }
     }
 
+    // ---- Torneos por venir (recordatorio a quien marcó "Me interesa") ----
+    const torneosRes = await fetch(
+      `${supabaseUrl}/rest/v1/torneos?select=*,tiendas(nombre)&fecha=gte.${ahora.toISOString()}&fecha=lte.${en3dias.toISOString()}`,
+      { headers }
+    );
+    const torneos = await torneosRes.json();
+
+    for (const t of torneos || []) {
+      const interesadosRes = await fetch(
+        `${supabaseUrl}/rest/v1/torneo_interes?select=*,perfiles(email)&torneo_id=eq.${t.id}&recordado=eq.false`,
+        { headers }
+      );
+      const interesados = await interesadosRes.json();
+      const dias = Math.max(1, Math.ceil((new Date(t.fecha) - ahora) / (24 * 60 * 60 * 1000)));
+      const mensaje = `"${t.nombre}" en ${t.tiendas?.nombre || "una tienda"} es en ${dias} día(s).`;
+      for (const i of interesados || []) {
+        const enviados = await notificar(i.perfil_id, "torneo", "Recordatorio de torneo", mensaje, supabaseUrl, headers, i.perfiles?.email);
+        avisos += enviados;
+        await fetch(`${supabaseUrl}/rest/v1/torneo_interes?id=eq.${i.id}`, {
+          method: "PATCH",
+          headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify({ recordado: true }),
+        });
+      }
+    }
+
     res.status(200).json({ ok: true, avisos });
   } catch (e) {
     console.error("Error en cron de recordatorios:", e);
@@ -88,7 +116,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function notificar(perfilId, title, body, supabaseUrl, headers, email) {
+async function notificar(perfilId, tipo, title, body, supabaseUrl, headers, email) {
   const subsRes = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?perfil_id=eq.${perfilId}`, { headers });
   const subs = await subsRes.json();
   const payload = JSON.stringify({ title, body, url: "/" });
@@ -108,5 +136,10 @@ async function notificar(perfilId, title, body, supabaseUrl, headers, email) {
     )
   );
   if (email) await enviarCorreo({ to: email, subject: title, html: `<p>${body}</p>` });
+  await fetch(`${supabaseUrl}/rest/v1/notificaciones`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ perfil_id: perfilId, tipo, titulo: title, mensaje: body, url: "/" }),
+  });
   return resultados.filter((r) => r.status === "fulfilled").length;
 }

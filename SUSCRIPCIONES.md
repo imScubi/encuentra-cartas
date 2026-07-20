@@ -262,7 +262,24 @@ compradores individuales o de tiendas (inventario, Boost, importador
 masivo, proponer anuncios, etc). Al crear una cuenta nueva, la app te
 manda ahí automáticamente la primera vez.
 
+## 18. Calendario de torneos
+
+Corre `supabase/migrations/014_torneos.sql`. Con eso:
+
+- Las tiendas, desde "Mi tienda", tienen una caja "📅 Publicar un torneo":
+  nombre, descripción, juego, fecha/hora, dirección (si es distinta a la
+  de la tienda) y costo de inscripción (opcional). También ven su lista
+  de torneos publicados con botón para borrarlos.
+- Cualquiera puede ver el calendario completo en la nueva pestaña
+  "Torneos", con la info de cada uno y cuántos usuarios están
+  interesados.
+- Los usuarios le dan "Me interesa" a los que quieran — el cron diario
+  (el mismo de recordatorios de plan/boost) revisa los torneos de los
+  próximos 3 días y manda un recordatorio (push + correo + en la
+  campanita) a quien marcó interés, una sola vez por torneo.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
-- Calendario de torneos con recordatorio por correo y notificación (y su propio tipo de notificación en la campanita).
+- Permitir editar un torneo ya publicado (hoy solo se puede borrar y crear uno nuevo) y adjuntarle una imagen.
+- Mapa de Google en el detalle del torneo (hoy solo muestra la dirección en texto).

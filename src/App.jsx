@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
-  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle,
+  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar,
 } from "lucide-react";
 
 // ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
@@ -1991,6 +1991,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       </div>
 
       <ProponerAnuncio session={session} tiendaId={tienda.id} />
+      <CrearTorneo session={session} tiendaId={tienda.id} />
     </div>
   );
 }
@@ -2132,6 +2133,9 @@ function AyudaView({ perfil }) {
         <SeccionAyuda titulo="🔔 Notificaciones">
           <p>La campanita del encabezado avisa cuando aparece algo de tu Wishlist, se publica un anuncio, o te llega un mensaje. También puedes activar notificaciones push del navegador desde "Wishlist" para recibir el aviso aunque no tengas la app abierta.</p>
         </SeccionAyuda>
+        <SeccionAyuda titulo="📅 Torneos">
+          <p>En "Torneos" ves el calendario de eventos que publican las tiendas. Dale "Me interesa" al que quieras — te avisamos por correo, push y en tu campanita unos días antes.</p>
+        </SeccionAyuda>
         <SeccionAyuda titulo="⚪🔵🟣🟡🔴 Planes / rangos">
           <p>Poké Ball es gratis. Los planes pagados (Super/Ultra/Master/Ente Ball) desbloquean insignia de verificado, Wishlist Premium, más publicaciones y beneficios exclusivos. Se renuevan solos cada mes hasta que los canceles.</p>
         </SeccionAyuda>
@@ -2173,6 +2177,9 @@ function AyudaView({ perfil }) {
             <SeccionAyuda titulo="📢 Proponer un anuncio">
               <p>Desde "Mi tienda" puedes proponer un anuncio — el administrador lo revisa y, si lo aprueba, se publica con el nombre y la foto de tu tienda.</p>
             </SeccionAyuda>
+            <SeccionAyuda titulo="📅 Publicar un torneo">
+              <p>También desde "Mi tienda" puedes publicar tus torneos o eventos (fecha, dirección, costo) — aparecen en el calendario de "Torneos" para que los usuarios marquen su interés.</p>
+            </SeccionAyuda>
             <SeccionAyuda titulo="✓ Insignia de verificado">
               <p>Disponible desde Super Ball en adelante — le da más confianza a quien te contacta.</p>
             </SeccionAyuda>
@@ -2189,6 +2196,185 @@ function AyudaView({ perfil }) {
           <p>Ahí ves el historial de tus suscripciones de plan y publicaciones destacadas, con fecha, monto y si se aprobó, quedó pendiente o se rechazó.</p>
         </SeccionAyuda>
       </div>
+    </div>
+  );
+}
+
+const JUEGOS_TORNEO = {
+  pokemon: "Pokémon", yugioh: "Yu-Gi-Oh!", lorcana: "Lorcana", magic: "Magic", onepiece: "One Piece", otro: "Otro",
+};
+
+function TorneosView({ session, onRequireLogin }) {
+  const [torneos, setTorneos] = useState([]);
+  const [interesados, setInteresados] = useState(new Set());
+  const [conteos, setConteos] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [marcando, setMarcando] = useState(null);
+
+  const cargar = () => {
+    setLoading(true);
+    const ahora = new Date().toISOString();
+    Promise.all([
+      sb(`torneos?select=*,tiendas(nombre,direccion,lat,lng,perfiles(avatar_url))&fecha=gte.${ahora}&order=fecha.asc`, session),
+      sb(`torneo_interes?select=torneo_id`, session),
+      session ? sb(`torneo_interes?select=torneo_id&perfil_id=eq.${session.user.id}`, session) : Promise.resolve([]),
+    ])
+      .then(([t, todos, mios]) => {
+        setTorneos(t);
+        const c = {};
+        (todos || []).forEach((i) => { c[i.torneo_id] = (c[i.torneo_id] || 0) + 1; });
+        setConteos(c);
+        setInteresados(new Set((mios || []).map((i) => i.torneo_id)));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, [session?.user?.id]);
+
+  const toggleInteres = async (torneoId) => {
+    if (!session) { onRequireLogin(); return; }
+    setMarcando(torneoId);
+    const interesado = interesados.has(torneoId);
+    try {
+      if (interesado) {
+        await sbWrite("DELETE", `torneo_interes?torneo_id=eq.${torneoId}&perfil_id=eq.${session.user.id}`, {}, session);
+        setInteresados((prev) => { const s = new Set(prev); s.delete(torneoId); return s; });
+        setConteos((prev) => ({ ...prev, [torneoId]: Math.max(0, (prev[torneoId] || 1) - 1) }));
+      } else {
+        await sbWrite("POST", "torneo_interes", { torneo_id: torneoId, perfil_id: session.user.id }, session);
+        setInteresados((prev) => new Set(prev).add(torneoId));
+        setConteos((prev) => ({ ...prev, [torneoId]: (prev[torneoId] || 0) + 1 }));
+      }
+    } catch {} finally { setMarcando(null); }
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-6">📅 Calendario de torneos</h2>
+      {loading && <Loading label="Cargando torneos..." />}
+      {!loading && torneos.length === 0 && (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
+          Todavía no hay torneos programados. Las tiendas los publican desde "Mi tienda".
+        </p>
+      )}
+      <div className="grid gap-4">
+        {torneos.map((t) => {
+          const interesado = interesados.has(t.id);
+          return (
+            <div key={t.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-5">
+              {t.imagen_url && <img src={t.imagen_url} alt="" style={{ maxHeight: 200, objectFit: "cover" }} className="rounded-lg mb-3 w-full" />}
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <AvatarImg url={t.tiendas?.perfiles?.avatar_url} size={22} />
+                <p style={{ color: COLORS.muted }} className="text-xs font-semibold">{t.tiendas?.nombre}</p>
+                {t.juego && <Badge color={COLORS.azulMedio}>{JUEGOS_TORNEO[t.juego] || t.juego}</Badge>}
+              </div>
+              <p className="font-semibold text-lg">{t.nombre}</p>
+              <p style={{ color: COLORS.azulPalido }} className="text-sm mt-1 font-semibold">
+                {new Date(t.fecha).toLocaleString("es-MX", { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" })}
+              </p>
+              {t.descripcion && <p style={{ color: COLORS.muted }} className="text-sm mt-2">{t.descripcion}</p>}
+              {(t.direccion || t.tiendas?.direccion) && (
+                <p style={{ color: COLORS.muted }} className="text-xs mt-2 flex items-center gap-1"><MapPin size={12} /> {t.direccion || t.tiendas?.direccion}</p>
+              )}
+              {t.costo != null && <p style={{ color: COLORS.muted }} className="text-xs mt-1">Costo: ${Number(t.costo).toLocaleString("es-MX")} MXN</p>}
+              <div className="flex items-center gap-3 mt-3">
+                <button onClick={() => toggleInteres(t.id)} disabled={marcando === t.id}
+                  style={{ background: interesado ? COLORS.azulPalido : "transparent", border: `1px solid ${COLORS.azul}66`, color: interesado ? COLORS.bg : COLORS.azulPalido }}
+                  className="rounded-lg px-4 py-1.5 text-xs font-semibold">
+                  {interesado ? "✓ Me interesa" : "Me interesa"}
+                </button>
+                <p style={{ color: COLORS.muted }} className="text-xs">{conteos[t.id] || 0} interesado(s)</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CrearTorneo({ session, tiendaId }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [nombre, setNombre] = useState("");
+  const [descripcion, setDescripcion] = useState("");
+  const [juego, setJuego] = useState("pokemon");
+  const [fecha, setFecha] = useState("");
+  const [direccion, setDireccion] = useState("");
+  const [costo, setCosto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState(null);
+  const [misTorneos, setMisTorneos] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const cargar = () => {
+    setLoading(true);
+    sb(`torneos?select=*&tienda_id=eq.${tiendaId}&order=fecha.desc`, session)
+      .then(setMisTorneos)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const crear = async () => {
+    if (!nombre.trim() || !fecha) return;
+    setEnviando(true); setError(null);
+    try {
+      await sbWrite("POST", "torneos", {
+        tienda_id: tiendaId,
+        nombre: nombre.trim(),
+        descripcion: descripcion.trim() || null,
+        juego,
+        fecha: new Date(fecha).toISOString(),
+        direccion: direccion.trim() || null,
+        costo: costo ? Number(costo) : null,
+      }, session);
+      setNombre(""); setDescripcion(""); setFecha(""); setDireccion(""); setCosto("");
+      cargar();
+    } catch (e) { setError(e.message); } finally { setEnviando(false); }
+  };
+
+  const borrar = async (id) => {
+    try { await sbWrite("DELETE", `torneos?id=eq.${id}`, {}, session); cargar(); } catch (e) { setError(e.message); }
+  };
+
+  return (
+    <div className="mt-10">
+      <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">📅 Publicar un torneo</h3>
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2">
+        {error && <ErrorBox message={error} />}
+        <input placeholder="Nombre del torneo" value={nombre} onChange={(e) => setNombre(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+        <textarea placeholder="Descripción (formato, premios, etc.)" rows={2} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+        <div className="grid sm:grid-cols-2 gap-2">
+          <select value={juego} onChange={(e) => setJuego(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+            {Object.entries(JUEGOS_TORNEO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <input type="datetime-local" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        </div>
+        <div className="grid sm:grid-cols-2 gap-2">
+          <input placeholder="Dirección (si es distinta a la de tu tienda)" value={direccion} onChange={(e) => setDireccion(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <input type="number" placeholder="Costo de inscripción (opcional)" value={costo} onChange={(e) => setCosto(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        </div>
+        <button onClick={crear} disabled={enviando || !nombre.trim() || !fecha}
+          style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          {enviando ? "Publicando..." : "Publicar torneo"}
+        </button>
+      </div>
+
+      {!loading && misTorneos.length > 0 && (
+        <div className="grid gap-2">
+          {misTorneos.map((t) => (
+            <div key={t.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <p className="font-medium text-sm">{t.nombre}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">{new Date(t.fecha).toLocaleString("es-MX")}</p>
+              </div>
+              <button onClick={() => borrar(t.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2639,7 +2825,7 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
   );
 }
 
-const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Shield, error: AlertCircle };
+const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Calendar, plan: Shield, boost: Sparkles, error: AlertCircle };
 
 function NotificationBell({ session, onNavigate }) {
   const [abierto, setAbierto] = useState(false);
@@ -3053,6 +3239,7 @@ export default function EncuentraCartas() {
   // Secundarios: en escritorio se ven inline; en celular viven en el menú lateral.
   const navSecundarios = [
     { id: "news", label: "Anuncios y noticias", icon: Megaphone },
+    { id: "torneos", label: "Torneos", icon: Calendar },
     ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
     { id: "planes", label: "Planes", icon: Shield },
     ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
@@ -3488,6 +3675,11 @@ export default function EncuentraCartas() {
 
         {/* AYUDA */}
         {view === "ayuda" && <AyudaView perfil={perfil} />}
+
+        {/* TORNEOS */}
+        {view === "torneos" && (
+          <TorneosView session={session} onRequireLogin={() => setShowAccountModal(true)} />
+        )}
 
         {/* MIS PAGOS */}
         {view === "misPagos" && session && <MisPagosPanel session={session} />}
