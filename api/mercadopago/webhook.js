@@ -7,6 +7,7 @@
 import { MercadoPagoConfig, Payment } from "mercadopago";
 
 const DURACION_DIAS = 30;
+const TABLAS_VALIDAS = ["mercado_listings", "inventario_tienda", "sellado_tienda"];
 
 export default async function handler(req, res) {
   try {
@@ -19,9 +20,6 @@ export default async function handler(req, res) {
     const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN });
     const pago = await new Payment(client).get({ id: paymentId });
 
-    const [perfilId, plan] = (pago.external_reference || "").split(":");
-    if (!perfilId || !plan) return res.status(200).json({ ok: true });
-
     const supabaseUrl = process.env.SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const headers = {
@@ -30,6 +28,14 @@ export default async function handler(req, res) {
       "Content-Type": "application/json",
       Prefer: "return=representation",
     };
+
+    if ((pago.external_reference || "").startsWith("boost:")) {
+      await procesarBoost(pago, paymentId, supabaseUrl, headers);
+      return res.status(200).json({ ok: true });
+    }
+
+    const [perfilId, plan] = (pago.external_reference || "").split(":");
+    if (!perfilId || !plan) return res.status(200).json({ ok: true });
 
     const inicio = new Date();
     const fin = new Date(inicio.getTime() + DURACION_DIAS * 24 * 60 * 60 * 1000);
@@ -62,5 +68,36 @@ export default async function handler(req, res) {
     // Regresamos 200 igual: si no, Mercado Pago reintenta indefinidamente
     // por un error nuestro, no del pago.
     res.status(200).json({ ok: true });
+  }
+}
+
+async function procesarBoost(pago, paymentId, supabaseUrl, headers) {
+  const [, tabla, listingId, dias, perfilId] = pago.external_reference.split(":");
+  if (!TABLAS_VALIDAS.includes(tabla) || !listingId || !perfilId) return;
+
+  const destacadoHasta =
+    pago.status === "approved" ? new Date(Date.now() + Number(dias) * 24 * 60 * 60 * 1000).toISOString() : null;
+
+  await fetch(`${supabaseUrl}/rest/v1/boosts`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      perfil_id: perfilId,
+      tabla,
+      listing_id: listingId,
+      dias: Number(dias),
+      mp_payment_id: String(paymentId),
+      status: pago.status,
+      monto: pago.transaction_amount,
+      destacado_hasta: destacadoHasta,
+    }),
+  });
+
+  if (destacadoHasta) {
+    await fetch(`${supabaseUrl}/rest/v1/${tabla}?id=eq.${listingId}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ destacado_hasta: destacadoHasta }),
+    });
   }
 }

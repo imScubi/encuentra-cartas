@@ -23,6 +23,7 @@ final del mismo archivo.
 También corre (en el mismo SQL Editor, uno por uno, en orden):
 - `supabase/migrations/003_webhooks.sql` (si no lo has corrido ya — conecta la Wishlist con las publicaciones nuevas)
 - `supabase/migrations/004_alertas_carta_exacta.sql` (permite que una alerta apunte a una carta/producto exacto, con imagen y precio de referencia)
+- `supabase/migrations/005_boost.sql` (agrega el sistema de "Destacar" publicaciones por 3 o 7 días)
 
 ## 2. Variables de entorno (en Vercel → tu proyecto → Settings → Environment Variables)
 
@@ -77,8 +78,16 @@ CSV/Excel. Formato esperado:
 - Texto: `nombre, set (opcional), condición (opcional), precio, cantidad (opcional)` — una carta por línea.
 - Excel/CSV: columnas `carta`, `set_nombre`, `condicion`, `precio`, `cantidad`.
 
+## 6. Boost (destacar publicaciones)
+
+Ya funciona sin configuración extra (usa el mismo `MP_ACCESS_TOKEN`). En
+"Mi tienda" y "Vender en el Mercado", cada publicación tiene un botón
+**"🚀 Destacar"** con dos opciones: 3 días ($15 MXN) o 7 días ($29 MXN).
+Al pagar, esa publicación aparece primero en los resultados de búsqueda,
+en el Mercado y en el detalle de tienda, con una insignia dorada
+"🚀 Destacado", mientras dure el periodo pagado.
+
 ## Qué falta / próximos pasos posibles
 
-- **Boost / destacados de pago** (subir una publicación al tope de resultados por 3-7 días): es la idea #1 que mencionaste, no está incluida en esta pasada — la dejamos para cuando quieras.
 - **Renovación automática** de la suscripción (Mercado Pago `preapproval`) en vez de pago manual mes a mes.
 - Insignia de plan en el encabezado del chat (hoy solo aparece en directorio, búsqueda, mercado y detalle de tienda).
