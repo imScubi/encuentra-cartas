@@ -199,6 +199,16 @@ día.
 que pusiste como variable de entorno `CRON_SECRET`) en la parte de hasta
 abajo del archivo.
 
+## 13. Cambiar el plan de un usuario a mano (admin)
+
+Corre `supabase/migrations/010_admin_cambia_plan.sql` (una sola vez). Con
+eso, dentro de **Admin** aparece arriba de todo un buscador "🎚️ Cambiar
+plan de un usuario": buscas por nombre o correo, eliges la cuenta, y puedes
+cambiarle el plan a cualquiera de los 5 rangos, ponerle o quitarle fecha de
+vencimiento, y — si tenía una renovación automática activa — cancelarla
+también desde ahí. Útil, por ejemplo, para revertir un plan si reembolsaste
+un pago de prueba.
+
 ## Qué falta / próximos pasos posibles
 
 - Permitir que la tienda adjunte una imagen a su anuncio.

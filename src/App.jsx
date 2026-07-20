@@ -1135,6 +1135,128 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   );
 }
 
+function CambiarPlanAdmin({ session }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [query, setQuery] = useState("");
+  const [buscando, setBuscando] = useState(false);
+  const [resultados, setResultados] = useState([]);
+  const [error, setError] = useState(null);
+  const [usuario, setUsuario] = useState(null);
+  const [planNuevo, setPlanNuevo] = useState("pokeball");
+  const [venceNuevo, setVenceNuevo] = useState("");
+  const [limpiarPreapproval, setLimpiarPreapproval] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [ok, setOk] = useState(null);
+
+  const buscar = async () => {
+    if (!query.trim()) return;
+    setBuscando(true); setError(null); setOk(null);
+    try {
+      const q = encodeURIComponent(query.trim());
+      const rows = await sb(`perfiles?select=id,nombre,email,tipo,plan,plan_vence,mp_preapproval_id&or=(nombre.ilike.*${q}*,email.ilike.*${q}*)&limit=15`, session);
+      setResultados(rows);
+    } catch (e) { setError(e.message); } finally { setBuscando(false); }
+  };
+
+  const seleccionar = (u) => {
+    setUsuario(u);
+    setPlanNuevo(u.plan || "pokeball");
+    setVenceNuevo(u.plan_vence ? u.plan_vence.slice(0, 16) : "");
+    setLimpiarPreapproval(false);
+    setOk(null); setError(null);
+  };
+
+  const mas30dias = () => {
+    const fecha = new Date();
+    fecha.setDate(fecha.getDate() + 30);
+    setVenceNuevo(fecha.toISOString().slice(0, 16));
+  };
+
+  const guardar = async () => {
+    if (!usuario) return;
+    setGuardando(true); setError(null); setOk(null);
+    try {
+      const cambios = {
+        plan: planNuevo,
+        plan_vence: venceNuevo ? new Date(venceNuevo).toISOString() : null,
+      };
+      if (limpiarPreapproval) cambios.mp_preapproval_id = null;
+      await sbWrite("PATCH", `perfiles?id=eq.${usuario.id}`, cambios, session);
+      setUsuario({ ...usuario, ...cambios });
+      setResultados(resultados.map((r) => (r.id === usuario.id ? { ...r, ...cambios } : r)));
+      setOk(`Listo: el plan de ${usuario.nombre} ahora es ${PLAN_INFO[planNuevo].nombre}.`);
+    } catch (e) { setError(e.message); } finally { setGuardando(false); }
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">🎚️ Cambiar plan de un usuario</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+        Busca una cuenta por nombre o correo y cámbiale el plan a mano (útil, por ejemplo, si se reembolsó un pago).
+      </p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div className="flex gap-2 mb-4">
+        <input placeholder="Busca por nombre o correo..." value={query} onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && buscar()} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1" />
+        <button onClick={buscar} disabled={buscando || !query.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+          {buscando ? "Buscando..." : "Buscar"}
+        </button>
+      </div>
+
+      {resultados.length > 0 && (
+        <div className="grid gap-2 mb-6">
+          {resultados.map((u) => (
+            <button key={u.id} onClick={() => seleccionar(u)}
+              style={{ background: usuario?.id === u.id ? `${COLORS.azul}33` : COLORS.surface, border: `1px solid ${usuario?.id === u.id ? COLORS.azulPalido : COLORS.surface2}` }}
+              className="text-left rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <p className="font-semibold text-sm">{u.nombre}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">{u.email || "(sin correo)"} · {u.tipo}</p>
+              </div>
+              <PlanBadge perfil={u} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {usuario && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 grid gap-3">
+          <p className="font-semibold text-sm">Editando a: {usuario.nombre}</p>
+          {ok && <p style={{ color: COLORS.azulPalido }} className="text-xs">{ok}</p>}
+
+          <div>
+            <p style={{ color: COLORS.muted }} className="text-xs mb-1">Plan</p>
+            <select value={planNuevo} onChange={(e) => setPlanNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-full">
+              {PLAN_ORDER.map((p) => <option key={p} value={p}>{PLAN_INFO[p].nombre}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <p style={{ color: COLORS.muted }} className="text-xs mb-1">Vence el (vacío = sin vencimiento)</p>
+            <div className="flex gap-2 flex-wrap items-center">
+              <input type="datetime-local" value={venceNuevo} onChange={(e) => setVenceNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+              <button type="button" onClick={mas30dias} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">+30 días</button>
+              <button type="button" onClick={() => setVenceNuevo("")} style={{ color: COLORS.muted }} className="text-xs">Sin vencimiento</button>
+            </div>
+          </div>
+
+          {usuario.mp_preapproval_id && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={limpiarPreapproval} onChange={(e) => setLimpiarPreapproval(e.target.checked)} />
+              Cancelar también la renovación automática registrada ({usuario.mp_preapproval_id})
+            </label>
+          )}
+
+          <button onClick={guardar} disabled={guardando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+            {guardando ? "Guardando..." : "Guardar cambios"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminPanel({ session }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [tiendasSinDueno, setTiendasSinDueno] = useState([]);
@@ -1254,7 +1376,11 @@ function AdminPanel({ session }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Panel de administración</h2>
+      <h1 style={{ fontFamily: "'Cinzel', serif" }} className="text-2xl font-bold mb-6">Panel de administración</h1>
+
+      <CambiarPlanAdmin session={session} />
+
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1 mt-10">Vincular tiendas</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Vincula cuentas de tienda registradas con su tienda real en el directorio.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
