@@ -2421,7 +2421,7 @@ function NotificationBell({ session, onNavigate }) {
   };
 
   return (
-    <div className="relative">
+    <>
       <button onClick={abrir} style={{ color: COLORS.muted }} className="relative p-2 rounded-lg">
         <Bell size={18} />
         {noLeidas > 0 && (
@@ -2435,6 +2435,9 @@ function NotificationBell({ session, onNavigate }) {
       {abierto && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setAbierto(false)} />
+          {/* Ancla a la <nav> (más ancha, con position:relative) en vez de a este botón,
+              para que no se salga de la pantalla en celular cuando la campanita no es
+              el último ícono de la barra. */}
           <div
             style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33` }}
             className="absolute right-0 mt-2 w-80 max-w-[90vw] rounded-xl overflow-hidden z-40"
@@ -2468,7 +2471,7 @@ function NotificationBell({ session, onNavigate }) {
           </div>
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -2825,7 +2828,7 @@ export default function EncuentraCartas() {
               </>
             )}
           </div>
-          <nav className="flex gap-2 items-center">
+          <nav className="relative flex gap-2 items-center">
             {navEsenciales.map(navButton)}
             <div className="hidden sm:flex gap-2 items-center">
               {navSecundarios.map(navButton)}
