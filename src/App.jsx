@@ -199,14 +199,26 @@ function BoostButton({ session, tabla, item, onBoosted }) {
 
 function PlanBadge({ perfil, size = "sm" }) {
   const info = planDe(perfil);
+  const [iconError, setIconError] = useState(false);
   if (info === PLAN_INFO.pokeball) return null;
+  const iconPx = size === "lg" ? 18 : 14;
   return (
     <span
       title={info.nombre}
       style={{ border: `1px solid ${info.color}`, color: info.color, boxShadow: `0 0 8px ${info.color}66` }}
       className={`inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap ${size === "lg" ? "px-3 py-1 text-sm" : "px-2 py-0.5 text-xs"}`}
     >
-      {info.emoji} {info.nombre}
+      {!iconError ? (
+        <img
+          src={`/branding/rango-${perfil.plan}.png`}
+          alt=""
+          onError={() => setIconError(true)}
+          style={{ width: iconPx, height: iconPx, display: "inline-block", objectFit: "contain" }}
+        />
+      ) : (
+        info.emoji
+      )}{" "}
+      {info.nombre}
     </span>
   );
 }
@@ -1667,6 +1679,7 @@ export default function EncuentraCartas() {
   const [session, setSession] = useState(null);
   const [perfil, setPerfil] = useState(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [logoError, setLogoError] = useState(false);
   const [chatContext, setChatContext] = useState(null);
 
   const abrirChat = (otherId, otherNombre, contexto, otherWhatsapp, otherFacebook) => {
@@ -1854,17 +1867,37 @@ export default function EncuentraCartas() {
   ];
 
   return (
-    <div style={{ background: COLORS.bg, color: COLORS.text, minHeight: "100vh", fontFamily: "'Rajdhani', sans-serif", overflowX: "hidden" }} className="w-full">
+    <div
+      style={{
+        backgroundColor: COLORS.bg,
+        backgroundImage: "url('/branding/fondo.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundAttachment: "fixed",
+        backgroundRepeat: "no-repeat",
+        color: COLORS.text,
+        minHeight: "100vh",
+        fontFamily: "'Rajdhani', sans-serif",
+        overflowX: "hidden",
+      }}
+      className="w-full"
+    >
       <style>{FONTS}</style>
 
       <header style={{ borderBottom: `1px solid ${COLORS.surface2}`, background: `radial-gradient(ellipse at top, ${COLORS.surface} 0%, ${COLORS.bg} 70%)` }}
         className="px-4 sm:px-8 py-6">
         <div className="max-w-5xl mx-auto flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-2">
-            <Sparkles size={22} color={COLORS.gold} />
-            <h1 style={{ fontFamily: "'Cinzel', serif" }} className="text-2xl sm:text-3xl font-bold">
-              Encuentra <span style={{ color: COLORS.cyan }}>Cartas</span>
-            </h1>
+            {!logoError ? (
+              <img src="/branding/logo.png" alt="Encuentra Cartas" onError={() => setLogoError(true)} style={{ height: 40, width: "auto" }} />
+            ) : (
+              <>
+                <Sparkles size={22} color={COLORS.gold} />
+                <h1 style={{ fontFamily: "'Cinzel', serif" }} className="text-2xl sm:text-3xl font-bold">
+                  Encuentra <span style={{ color: COLORS.cyan }}>Cartas</span>
+                </h1>
+              </>
+            )}
           </div>
           <nav className="flex gap-2 flex-wrap items-center">
             {navItems.map((item) => {
