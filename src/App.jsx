@@ -392,6 +392,19 @@ function PlanBadge({ perfil, size = "sm" }) {
   );
 }
 
+function VerificadoBadge({ perfil }) {
+  if (!planDe(perfil).verificado) return null;
+  return (
+    <span
+      title="Tienda verificada"
+      style={{ border: `1px solid ${COLORS.azulClaro}`, color: COLORS.azulClaro, boxShadow: `0 0 8px ${COLORS.azulClaro}66` }}
+      className="inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap px-2 py-0.5 text-xs"
+    >
+      ✓ Verificado
+    </span>
+  );
+}
+
 // ---- Notificaciones push (Wishlist Premium) ----
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -2138,7 +2151,7 @@ export default function EncuentraCartas() {
   // Carga inicial: lista de tiendas reales
   useEffect(() => {
     setLoadingTiendas(true);
-    sb("tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url)&order=nombre.asc")
+    sb("tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url)&order=nombre.asc")
       .then(setTiendas)
       .catch((e) => setErrorTiendas(e.message))
       .finally(() => setLoadingTiendas(false));
@@ -2155,9 +2168,9 @@ export default function EncuentraCartas() {
     setSearchError(null);
     const t = setTimeout(() => {
       Promise.all([
-        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence))&carta=ilike.*${q}*&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&carta=ilike.*${q}*&order=precio.asc`),
         sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&carta=ilike.*${q}*&order=precio.asc`),
-        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence))&producto=ilike.*${q}*&order=precio.asc`),
+        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&producto=ilike.*${q}*&order=precio.asc`),
       ])
         .then(([inv, merc, sel]) => setSearchResults({ tiendas: conBoostPrimero(inv), mercado: conBoostPrimero(merc), sellado: conBoostPrimero(sel) }))
         .catch((e) => { setSearchResults({ tiendas: [], mercado: [], sellado: [] }); setSearchError(e.message); })
@@ -2455,8 +2468,10 @@ export default function EncuentraCartas() {
                   className="text-left rounded-xl p-5 hover:brightness-110">
                   <div className="flex items-start justify-between gap-2 flex-wrap">
                     <span className="flex items-center gap-2 flex-wrap">
+                      <AvatarImg url={store.perfiles?.avatar_url} size={28} />
                       <p className="font-semibold text-lg">{store.nombre}</p>
                       <PlanBadge perfil={store.perfiles} />
+                      <VerificadoBadge perfil={store.perfiles} />
                     </span>
                     {store.zona && <Badge color={colorFor(i)}>{store.zona}</Badge>}
                   </div>
@@ -2479,27 +2494,37 @@ export default function EncuentraCartas() {
                 Todavía no hay publicaciones de usuarios en el mercado. En cuanto alguien se registre como cuenta individual y publique una carta, aparecerá aquí automáticamente.
               </p>
             )}
-            <div className="grid gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               {market.map((r) => (
-                <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
-                  <div className="flex items-center gap-3">
-                    {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap"><p className="font-semibold">{r.carta}</p>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
-                      <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre} · {r.zona}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <AvatarImg url={r.perfiles?.avatar_url} size={22} />
-                        <p style={{ color: COLORS.muted }} className="text-xs">{r.perfiles?.nombre || "Usuario"}</p>
-                      </div>
-                    </div>
+                <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-xl overflow-hidden flex flex-col">
+                  <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
+                    {r.imagen_url ? (
+                      <img src={r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    ) : (
+                      <Package size={40} color={COLORS.muted} />
+                    )}
                   </div>
-                  <div className="text-right">
-                    <p style={{ color: COLORS.azulPalido }} className="font-bold">${Number(r.precio).toLocaleString("es-MX")}</p>
-                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                  <div className="p-3 flex flex-col flex-1 gap-1">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
+                      <PlanBadge perfil={r.perfiles} />
+                      <BoostBadge item={r} />
+                    </div>
+                    <p className="font-semibold text-sm leading-snug line-clamp-2">{r.carta}</p>
+                    <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.set_nombre}{r.set_nombre && r.zona ? " · " : ""}{r.zona}</p>
+                    <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-lg font-bold mt-1">
+                      ${Number(r.precio).toLocaleString("es-MX")}
+                    </p>
+                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs -mt-1">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                    <div className="flex items-center gap-2 mt-auto pt-2">
+                      <AvatarImg url={r.perfiles?.avatar_url} size={20} />
+                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.perfiles?.nombre || "Usuario"}</p>
+                    </div>
                     <button
                       onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook)}
                       style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
-                      className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
+                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center justify-center gap-1 w-full"
+                    >
                       <MessageCircle size={12} /> Contactar
                     </button>
                   </div>
@@ -2624,8 +2649,10 @@ export default function EncuentraCartas() {
             </button>
             <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-6 mb-6">
               <div className="flex items-center gap-2 flex-wrap">
+                <AvatarImg url={selectedStore.perfiles?.avatar_url} size={48} />
                 <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-2xl font-bold">{selectedStore.nombre}</h2>
                 <PlanBadge perfil={selectedStore.perfiles} size="lg" />
+                <VerificadoBadge perfil={selectedStore.perfiles} />
               </div>
               <p style={{ color: COLORS.muted }} className="mt-2 flex items-center gap-1 text-sm"><MapPin size={14} /> {selectedStore.direccion}</p>
               {selectedStore.telefono && <p style={{ color: COLORS.muted }} className="mt-1 flex items-center gap-1 text-sm"><Phone size={14} /> {selectedStore.telefono}</p>}
@@ -2643,6 +2670,23 @@ export default function EncuentraCartas() {
                       <MapPin size={12} /> Google Maps
                     </a>
                   )}
+                </div>
+              )}
+              {(selectedStore.direccion || (selectedStore.lat && selectedStore.lng)) && (
+                <div className="mt-4 rounded-xl overflow-hidden" style={{ border: `1px solid ${COLORS.surface2}` }}>
+                  <iframe
+                    title="Ubicación en el mapa"
+                    src={`https://www.google.com/maps?q=${
+                      selectedStore.lat && selectedStore.lng
+                        ? `${selectedStore.lat},${selectedStore.lng}`
+                        : encodeURIComponent(`${selectedStore.direccion}, ${selectedStore.nombre}`)
+                    }&output=embed`}
+                    width="100%"
+                    height="220"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
                 </div>
               )}
             </div>
