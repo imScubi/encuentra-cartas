@@ -59,6 +59,114 @@ async function authSignIn(email, password) {
   return data;
 }
 
+// ---- Foto de perfil: Pokémon (PokeAPI, pública) o foto propia (Supabase Storage) ----
+const POKEMON_MAX_ID = 1025;
+const pokemonSpriteUrl = (id) =>
+  `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
+const randomPokemonAvatar = () => pokemonSpriteUrl(1 + Math.floor(Math.random() * POKEMON_MAX_ID));
+
+let _pokemonListCache = null;
+async function obtenerListaPokemon() {
+  if (_pokemonListCache) return _pokemonListCache;
+  const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=2000");
+  const data = await res.json();
+  _pokemonListCache = (data.results || [])
+    .map((p) => {
+      const match = p.url.match(/\/pokemon\/(\d+)\/?$/);
+      return match ? { name: p.name, id: Number(match[1]) } : null;
+    })
+    .filter(Boolean);
+  return _pokemonListCache;
+}
+
+async function subirAvatar(file, session) {
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${session.user.id}/avatar.${ext}`;
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/avatars/${path}`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": file.type || "image/jpeg",
+      "x-upsert": "true",
+    },
+    body: file,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || "No se pudo subir la foto");
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/avatars/${path}?t=${Date.now()}`;
+}
+
+function AvatarImg({ url, size = 36 }) {
+  const [error, setError] = useState(false);
+  return (
+    <img
+      src={!error && url ? url : "/branding/logo-icon.png"}
+      onError={() => setError(true)}
+      alt=""
+      style={{
+        width: size, height: size, borderRadius: "9999px", objectFit: "cover",
+        border: `1px solid ${COLORS.azulMedio}`, flexShrink: 0, background: COLORS.surface2,
+      }}
+    />
+  );
+}
+
+function PokemonPicker({ onSelect }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [q, setQ] = useState("");
+  const [todos, setTodos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (open && todos.length === 0) {
+      setLoading(true);
+      obtenerListaPokemon().then(setTodos).finally(() => setLoading(false));
+    }
+  }, [open]);
+
+  const resultados =
+    q.trim().length >= 2 ? todos.filter((p) => p.name.includes(q.trim().toLowerCase())).slice(0, 20) : [];
+
+  return (
+    <div className="relative">
+      <input
+        placeholder="Busca tu Pokémon favorito (ej. Pikachu)"
+        value={q}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        style={inputStyle}
+        className="rounded-lg px-2 py-2 text-sm w-full"
+      />
+      {open && q.trim().length >= 2 && (
+        <div
+          style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66` }}
+          className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg shadow-xl grid grid-cols-4 gap-2 p-2"
+        >
+          {loading && <p style={{ color: COLORS.muted }} className="text-xs col-span-4 p-2">Cargando lista de Pokémon...</p>}
+          {!loading && resultados.length === 0 && (
+            <p style={{ color: COLORS.muted }} className="text-xs col-span-4 p-2">Escribe al menos 2 letras.</p>
+          )}
+          {resultados.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => { onSelect(pokemonSpriteUrl(p.id)); setQ(""); setOpen(false); }}
+              className="flex flex-col items-center gap-1 p-1 rounded hover:brightness-125"
+            >
+              <img src={pokemonSpriteUrl(p.id)} alt={p.name} style={{ width: 48, height: 48, objectFit: "contain" }} loading="lazy" />
+              <span style={{ color: COLORS.text }} className="text-xs capitalize truncate w-full text-center">{p.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const FONTS = `
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
 `;
@@ -295,23 +403,47 @@ function AccountModal({ onClose, onAuthed }) {
   const [nombre, setNombre] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [facebook, setFacebook] = useState("");
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(null); // vista previa (blob local o URL de Pokémon)
+  const [avatarPokemonUrl, setAvatarPokemonUrl] = useState(null);
+  const [mostrarPokemonPicker, setMostrarPokemonPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [info, setInfo] = useState(null);
 
+  const elegirArchivo = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarFile(file);
+    setAvatarPokemonUrl(null);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const elegirPokemon = (url) => {
+    setAvatarPokemonUrl(url);
+    setAvatarFile(null);
+    setAvatarPreview(url);
+    setMostrarPokemonPicker(false);
+  };
+
   const handleSignUp = async () => {
     setLoading(true); setError(null); setInfo(null);
     try {
-      const auth = await authSignUp(email, password, { tipo: accountType, nombre, whatsapp: whatsapp || null, facebook: facebook || null });
+      const avatarUrlPokemonFinal = avatarFile ? null : avatarPokemonUrl || randomPokemonAvatar();
+      const auth = await authSignUp(email, password, {
+        tipo: accountType, nombre, whatsapp: whatsapp || null, facebook: facebook || null,
+        avatar_url: avatarUrlPokemonFinal,
+      });
       if (!auth.access_token) {
         setInfo("Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.");
         setLoading(false);
         return;
       }
       const session = { access_token: auth.access_token, user: auth.user };
+      const avatarUrl = avatarFile ? await subirAvatar(avatarFile, session) : avatarUrlPokemonFinal;
       await sbWrite("POST", "perfiles", {
         id: auth.user.id, tipo: accountType, nombre,
-        whatsapp: whatsapp || null, facebook: facebook || null,
+        whatsapp: whatsapp || null, facebook: facebook || null, avatar_url: avatarUrl,
       }, session);
       localStorage.setItem("ec_session", JSON.stringify(session));
       onAuthed(session);
@@ -370,6 +502,30 @@ function AccountModal({ onClose, onAuthed }) {
             <Badge color={accountType === "tienda" ? COLORS.azulPalido : COLORS.azulClaro}>
               {accountType === "tienda" ? "Cuenta de tienda" : "Cuenta individual"}
             </Badge>
+
+            <div className="flex items-center gap-3">
+              {avatarPreview ? (
+                <img src={avatarPreview} alt="" style={{ width: 56, height: 56, borderRadius: "9999px", objectFit: "cover", border: `1px solid ${COLORS.azulMedio}` }} />
+              ) : (
+                <div style={{ width: 56, height: 56, borderRadius: "9999px", border: `1px dashed ${COLORS.surface2}`, color: COLORS.muted }} className="flex items-center justify-center text-xs text-center">
+                  ?
+                </div>
+              )}
+              <div className="grid gap-1">
+                <label style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold cursor-pointer text-center">
+                  Subir foto
+                  <input type="file" accept="image/*" onChange={elegirArchivo} className="hidden" />
+                </label>
+                <button type="button" onClick={() => setMostrarPokemonPicker((v) => !v)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                  Elegir Pokémon
+                </button>
+              </div>
+            </div>
+            {!avatarPreview && (
+              <p style={{ color: COLORS.muted }} className="text-xs -mt-2">Si no eliges nada, te asignamos un Pokémon al azar de foto.</p>
+            )}
+            {mostrarPokemonPicker && <PokemonPicker onSelect={elegirPokemon} />}
+
             <input placeholder={accountType === "tienda" ? "Nombre de la tienda" : "Nombre de usuario"} value={nombre} onChange={(e) => setNombre(e.target.value)}
               style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
             <input placeholder="Correo electrónico" value={email} onChange={(e) => setEmail(e.target.value)}
@@ -1677,12 +1833,164 @@ function MisPagosPanel({ session }) {
   );
 }
 
+function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const info = planDe(perfil);
+  const [nombre, setNombre] = useState(perfil?.nombre || "");
+  const [whatsapp, setWhatsapp] = useState(perfil?.whatsapp || "");
+  const [facebook, setFacebook] = useState(perfil?.facebook || "");
+  const [instagram, setInstagram] = useState(perfil?.instagram || "");
+  const [googleMaps, setGoogleMaps] = useState(perfil?.google_maps_url || "");
+  const [avatarPreview, setAvatarPreview] = useState(perfil?.avatar_url || null);
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPokemonUrl, setAvatarPokemonUrl] = useState(null);
+  const [mostrarPokemonPicker, setMostrarPokemonPicker] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const elegirArchivo = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarFile(file);
+    setAvatarPokemonUrl(null);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const elegirPokemon = (url) => {
+    setAvatarPokemonUrl(url);
+    setAvatarFile(null);
+    setAvatarPreview(url);
+    setMostrarPokemonPicker(false);
+  };
+
+  const guardar = async () => {
+    if (!nombre.trim()) return;
+    setSaving(true); setError(null);
+    try {
+      let avatar_url = perfil?.avatar_url || null;
+      if (avatarFile) avatar_url = await subirAvatar(avatarFile, session);
+      else if (avatarPokemonUrl) avatar_url = avatarPokemonUrl;
+
+      await sbWrite("PATCH", `perfiles?id=eq.${session.user.id}`, {
+        nombre: nombre.trim(),
+        whatsapp: whatsapp || null,
+        facebook: facebook || null,
+        ...(info.redesExtra ? { instagram: instagram || null, google_maps_url: googleMaps || null } : {}),
+        avatar_url,
+      }, session);
+      onGuardado();
+      onClose();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 40px ${COLORS.azulMedio}33` }}
+        className="w-full max-w-md rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto"
+      >
+        <button onClick={onClose} style={{ color: COLORS.muted }} className="absolute top-4 right-4"><X size={20} /></button>
+        <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-4">Editar perfil</h2>
+
+        <div className="flex items-center gap-3 mb-3">
+          <img
+            src={avatarPreview || "/branding/logo-icon.png"}
+            alt=""
+            style={{ width: 64, height: 64, borderRadius: "9999px", objectFit: "cover", border: `1px solid ${COLORS.azulMedio}` }}
+          />
+          <div className="grid gap-1">
+            <label style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold cursor-pointer text-center">
+              Cambiar foto
+              <input type="file" accept="image/*" onChange={elegirArchivo} className="hidden" />
+            </label>
+            <button type="button" onClick={() => setMostrarPokemonPicker((v) => !v)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+              Elegir Pokémon
+            </button>
+          </div>
+        </div>
+        {mostrarPokemonPicker && <div className="mb-3"><PokemonPicker onSelect={elegirPokemon} /></div>}
+
+        {error && <div className="mb-3"><ErrorBox message={error} /></div>}
+
+        <div className="grid gap-3">
+          <input placeholder="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
+          <input placeholder="WhatsApp (opcional)" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
+          <input placeholder="Enlace de Facebook (opcional)" value={facebook} onChange={(e) => setFacebook(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
+          {info.redesExtra ? (
+            <>
+              <input placeholder="Enlace de Instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
+              <input placeholder="Enlace de Google Maps" value={googleMaps} onChange={(e) => setGoogleMaps(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
+            </>
+          ) : (
+            <p style={{ color: COLORS.muted }} className="text-xs">🔒 Enlaces de Instagram y Google Maps disponibles desde Super Ball.</p>
+          )}
+          <button onClick={guardar} disabled={saving || !nombre.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: saving ? 0.6 : 1 }} className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
+            {saving && <Loader2 size={16} className="animate-spin" />} Guardar cambios
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccountMenu({ session, perfil, onNavigate, onEditarPerfil, onLogout }) {
+  const [abierto, setAbierto] = useState(false);
+
+  const item = (label, onClick) => (
+    <button
+      onClick={() => { setAbierto(false); onClick(); }}
+      style={{ color: COLORS.text }}
+      className="text-left px-4 py-2 text-sm hover:brightness-125 w-full"
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="relative">
+      <button onClick={() => setAbierto((v) => !v)} className="flex items-center gap-2">
+        <AvatarImg url={perfil?.avatar_url} size={32} />
+        <Badge color={COLORS.azulPalido}>{perfil?.nombre || "Mi cuenta"}</Badge>
+        <PlanBadge perfil={perfil} />
+      </button>
+
+      {abierto && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setAbierto(false)} />
+          <div
+            style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33` }}
+            className="absolute right-0 mt-2 w-56 rounded-xl overflow-hidden z-40 grid py-1"
+          >
+            {item("Editar perfil", onEditarPerfil)}
+            {item("Planes / Suscripción", () => onNavigate("planes"))}
+            {item("Mis pagos", () => onNavigate("misPagos"))}
+            {perfil?.tipo === "tienda" && item("Mi tienda", () => onNavigate("myStore"))}
+            {perfil?.tipo === "individual" && item("Vender en el Mercado", () => onNavigate("myMarket"))}
+            {item("Wishlist", () => onNavigate("alertas"))}
+            {perfil?.es_admin && item("Admin", () => onNavigate("admin"))}
+            <div style={{ borderTop: `1px solid ${COLORS.surface}` }} className="my-1" />
+            <button onClick={() => { setAbierto(false); onLogout(); }} style={{ color: COLORS.azulPalido }} className="text-left px-4 py-2 text-sm hover:brightness-125 w-full">
+              Cerrar sesión
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
   const [session, setSession] = useState(null);
   const [perfil, setPerfil] = useState(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [showEditarPerfil, setShowEditarPerfil] = useState(false);
   const [logoError, setLogoError] = useState(false);
   const [chatContext, setChatContext] = useState(null);
 
@@ -1724,6 +2032,7 @@ export default function EncuentraCartas() {
           nombre: s.user.user_metadata.nombre,
           whatsapp: s.user.user_metadata.whatsapp || null,
           facebook: s.user.user_metadata.facebook || null,
+          avatar_url: s.user.user_metadata.avatar_url || randomPokemonAvatar(),
         }, s);
         p = Array.isArray(creado) ? creado[0] : creado;
       }
@@ -1916,13 +2225,13 @@ export default function EncuentraCartas() {
               );
             })}
             {session ? (
-              <div className="flex items-center gap-2">
-                <Badge color={COLORS.azulPalido}>{perfil?.nombre || "Mi cuenta"}</Badge>
-                <PlanBadge perfil={perfil} />
-                <button onClick={handleLogout} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="px-3 py-2 rounded-lg text-xs">
-                  Cerrar sesión
-                </button>
-              </div>
+              <AccountMenu
+                session={session}
+                perfil={perfil}
+                onNavigate={setView}
+                onEditarPerfil={() => setShowEditarPerfil(true)}
+                onLogout={handleLogout}
+              />
             ) : (
               <button onClick={() => setShowAccountModal(true)} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
                 <User size={15} /> Mi cuenta
@@ -1933,6 +2242,14 @@ export default function EncuentraCartas() {
       </header>
 
       {showAccountModal && <AccountModal onClose={() => setShowAccountModal(false)} onAuthed={handleAuthed} />}
+      {showEditarPerfil && session && (
+        <EditarPerfilModal
+          session={session}
+          perfil={perfil}
+          onClose={() => setShowEditarPerfil(false)}
+          onGuardado={() => cargarOCrearPerfil(session)}
+        />
+      )}
       {chatContext && session && (
         <ChatModal
           session={session}

@@ -25,6 +25,7 @@ También corre (en el mismo SQL Editor, uno por uno, en orden):
 - `supabase/migrations/004_alertas_carta_exacta.sql` (permite que una alerta apunte a una carta/producto exacto, con imagen y precio de referencia)
 - `supabase/migrations/005_boost.sql` (agrega el sistema de "Destacar" publicaciones por 3 o 7 días)
 - `supabase/migrations/006_renovacion_automatica.sql` (agrega `perfiles.mp_preapproval_id`, para la renovación automática)
+- `supabase/migrations/007_avatar.sql` (agrega `perfiles.avatar_url` y crea el bucket de Storage `avatars` para fotos de perfil subidas por los usuarios)
 
 ## 2. Variables de entorno (en Vercel → tu proyecto → Settings → Environment Variables)
 
@@ -130,7 +131,24 @@ Nueva pestaña **"Mis pagos"** (visible si iniciaste sesión): muestra el
 historial combinado de tus suscripciones de plan y tus publicaciones
 destacadas, con fecha, monto y si se aprobó, quedó pendiente o se rechazó.
 
+## 10. Foto de perfil y menú de cuenta
+
+Al registrarse, cada usuario puede:
+- Subir su propia foto (se guarda en el bucket `avatars` de Supabase Storage).
+- O elegir un Pokémon de foto con un buscador integrado (usa la API pública de PokeAPI, sin necesidad de llave ni configuración).
+- Si no elige nada, se le asigna un Pokémon al azar automáticamente.
+
+El botón "Mi cuenta" del encabezado ahora muestra la foto de perfil y, al
+hacerle click, abre un menú con: **Editar perfil** (cambiar nombre, foto,
+WhatsApp/Facebook/Instagram/Maps), **Planes**, **Mis pagos**, **Mi
+tienda**/**Vender en el Mercado** (según el tipo de cuenta), **Wishlist**,
+**Admin** (si aplica) y **Cerrar sesión**.
+
+No requiere ninguna llave nueva — solo corre la migración 007 (arriba) para
+que exista la columna y el bucket.
+
 ## Qué falta / próximos pasos posibles
 
 - Insignia de plan en el encabezado del chat (hoy solo aparece en directorio, búsqueda, mercado y detalle de tienda).
 - Recordatorios por correo además de push (hoy solo push, para quien no lo haya activado no le llega nada).
+- Mostrar la foto de perfil también junto al nombre en resultados de búsqueda, chat y detalle de tienda (hoy solo aparece en el propio botón "Mi cuenta").
