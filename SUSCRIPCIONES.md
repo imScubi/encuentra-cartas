@@ -20,6 +20,10 @@ Si quieres regalar Master Ball 90 días a las tiendas que ya tienes cargadas
 (recomendado para poblar la app rápido), descomenta y corre el `update` al
 final del mismo archivo.
 
+También corre (en el mismo SQL Editor, uno por uno, en orden):
+- `supabase/migrations/003_webhooks.sql` (si no lo has corrido ya — conecta la Wishlist con las publicaciones nuevas)
+- `supabase/migrations/004_alertas_carta_exacta.sql` (permite que una alerta apunte a una carta/producto exacto, con imagen y precio de referencia)
+
 ## 2. Variables de entorno (en Vercel → tu proyecto → Settings → Environment Variables)
 
 | Variable | De dónde sale | Notas |

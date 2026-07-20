@@ -1259,7 +1259,8 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
   const [saving, setSaving] = useState(false);
   const [activandoPush, setActivandoPush] = useState(false);
   const [pushOk, setPushOk] = useState(false);
-  const vacio = { tcg: "pokemon", carta: "", precio_max: "", zona: "" };
+  const [tipo, setTipo] = useState("carta"); // carta | sellado
+  const vacio = { tcg: "pokemon", carta: "", precio_max: "", zona: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null };
   const [nueva, setNueva] = useState(vacio);
 
   const cargar = () => {
@@ -1289,10 +1290,14 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
     try {
       await sbWrite("POST", "alertas", {
         perfil_id: session.user.id,
+        tipo,
         tcg: nueva.tcg,
         carta: nueva.carta.trim(),
         precio_max: nueva.precio_max ? Number(nueva.precio_max) : null,
         zona: nueva.zona || null,
+        card_api_id: nueva.card_api_id || null,
+        imagen_url: nueva.imagen_url || null,
+        precio_ref_mxn: nueva.precio_ref_mxn || null,
       }, session);
       setNueva(vacio);
       cargar();
@@ -1329,14 +1334,60 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
         </div>
       )}
 
-      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid gap-2 sm:grid-cols-4">
-        <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
-          <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
-        </select>
-        <input placeholder="Nombre de la carta" value={nueva.carta} onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-        <input placeholder="Precio máximo (MXN)" type="number" value={nueva.precio_max} onChange={(e) => setNueva({ ...nueva, precio_max: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-        <input placeholder="Zona (opcional)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-        <button onClick={agregar} disabled={saving} style={{ background: COLORS.violet, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-4">
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid gap-3">
+        <div className="flex gap-2">
+          <button type="button" onClick={() => { setTipo("carta"); setNueva(vacio); }}
+            style={{ background: tipo === "carta" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "carta" ? COLORS.gold : COLORS.surface2}`, color: tipo === "carta" ? COLORS.gold : COLORS.muted }}
+            className="px-3 py-1.5 rounded-full text-sm font-semibold">Carta suelta</button>
+          <button type="button" onClick={() => { setTipo("sellado"); setNueva(vacio); }}
+            style={{ background: tipo === "sellado" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "sellado" ? COLORS.cyan : COLORS.surface2}`, color: tipo === "sellado" ? COLORS.cyan : COLORS.muted }}
+            className="px-3 py-1.5 rounded-full text-sm font-semibold">Producto sellado</button>
+        </div>
+
+        {tipo === "carta" ? (
+          <>
+            <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+              <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
+            </select>
+            {nueva.tcg === "pokemon" ? (
+              <div>
+                <CardPicker onSelect={(c) => setNueva({ ...nueva, carta: c.name, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_max: nueva.precio_max || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+                {nueva.card_api_id && (
+                  <div className="flex items-center gap-3 mt-2">
+                    {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                    <div>
+                      <Badge color={COLORS.gold}>{nueva.carta}</Badge>
+                      {nueva.precio_ref_mxn && <p style={{ color: COLORS.cyan }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                      <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <input placeholder="Nombre de la carta" value={nueva.carta} onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            )}
+          </>
+        ) : (
+          <div>
+            <SealedPicker onSelect={(p) => setNueva({ ...nueva, carta: p.producto, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio_max: nueva.precio_max || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
+            {nueva.card_api_id && (
+              <div className="flex items-center gap-3 mt-2">
+                {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                <div>
+                  <Badge color={COLORS.cyan}>{nueva.carta}</Badge>
+                  {nueva.precio_ref_mxn && <p style={{ color: COLORS.gold }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                  <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="grid sm:grid-cols-2 gap-2">
+          <input placeholder="Precio máximo (MXN)" type="number" value={nueva.precio_max} onChange={(e) => setNueva({ ...nueva, precio_max: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <input placeholder="Zona (opcional)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        </div>
+        <button onClick={agregar} disabled={saving || !nueva.carta.trim()} style={{ background: COLORS.violet, color: COLORS.bg, opacity: !nueva.carta.trim() ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
           {saving ? "Guardando..." : "+ Crear alerta"}
         </button>
       </div>
@@ -1346,8 +1397,12 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
           {alertas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no tienes alertas configuradas.</p>}
           {alertas.map((a) => (
             <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${a.activa ? COLORS.violet + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+              {a.imagen_url && <img src={a.imagen_url} alt={a.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
               <div className="flex-1 min-w-[140px]">
-                <p className="font-medium text-sm">{a.carta}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-sm">{a.carta}</p>
+                  {a.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}
+                </div>
                 <p style={{ color: COLORS.muted }} className="text-xs">
                   {a.precio_max ? `hasta $${Number(a.precio_max).toLocaleString("es-MX")} MXN` : "cualquier precio"} {a.zona ? `· ${a.zona}` : ""}
                 </p>
