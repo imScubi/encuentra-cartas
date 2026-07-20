@@ -76,6 +76,101 @@ const COLORS = {
 const STORE_COLORS = [COLORS.magenta, COLORS.cyan, COLORS.violet, COLORS.gold];
 const colorFor = (i) => STORE_COLORS[i % STORE_COLORS.length];
 
+// ---- Llave pública VAPID para notificaciones push (la privada vive solo en el servidor) ----
+const VAPID_PUBLIC_KEY = "BBPa0Sb2JnCX1McAm78espGKsZw8B7lYD2CFV4F_-F_9EghLKVjuhmSnVYh8YRkLgTibA5l5b5OKoujZD3_Dn8c";
+
+// ---- Rangos / planes de suscripción ----
+const PLAN_ORDER = ["pokeball", "superball", "ultraball", "masterball", "enteball"];
+
+const PLAN_INFO = {
+  pokeball: {
+    nombre: "Poké Ball", emoji: "⚪", precio: 0, color: COLORS.muted,
+    resumen: "Básico y gratis",
+    beneficios: ["Publica hasta 20 cartas/productos activos", "Aparece en búsquedas y en el directorio"],
+    limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, importadorMasivo: false, soloTienda: false,
+  },
+  superball: {
+    nombre: "Super Ball", emoji: "🔵", precio: 49, color: COLORS.cyan,
+    resumen: "Insignia verificado + redes directas",
+    beneficios: ["Todo lo de Poké Ball", "Insignia de perfil verificado", "Enlace directo a Instagram y Google Maps"],
+    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false,
+  },
+  ultraball: {
+    nombre: "Ultra Ball", emoji: "🟣", precio: 89, color: COLORS.violet,
+    resumen: "Todo Super Ball + Wishlist Premium",
+    beneficios: ["Todo lo de Super Ball", "Alertas de precio con notificación push"],
+    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false,
+  },
+  masterball: {
+    nombre: "Master Ball", emoji: "🟡", precio: 149, color: COLORS.gold,
+    resumen: "Todos los beneficios, inventario ilimitado",
+    beneficios: ["Todo lo de Ultra Ball", "Publicaciones ilimitadas (una por una)"],
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false,
+  },
+  enteball: {
+    nombre: "Ente Ball", emoji: "🔴", precio: 349, color: COLORS.magenta,
+    resumen: "Exclusivo tiendas: todo + importador masivo",
+    beneficios: ["Todo lo de Master Ball", "Importador masivo de inventario (texto o Excel)", "Solo disponible para cuentas de tienda"],
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: true, soloTienda: true,
+  },
+};
+
+const planDe = (perfil) => {
+  if (!perfil) return PLAN_INFO.pokeball;
+  // Si venció la suscripción, tratamos al perfil como Poké Ball hasta que pague de nuevo.
+  if (perfil.plan_vence && new Date(perfil.plan_vence) < new Date()) return PLAN_INFO.pokeball;
+  return PLAN_INFO[perfil.plan] || PLAN_INFO.pokeball;
+};
+const limiteAlcanzado = (perfil, total) => total >= planDe(perfil).limiteCartas;
+
+function PlanBadge({ perfil, size = "sm" }) {
+  const info = planDe(perfil);
+  if (info === PLAN_INFO.pokeball) return null;
+  return (
+    <span
+      title={info.nombre}
+      style={{ border: `1px solid ${info.color}`, color: info.color, boxShadow: `0 0 8px ${info.color}66` }}
+      className={`inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap ${size === "lg" ? "px-3 py-1 text-sm" : "px-2 py-0.5 text-xs"}`}
+    >
+      {info.emoji} {info.nombre}
+    </span>
+  );
+}
+
+// ---- Notificaciones push (Wishlist Premium) ----
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+}
+
+async function activarPush(session) {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    throw new Error("Tu navegador no soporta notificaciones push.");
+  }
+  const permiso = await Notification.requestPermission();
+  if (permiso !== "granted") throw new Error("No diste permiso para recibir notificaciones.");
+
+  const registro = await navigator.serviceWorker.register("/sw.js");
+  const sub = await registro.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  });
+  const json = sub.toJSON();
+  try {
+    await sbWrite("POST", "push_subscriptions", {
+      perfil_id: session.user.id,
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+    }, session);
+  } catch (e) {
+    // Ya estaba suscrito con este mismo endpoint (navegador/dispositivo): no es un error real.
+    if (!/duplicate key|already exists/i.test(e.message || "")) throw e;
+  }
+}
+
 function Badge({ children, color }) {
   return (
     <span style={{ border: `1px solid ${color}`, color, boxShadow: `0 0 8px ${color}66` }}
@@ -516,7 +611,50 @@ function SealedPicker({ onSelect }) {
   );
 }
 
-function MyMarketPanel({ session }) {
+function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const info = planDe(perfil);
+  const [instagram, setInstagram] = useState(perfil?.instagram || "");
+  const [maps, setMaps] = useState(perfil?.google_maps_url || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [ok, setOk] = useState(false);
+
+  if (!info.redesExtra) {
+    return (
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <p style={{ color: COLORS.muted }} className="text-sm">🔒 Enlaces directos a Instagram y Google Maps disponibles desde Super Ball.</p>
+        <button onClick={onIrAPlanes} style={{ color: COLORS.cyan, border: `1px solid ${COLORS.cyan}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">Ver planes</button>
+      </div>
+    );
+  }
+
+  const guardar = async () => {
+    setSaving(true); setError(null); setOk(false);
+    try {
+      await sbWrite("PATCH", `perfiles?id=eq.${session.user.id}`, { instagram: instagram || null, google_maps_url: maps || null }, session);
+      setOk(true);
+      onUpdated?.();
+    } catch (e) { setError(e.message); } finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.cyan}55` }} className="rounded-xl p-4 mb-6 grid gap-2">
+      <p style={{ color: COLORS.cyan }} className="text-sm font-semibold uppercase">Tus redes</p>
+      {error && <ErrorBox message={error} />}
+      <div className="grid sm:grid-cols-2 gap-2">
+        <input placeholder="Enlace de Instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        <input placeholder="Enlace de Google Maps" value={maps} onChange={(e) => setMaps(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+      </div>
+      <button onClick={guardar} disabled={saving} style={{ background: COLORS.cyan, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
+        {saving ? "Guardando..." : "Guardar"}
+      </button>
+      {ok && <p style={{ color: COLORS.gold }} className="text-xs">Guardado.</p>}
+    </div>
+  );
+}
+
+function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const [publicaciones, setPublicaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -538,8 +676,11 @@ function MyMarketPanel({ session }) {
 
   useEffect(() => { cargar(); }, []);
 
+  const alLimite = limiteAlcanzado(perfil, publicaciones.length);
+
   const agregar = async () => {
     if (!nueva.carta || !nueva.precio || !nueva.zona) return;
+    if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Master Ball para inventario ilimitado.`); return; }
     setSaving(true);
     try {
       await sbWrite("POST", "mercado_listings", {
@@ -577,6 +718,18 @@ function MyMarketPanel({ session }) {
       <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Vender en el Mercado</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Publica cartas sueltas o producto sellado para que otros usuarios te encuentren.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <RedesSocialesEditor session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
+
+      <p style={{ color: COLORS.muted }} className="text-xs mb-3">
+        {publicaciones.length} / {planDe(perfil).limiteCartas === Infinity ? "∞" : planDe(perfil).limiteCartas} publicaciones usadas
+      </p>
+      {alLimite && (
+        <div style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55` }} className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
+          <p style={{ color: COLORS.gold }} className="text-sm">Alcanzaste el límite de tu plan. Mejora a Master Ball para publicaciones ilimitadas.</p>
+          <button onClick={onIrAPlanes} style={{ background: COLORS.gold, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
+        </div>
+      )}
 
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid gap-3">
         <div className="flex gap-2">
@@ -633,8 +786,8 @@ function MyMarketPanel({ session }) {
         <div className="grid sm:grid-cols-3 gap-2">
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregar} disabled={saving} style={{ background: COLORS.magenta, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
-            {saving ? "Publicando..." : "+ Publicar"}
+          <button onClick={agregar} disabled={saving || alLimite} style={{ background: COLORS.magenta, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+            {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
           </button>
         </div>
       </div>
@@ -738,7 +891,96 @@ function AdminPanel({ session }) {
   );
 }
 
-function MyStorePanel({ session, perfil }) {
+function ImportadorMasivo({ session, tiendaId, onImportado }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [texto, setTexto] = useState("");
+  const [importando, setImportando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [error, setError] = useState(null);
+
+  const filasDeTexto = () =>
+    texto.split("\n").map((l) => l.trim()).filter(Boolean).map((linea) => {
+      const [carta, set_nombre, condicion, precio, cantidad] = linea.split(",").map((c) => c.trim());
+      return { carta, set_nombre: set_nombre || null, condicion: condicion || "NM", precio: Number(precio), cantidad: Number(cantidad) || 1 };
+    });
+
+  const filasDeArchivo = async (file) => {
+    const XLSX = await import("xlsx");
+    const buffer = await file.arrayBuffer();
+    const libro = XLSX.read(buffer, { type: "array" });
+    const hoja = libro.Sheets[libro.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(hoja, { defval: "" });
+    return filas.map((f) => ({
+      carta: String(f.carta || f.nombre || f.Carta || f.Nombre || "").trim(),
+      set_nombre: String(f.set_nombre || f.set || f.Set || "").trim() || null,
+      condicion: String(f.condicion || f.Condicion || "NM").trim() || "NM",
+      precio: Number(f.precio || f.Precio || 0),
+      cantidad: Number(f.cantidad || f.Cantidad || 1) || 1,
+    }));
+  };
+
+  const importar = async (filas) => {
+    const validas = filas.filter((f) => f.carta && f.precio > 0);
+    if (validas.length === 0) { setError("No encontramos filas válidas (revisa que tengan nombre y precio)."); return; }
+    setImportando(true); setError(null); setResultado(null);
+    try {
+      await sbWrite("POST", "inventario_tienda", validas.map((f) => ({
+        tienda_id: tiendaId,
+        tcg: "pokemon",
+        carta: f.carta,
+        set_nombre: f.set_nombre,
+        condicion: f.condicion,
+        idioma: "EN",
+        precio: f.precio,
+        cantidad: f.cantidad,
+      })), session);
+      setResultado(`Se importaron ${validas.length} productos.`);
+      setTexto("");
+      onImportado?.();
+    } catch (e) { setError(e.message); } finally { setImportando(false); }
+  };
+
+  const handleArchivo = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    try {
+      const filas = await filasDeArchivo(file);
+      await importar(filas);
+    } catch (err) { setError("No se pudo leer el archivo: " + err.message); }
+    e.target.value = "";
+  };
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.magenta}66` }} className="rounded-xl p-4 mb-6 grid gap-3">
+      <p style={{ color: COLORS.magenta }} className="text-sm font-semibold uppercase">🔴 Importador masivo (Ente Ball)</p>
+      {error && <ErrorBox message={error} />}
+      {resultado && <p style={{ color: COLORS.gold }} className="text-xs">{resultado}</p>}
+
+      <textarea
+        placeholder={"Pega tu lista, una carta por línea:\nCharizard ex, SV 054/198, NM, 350, 2\nPikachu VMAX, SWSH 044, LP, 180, 1"}
+        value={texto} onChange={(e) => setTexto(e.target.value)} rows={4}
+        style={inputStyle} className="rounded-lg px-3 py-2 text-sm font-mono"
+      />
+      <div className="flex gap-2 flex-wrap items-center">
+        <button onClick={() => importar(filasDeTexto())} disabled={importando || !texto.trim()}
+          style={{ background: COLORS.magenta, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+          {importando ? "Importando..." : "Importar lista de texto"}
+        </button>
+        <label style={{ border: `1px solid ${COLORS.magenta}66`, color: COLORS.magenta }} className="rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer">
+          Subir CSV / Excel
+          <input type="file" accept=".csv,.xlsx,.xls" onChange={handleArchivo} className="hidden" disabled={importando} />
+        </label>
+      </div>
+      <p style={{ color: COLORS.muted }} className="text-xs">
+        Formato de texto: nombre, set (opcional), condición (opcional, NM por defecto), precio, cantidad (opcional, 1 por defecto) — separados por comas.
+        En Excel/CSV usa columnas: carta, set_nombre, condicion, precio, cantidad.
+      </p>
+    </div>
+  );
+}
+
+function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
   const [inventario, setInventario] = useState([]);
   const [sellado, setSellado] = useState([]);
@@ -772,8 +1014,12 @@ function MyStorePanel({ session, perfil }) {
 
   useEffect(() => { cargar(); }, []);
 
+  const totalActivos = inventario.length + sellado.length;
+  const alLimite = limiteAlcanzado(perfil, totalActivos);
+
   const agregarCarta = async () => {
     if (!nuevaCarta.carta || !nuevaCarta.precio) return;
+    if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Master Ball o Ente Ball para inventario ilimitado.`); return; }
     setSavingCarta(true);
     try {
       await sbWrite("POST", "inventario_tienda", {
@@ -801,6 +1047,7 @@ function MyStorePanel({ session, perfil }) {
 
   const agregarSellado = async () => {
     if (!nuevoSellado.producto || !nuevoSellado.precio) return;
+    if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Master Ball o Ente Ball para inventario ilimitado.`); return; }
     setSavingSellado(true);
     try {
       await sbWrite("POST", "sellado_tienda", {
@@ -844,9 +1091,28 @@ function MyStorePanel({ session, perfil }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">{tienda.nombre}</h2>
+      <div className="flex items-center gap-2 flex-wrap mb-1">
+        <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold">{tienda.nombre}</h2>
+        <PlanBadge perfil={perfil} size="lg" />
+      </div>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Administra tu inventario y producto sellado.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <RedesSocialesEditor session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
+
+      <p style={{ color: COLORS.muted }} className="text-xs mb-3">
+        {totalActivos} / {planDe(perfil).limiteCartas === Infinity ? "∞" : planDe(perfil).limiteCartas} publicaciones usadas
+      </p>
+      {alLimite && (
+        <div style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55` }} className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
+          <p style={{ color: COLORS.gold }} className="text-sm">Alcanzaste el límite de tu plan. Mejora a Master Ball o Ente Ball para inventario ilimitado.</p>
+          <button onClick={onIrAPlanes} style={{ background: COLORS.gold, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
+        </div>
+      )}
+
+      {planDe(perfil).importadorMasivo && (
+        <ImportadorMasivo session={session} tiendaId={tienda.id} onImportado={cargar} />
+      )}
 
       <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-6">
@@ -889,8 +1155,8 @@ function MyStorePanel({ session, perfil }) {
 
         <input placeholder="Condición" value={nuevaCarta.condicion} onChange={(e) => setNuevaCarta({ ...nuevaCarta, condicion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio" type="number" value={nuevaCarta.precio} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
-        <button onClick={agregarCarta} disabled={savingCarta} style={{ background: COLORS.gold, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
-          {savingCarta ? "Guardando..." : "+ Agregar carta"}
+        <button onClick={agregarCarta} disabled={savingCarta || alLimite} style={{ background: COLORS.gold, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
+          {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
       </div>
       <div className="grid gap-2 mb-8">
@@ -949,8 +1215,8 @@ function MyStorePanel({ session, perfil }) {
         )}
         <div className="grid sm:grid-cols-2 gap-2">
           <input placeholder="Precio" type="number" value={nuevoSellado.precio} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregarSellado} disabled={savingSellado} style={{ background: COLORS.cyan, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
-            {savingSellado ? "Guardando..." : "+ Agregar"}
+          <button onClick={agregarSellado} disabled={savingSellado || alLimite} style={{ background: COLORS.cyan, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+            {alLimite ? "Límite alcanzado" : savingSellado ? "Guardando..." : "+ Agregar"}
           </button>
         </div>
       </div>
@@ -970,6 +1236,203 @@ function MyStorePanel({ session, perfil }) {
   );
 }
 
+function UpsellCard({ requiere, children, onIrAPlanes }) {
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${requiere.color}66` }} className="rounded-xl p-6 text-center">
+      <p className="mb-2">
+        {requiere.emoji} Esta función es de <span style={{ color: requiere.color }} className="font-semibold">{requiere.nombre}</span> en adelante.
+      </p>
+      {children && <p style={{ color: COLORS.muted }} className="text-sm mb-4">{children}</p>}
+      <button onClick={onIrAPlanes} style={{ background: requiere.color, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+        Ver planes
+      </button>
+    </div>
+  );
+}
+
+function AlertasPanel({ session, perfil, onIrAPlanes }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const info = planDe(perfil);
+  const [alertas, setAlertas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [activandoPush, setActivandoPush] = useState(false);
+  const [pushOk, setPushOk] = useState(false);
+  const vacio = { tcg: "pokemon", carta: "", precio_max: "", zona: "" };
+  const [nueva, setNueva] = useState(vacio);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`alertas?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
+      .then(setAlertas)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { if (info.wishlistPremium) cargar(); }, []);
+
+  if (!info.wishlistPremium) {
+    return (
+      <div>
+        <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-6">Wishlist Premium</h2>
+        <UpsellCard requiere={PLAN_INFO.ultraball} onIrAPlanes={onIrAPlanes}>
+          Configura alertas como "avísame si sale Charizard a menos de $500" y recibe una notificación push apenas alguien lo publique.
+        </UpsellCard>
+      </div>
+    );
+  }
+
+  const agregar = async () => {
+    if (!nueva.carta.trim()) return;
+    setSaving(true);
+    try {
+      await sbWrite("POST", "alertas", {
+        perfil_id: session.user.id,
+        tcg: nueva.tcg,
+        carta: nueva.carta.trim(),
+        precio_max: nueva.precio_max ? Number(nueva.precio_max) : null,
+        zona: nueva.zona || null,
+      }, session);
+      setNueva(vacio);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setSaving(false); }
+  };
+
+  const borrar = async (id) => {
+    try { await sbWrite("DELETE", `alertas?id=eq.${id}`, {}, session); cargar(); } catch (e) { setError(e.message); }
+  };
+
+  const toggle = async (id, activa) => {
+    try { await sbWrite("PATCH", `alertas?id=eq.${id}`, { activa: !activa }, session); cargar(); } catch (e) { setError(e.message); }
+  };
+
+  const handleActivarPush = async () => {
+    setActivandoPush(true); setError(null);
+    try { await activarPush(session); setPushOk(true); }
+    catch (e) { setError(e.message); }
+    finally { setActivandoPush(false); }
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Wishlist Premium</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Te avisamos apenas alguien publique lo que buscas.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {!pushOk && (
+        <div style={{ background: `${COLORS.violet}11`, border: `1px solid ${COLORS.violet}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+          <p className="text-sm">Activa las notificaciones push en este navegador para recibir tus alertas.</p>
+          <button onClick={handleActivarPush} disabled={activandoPush} style={{ background: COLORS.violet, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+            {activandoPush ? "Activando..." : "Activar notificaciones"}
+          </button>
+        </div>
+      )}
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid gap-2 sm:grid-cols-4">
+        <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
+        </select>
+        <input placeholder="Nombre de la carta" value={nueva.carta} onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        <input placeholder="Precio máximo (MXN)" type="number" value={nueva.precio_max} onChange={(e) => setNueva({ ...nueva, precio_max: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        <input placeholder="Zona (opcional)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        <button onClick={agregar} disabled={saving} style={{ background: COLORS.violet, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-4">
+          {saving ? "Guardando..." : "+ Crear alerta"}
+        </button>
+      </div>
+
+      {loading ? <Loading label="Cargando tus alertas..." /> : (
+        <div className="grid gap-2">
+          {alertas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no tienes alertas configuradas.</p>}
+          {alertas.map((a) => (
+            <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${a.activa ? COLORS.violet + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+              <div className="flex-1 min-w-[140px]">
+                <p className="font-medium text-sm">{a.carta}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">
+                  {a.precio_max ? `hasta $${Number(a.precio_max).toLocaleString("es-MX")} MXN` : "cualquier precio"} {a.zona ? `· ${a.zona}` : ""}
+                </p>
+              </div>
+              <button onClick={() => toggle(a.id, a.activa)} style={{ color: a.activa ? COLORS.violet : COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="text-xs px-3 py-1.5 rounded-lg">
+                {a.activa ? "Activa" : "Pausada"}
+              </button>
+              <button onClick={() => borrar(a.id)} style={{ color: COLORS.magenta }} className="text-xs px-2">Borrar</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
+  const [suscribiendo, setSuscribiendo] = useState(null);
+  const [error, setError] = useState(null);
+  const planActual = perfil?.plan || "pokeball";
+
+  const suscribirse = async (plan) => {
+    if (!session) { onRequireLogin(); return; }
+    setSuscribiendo(plan); setError(null);
+    try {
+      const res = await fetch("/api/mercadopago/crear-preferencia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ perfilId: session.user.id, plan, email: session.user.email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo iniciar el pago");
+      window.location.href = data.init_point;
+    } catch (e) {
+      setError(e.message);
+      setSuscribiendo(null);
+    }
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold mb-1">Planes</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">
+        Durante el lanzamiento, tiendas y vendedores activos tienen beneficios Premium de regalo. Elige tu rango cuando quieras hacerlo permanente.
+      </p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {PLAN_ORDER.map((key) => {
+          const info = PLAN_INFO[key];
+          const esActual = planActual === key;
+          const bloqueadoPorTipo = info.soloTienda && perfil?.tipo !== "tienda";
+          return (
+            <div key={key} style={{ background: COLORS.surface, border: `1px solid ${esActual ? info.color : COLORS.surface2}`, boxShadow: esActual ? `0 0 24px ${info.color}44` : "none" }} className="rounded-2xl p-5 flex flex-col">
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-bold text-lg">{info.emoji} {info.nombre}</p>
+                {esActual && <Badge color={info.color}>Tu plan</Badge>}
+              </div>
+              <p style={{ color: COLORS.muted }} className="text-sm mb-3">{info.resumen}</p>
+              <p style={{ fontFamily: "'Space Mono', monospace", color: info.color }} className="text-2xl font-bold mb-3">
+                {info.precio === 0 ? "Gratis" : `$${info.precio} MXN/mes`}
+              </p>
+              <ul className="text-sm grid gap-1 mb-4 flex-1">
+                {info.beneficios.map((b, i) => <li key={i} style={{ color: COLORS.text }}>✓ {b}</li>)}
+              </ul>
+              {key === "pokeball" ? (
+                <p style={{ color: COLORS.muted }} className="text-xs text-center">Plan por defecto</p>
+              ) : bloqueadoPorTipo ? (
+                <p style={{ color: COLORS.muted }} className="text-xs text-center">Exclusivo para cuentas de tienda</p>
+              ) : esActual ? (
+                <p style={{ color: info.color }} className="text-xs text-center">Ya tienes este plan activo</p>
+              ) : (
+                <button onClick={() => suscribirse(key)} disabled={suscribiendo === key}
+                  style={{ background: info.color, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+                  {suscribiendo === key ? "Redirigiendo a Mercado Pago..." : "Suscribirme"}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
@@ -984,6 +1447,14 @@ export default function EncuentraCartas() {
     if (otherId === session.user.id) return; // no chatear contigo mismo
     setChatContext({ otherId, otherNombre, contexto, otherWhatsapp, otherFacebook });
   };
+
+  // Si volvemos de Mercado Pago, o si acaba de cambiar el plan, refrescamos el perfil
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("pago") && session) {
+      cargarOCrearPerfil(session);
+    }
+  }, [session]);
 
   // Restaurar sesión guardada al abrir la app
   useEffect(() => {
@@ -1050,7 +1521,7 @@ export default function EncuentraCartas() {
   // Carga inicial: lista de tiendas reales
   useEffect(() => {
     setLoadingTiendas(true);
-    sb("tiendas?select=*&order=nombre.asc")
+    sb("tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url)&order=nombre.asc")
       .then(setTiendas)
       .catch((e) => setErrorTiendas(e.message))
       .finally(() => setLoadingTiendas(false));
@@ -1067,9 +1538,9 @@ export default function EncuentraCartas() {
     setSearchError(null);
     const t = setTimeout(() => {
       Promise.all([
-        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id)&carta=ilike.*${q}*&order=precio.asc`),
-        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook)&carta=ilike.*${q}*&order=precio.asc`),
-        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id)&producto=ilike.*${q}*&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence))&carta=ilike.*${q}*&order=precio.asc`),
+        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence)&carta=ilike.*${q}*&order=precio.asc`),
+        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence))&producto=ilike.*${q}*&order=precio.asc`),
       ])
         .then(([inv, merc, sel]) => setSearchResults({ tiendas: inv, mercado: merc, sellado: sel }))
         .catch((e) => { setSearchResults({ tiendas: [], mercado: [], sellado: [] }); setSearchError(e.message); })
@@ -1082,7 +1553,7 @@ export default function EncuentraCartas() {
   useEffect(() => {
     if (view === "market" && market.length === 0) {
       setLoadingMarket(true);
-      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook)&order=created_at.desc").then(setMarket).finally(() => setLoadingMarket(false));
+      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence)&order=created_at.desc").then(setMarket).finally(() => setLoadingMarket(false));
     }
     if (view === "news" && news.length === 0) {
       setLoadingNews(true);
@@ -1146,6 +1617,8 @@ export default function EncuentraCartas() {
     { id: "market", label: "Mercado", icon: ShoppingBag },
     { id: "news", label: "Anuncios y noticias", icon: Megaphone },
     ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
+    ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
+    { id: "planes", label: "Planes", icon: Shield },
     ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
     ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: ShoppingBag }] : []),
     ...(perfil?.es_admin ? [{ id: "admin", label: "Admin", icon: Shield }] : []),
@@ -1179,6 +1652,7 @@ export default function EncuentraCartas() {
             {session ? (
               <div className="flex items-center gap-2">
                 <Badge color={COLORS.gold}>{perfil?.nombre || "Mi cuenta"}</Badge>
+                <PlanBadge perfil={perfil} />
                 <button onClick={handleLogout} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="px-3 py-2 rounded-lg text-xs">
                   Cerrar sesión
                 </button>
@@ -1250,7 +1724,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.gold}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.gold}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.tiendas?.perfiles} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
                     </div>
@@ -1274,7 +1748,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.cyan}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.cyan}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.perfiles} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
                     </div>
@@ -1297,7 +1771,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.producto} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1"><Badge color={COLORS.gold}>Tienda</Badge><Badge color={COLORS.violet}>Sellado</Badge><p className="font-semibold text-lg">{r.producto}</p></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.gold}>Tienda</Badge><Badge color={COLORS.violet}>Sellado</Badge><p className="font-semibold text-lg">{r.producto}</p><PlanBadge perfil={r.tiendas?.perfiles} /></div>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.tiendas?.nombre} · {r.tiendas?.zona}</p>
                     </div>
                   </div>
@@ -1329,8 +1803,11 @@ export default function EncuentraCartas() {
                 <button key={store.id} onClick={() => openStore(store)}
                   style={{ background: COLORS.surface, border: `1px solid ${colorFor(i)}66` }}
                   className="text-left rounded-xl p-5 hover:brightness-110">
-                  <div className="flex items-start justify-between">
-                    <p className="font-semibold text-lg">{store.nombre}</p>
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <span className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-lg">{store.nombre}</p>
+                      <PlanBadge perfil={store.perfiles} />
+                    </span>
                     {store.zona && <Badge color={colorFor(i)}>{store.zona}</Badge>}
                   </div>
                   <p style={{ color: COLORS.muted }} className="text-sm mt-2 flex items-start gap-1">
@@ -1358,7 +1835,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex items-center gap-2"><p className="font-semibold">{r.carta}</p>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}</div>
+                      <div className="flex items-center gap-2 flex-wrap"><p className="font-semibold">{r.carta}</p>{r.tipo === "sellado" && <Badge color={COLORS.violet}>Sellado</Badge>}<PlanBadge perfil={r.perfiles} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre} · {r.zona}</p>
                     </div>
                   </div>
@@ -1463,14 +1940,24 @@ export default function EncuentraCartas() {
           </div>
         )}
 
+        {/* PLANES */}
+        {view === "planes" && (
+          <PlanesView session={session} perfil={perfil} onRequireLogin={() => setShowAccountModal(true)} />
+        )}
+
+        {/* WISHLIST / ALERTAS */}
+        {view === "alertas" && session && (
+          <AlertasPanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />
+        )}
+
         {/* ADMIN */}
         {view === "admin" && session && perfil?.es_admin && <AdminPanel session={session} />}
 
         {/* MI MERCADO */}
-        {view === "myMarket" && session && <MyMarketPanel session={session} />}
+        {view === "myMarket" && session && <MyMarketPanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />}
 
         {/* MI TIENDA */}
-        {view === "myStore" && session && <MyStorePanel session={session} perfil={perfil} />}
+        {view === "myStore" && session && <MyStorePanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />}
 
         {/* STORE DETAIL */}
         {view === "storeDetail" && selectedStore && (
@@ -1479,9 +1966,28 @@ export default function EncuentraCartas() {
               <ChevronLeft size={16} /> Volver
             </button>
             <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-6 mb-6">
-              <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-2xl font-bold">{selectedStore.nombre}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-2xl font-bold">{selectedStore.nombre}</h2>
+                <PlanBadge perfil={selectedStore.perfiles} size="lg" />
+              </div>
               <p style={{ color: COLORS.muted }} className="mt-2 flex items-center gap-1 text-sm"><MapPin size={14} /> {selectedStore.direccion}</p>
               {selectedStore.telefono && <p style={{ color: COLORS.muted }} className="mt-1 flex items-center gap-1 text-sm"><Phone size={14} /> {selectedStore.telefono}</p>}
+              {(selectedStore.perfiles?.instagram || selectedStore.perfiles?.google_maps_url) && (
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  {selectedStore.perfiles?.instagram && (
+                    <a href={selectedStore.perfiles.instagram} target="_blank" rel="noreferrer"
+                      style={{ border: `1px solid ${COLORS.violet}88`, color: COLORS.violet }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                      Instagram <ExternalLink size={12} />
+                    </a>
+                  )}
+                  {selectedStore.perfiles?.google_maps_url && (
+                    <a href={selectedStore.perfiles.google_maps_url} target="_blank" rel="noreferrer"
+                      style={{ border: `1px solid ${COLORS.cyan}88`, color: COLORS.cyan }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                      <MapPin size={12} /> Google Maps
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
 
             {loadingStoreDetail ? <Loading label="Cargando inventario..." /> : (
