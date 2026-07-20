@@ -20,10 +20,13 @@ export default async function handler(req, res) {
     const precio = Number(record.precio);
     if (!nombre || !precio) return res.status(200).json({ ok: true });
 
+    const vapidPublic = (process.env.VAPID_PUBLIC_KEY || "").trim();
+    const vapidPrivate = (process.env.VAPID_PRIVATE_KEY || "").trim();
+    console.log("VAPID debug: public len =", vapidPublic.length, "(esperado 87), private len =", vapidPrivate.length, "(esperado 43)");
     webpush.setVapidDetails(
-      process.env.VAPID_SUBJECT || "mailto:contacto@encuentracartas.mx",
-      process.env.VAPID_PUBLIC_KEY,
-      process.env.VAPID_PRIVATE_KEY
+      (process.env.VAPID_SUBJECT || "mailto:contacto@encuentracartas.mx").trim(),
+      vapidPublic,
+      vapidPrivate
     );
 
     const supabaseUrl = process.env.SUPABASE_URL;

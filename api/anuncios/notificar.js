@@ -42,9 +42,9 @@ export default async function handler(req, res) {
     if (!anuncio.publicado || anuncio.notificado) return res.status(200).json({ ok: true, enviados: 0 });
 
     webpush.setVapidDetails(
-      process.env.VAPID_SUBJECT || "mailto:contacto@encuentracartas.mx",
-      process.env.VAPID_PUBLIC_KEY,
-      process.env.VAPID_PRIVATE_KEY
+      (process.env.VAPID_SUBJECT || "mailto:contacto@encuentracartas.mx").trim(),
+      (process.env.VAPID_PUBLIC_KEY || "").trim(),
+      (process.env.VAPID_PRIVATE_KEY || "").trim()
     );
 
     const subsRes = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?select=*`, { headers });
