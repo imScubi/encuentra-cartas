@@ -253,9 +253,16 @@ No es una IA que corrija el código sola en producción (eso no es posible
 técnicamente) — lo que hace es avisarte automáticamente para que tú (o yo,
 si me pides que lo revise) lo arreglemos.
 
+## 17. Ayuda / Tutorial
+
+Nueva pestaña "Ayuda" (ícono ❓, en el menú secundario / lateral): explica
+en secciones desplegables cómo buscar, contactar vendedores, usar la
+Wishlist, los planes, y — según el tipo de cuenta — lo específico de
+compradores individuales o de tiendas (inventario, Boost, importador
+masivo, proponer anuncios, etc). Al crear una cuenta nueva, la app te
+manda ahí automáticamente la primera vez.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
-- Tutorial para usuarios y tiendas dentro de la app.
-- Calendario de torneos con recordatorio por correo y notificación.
-- Recordatorios de torneo en la bandeja de notificaciones (falta el calendario de torneos).
+- Calendario de torneos con recordatorio por correo y notificación (y su propio tipo de notificación en la campanita).
