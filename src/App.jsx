@@ -376,12 +376,12 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
       <div onClick={(e) => e.stopPropagation()}
         style={{ background: COLORS.surface, border: `1px solid ${COLORS.cyan}66`, boxShadow: `0 0 40px ${COLORS.cyan}33` }}
         className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col">
-        <div style={{ borderBottom: `1px solid ${COLORS.surface2}` }} className="flex items-center justify-between p-4">
-          <div>
-            <p className="font-semibold">{otherNombre || "Vendedor"}</p>
-            <p style={{ color: COLORS.muted }} className="text-xs">{contexto}</p>
+        <div style={{ borderBottom: `1px solid ${COLORS.surface2}` }} className="flex items-center justify-between p-4 gap-2">
+          <div className="min-w-0">
+            <p className="font-semibold truncate">{otherNombre || "Vendedor"}</p>
+            <p style={{ color: COLORS.muted }} className="text-xs truncate">{contexto}</p>
           </div>
-          <button onClick={onClose} style={{ color: COLORS.muted }}><X size={18} /></button>
+          <button onClick={onClose} style={{ color: COLORS.muted }} className="shrink-0"><X size={18} /></button>
         </div>
 
         <div className="flex-1 p-4 grid gap-2" style={{ minHeight: "180px", maxHeight: "300px", overflowY: "auto" }}>
@@ -1152,7 +1152,7 @@ export default function EncuentraCartas() {
   ];
 
   return (
-    <div style={{ background: COLORS.bg, color: COLORS.text, minHeight: "100vh", fontFamily: "'Rajdhani', sans-serif" }} className="w-full">
+    <div style={{ background: COLORS.bg, color: COLORS.text, minHeight: "100vh", fontFamily: "'Rajdhani', sans-serif", overflowX: "hidden" }} className="w-full">
       <style>{FONTS}</style>
 
       <header style={{ borderBottom: `1px solid ${COLORS.surface2}`, background: `radial-gradient(ellipse at top, ${COLORS.surface} 0%, ${COLORS.bg} 70%)` }}
@@ -1420,16 +1420,16 @@ export default function EncuentraCartas() {
                       key={`reciente-${c.otherId}::${c.contexto}`}
                       onClick={() => setChatContext(c)}
                       style={{ background: COLORS.surface, border: `1px solid ${COLORS.gold}55` }}
-                      className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110"
+                      className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110 overflow-hidden"
                     >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="font-semibold">{c.otherNombre}</p>
-                          <Badge color={COLORS.cyan}>{c.contexto}</Badge>
+                      <div className="min-w-0 overflow-hidden">
+                        <div className="flex items-center gap-2 mb-1 min-w-0">
+                          <p className="font-semibold shrink-0">{c.otherNombre}</p>
+                          <Badge color={COLORS.cyan}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
                         </div>
                         <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
                       </div>
-                      <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">
+                      <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap shrink-0">
                         {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
                       </p>
                     </button>
@@ -1443,16 +1443,16 @@ export default function EncuentraCartas() {
                       key={`${c.otherId}::${c.contexto}`}
                       onClick={() => setChatContext(c)}
                       style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
-                      className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110"
+                      className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110 overflow-hidden"
                     >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="font-semibold">{c.otherNombre}</p>
-                          <Badge color={COLORS.cyan}>{c.contexto}</Badge>
+                      <div className="min-w-0 overflow-hidden">
+                        <div className="flex items-center gap-2 mb-1 min-w-0">
+                          <p className="font-semibold shrink-0">{c.otherNombre}</p>
+                          <Badge color={COLORS.cyan}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
                         </div>
                         <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
                       </div>
-                      <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">
+                      <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap shrink-0">
                         {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
                       </p>
                     </button>
