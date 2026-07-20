@@ -4,8 +4,10 @@
 // coincidan y les mandamos una notificación push real.
 //
 // Requiere: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, VAPID_PUBLIC_KEY,
-// VAPID_PRIVATE_KEY, VAPID_SUBJECT (ej. "mailto:contacto@tudominio.com")
+// VAPID_PRIVATE_KEY, VAPID_SUBJECT (ej. "mailto:contacto@tudominio.com"),
+// y (opcional) RESEND_API_KEY para además mandar un correo.
 import webpush from "web-push";
+import { enviarCorreo } from "../../lib/email.js";
 
 const PLANES_CON_WISHLIST = ["ultraball", "masterball", "enteball"];
 
@@ -29,7 +31,7 @@ export default async function handler(req, res) {
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
 
     const alertasRes = await fetch(
-      `${supabaseUrl}/rest/v1/alertas?select=*,perfiles(plan)&activa=eq.true&precio_max=gte.${precio}&carta=ilike.*${encodeURIComponent(nombre)}*`,
+      `${supabaseUrl}/rest/v1/alertas?select=*,perfiles(plan,email)&activa=eq.true&precio_max=gte.${precio}&carta=ilike.*${encodeURIComponent(nombre)}*`,
       { headers }
     );
     const alertas = await alertasRes.json();
@@ -67,6 +69,18 @@ export default async function handler(req, res) {
               await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?id=eq.${s.id}`, { method: "DELETE", headers });
             }
           })
+      )
+    );
+
+    // Un correo por perfil (sin duplicar si tiene varias alertas que coinciden).
+    const correosPorPerfil = new Map(coincidencias.map((a) => [a.perfil_id, a.perfiles?.email]));
+    await Promise.allSettled(
+      [...correosPorPerfil.entries()].map(([, email]) =>
+        enviarCorreo({
+          to: email,
+          subject: "¡Encontramos lo que buscabas en Encuentra Cartas!",
+          html: `<p><strong>${nombre}</strong> ya está disponible por <strong>$${precio.toLocaleString("es-MX")} MXN</strong>.</p><p>Entra a Encuentra Cartas para contactar al vendedor antes de que se lo lleven.</p>`,
+        })
       )
     );
 

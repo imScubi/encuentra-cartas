@@ -26,6 +26,8 @@ También corre (en el mismo SQL Editor, uno por uno, en orden):
 - `supabase/migrations/005_boost.sql` (agrega el sistema de "Destacar" publicaciones por 3 o 7 días)
 - `supabase/migrations/006_renovacion_automatica.sql` (agrega `perfiles.mp_preapproval_id`, para la renovación automática)
 - `supabase/migrations/007_avatar.sql` (agrega `perfiles.avatar_url` y crea el bucket de Storage `avatars` para fotos de perfil subidas por los usuarios)
+- `supabase/migrations/008_email_perfiles.sql` (agrega `perfiles.email`, necesario para poder mandar avisos por correo)
+- `supabase/migrations/009_anuncios.sql` (agrega el flujo completo de Anuncios: pendiente/programado/publicado/rechazado, y programa el cron interno de Supabase que publica los anuncios programados — **antes de correrlo**, edita el archivo y reemplaza `TU-DOMINIO` y `TU_CRON_SECRET` por tus valores reales)
 
 ## 2. Variables de entorno (en Vercel → tu proyecto → Settings → Environment Variables)
 
@@ -38,7 +40,9 @@ También corre (en el mismo SQL Editor, uno por uno, en orden):
 | `VAPID_PUBLIC_KEY` | `BBPa0Sb2JnCX1McAm78espGKsZw8B7lYD2CFV4F_-F_9EghLKVjuhmSnVYh8YRkLgTibA5l5b5OKoujZD3_Dn8c` | ya generada, coincide con la que está en `src/App.jsx` |
 | `VAPID_PRIVATE_KEY` | te la doy en el resumen de este chat (no está en ningún archivo del repo) | cópiala directo a Vercel, no la subas a git |
 | `VAPID_SUBJECT` | `mailto:tu-correo@dominio.com` | cualquier correo de contacto |
-| `CRON_SECRET` | invéntala tú, ej. una contraseña larga random | Vercel la manda sola como header cuando corre el cron; protege `/api/cron/recordatorios` de que cualquiera la llame |
+| `CRON_SECRET` | invéntala tú, ej. una contraseña larga random | Vercel la manda sola como header cuando corre el cron; protege `/api/cron/recordatorios` y `/api/cron/publicar-anuncios` de que cualquiera los llame |
+| `RESEND_API_KEY` | https://resend.com → crea una cuenta gratis → API Keys → Create API Key | opcional: si no la pones, la app sigue funcionando normal, solo no manda correos (el push sigue llegando igual) |
+| `RESEND_FROM` | opcional, ej. `Encuentra Cartas <onboarding@resend.dev>` | si no la pones, usa el remitente de pruebas de Resend (funciona sin verificar tu propio dominio, pero solo puede mandarte correo a ti mismo; para mandarle a cualquier usuario necesitas verificar un dominio en Resend y poner ese correo aquí) |
 
 ## 3. Crear tu cuenta de Mercado Pago
 
@@ -147,8 +151,49 @@ tienda**/**Vender en el Mercado** (según el tipo de cuenta), **Wishlist**,
 No requiere ninguna llave nueva — solo corre la migración 007 (arriba) para
 que exista la columna y el bucket.
 
+La foto de perfil también aparece ahora junto al nombre en el chat y en los
+resultados de búsqueda de tiendas.
+
+## 11. Avisos por correo
+
+Además del push, ahora se manda un correo (vía Resend) cuando:
+- Aparece una carta/producto que coincide con una alerta de tu Wishlist.
+- Tu plan o tu destacado (Boost) está por vencer.
+
+Configura `RESEND_API_KEY` (sección 2) para activarlo — sin esa variable la
+app sigue funcionando exactamente igual, solo que no manda el correo (el
+push no se ve afectado). Los anuncios del administrador (sección 12) **no**
+mandan correo, solo push, tal como se pidió.
+
+## 12. Anuncios
+
+Dentro de "Anuncios y noticias" el administrador ahora tiene un apartado
+para:
+- Crear un anuncio y **publicarlo de inmediato**, o **programarlo** para una
+  fecha y hora futura.
+- Revisar los anuncios que las **tiendas proponen** y **aprobarlos** (se
+  publican con el nombre y la foto de la tienda que los mandó, no con el
+  admin que aprobó) o **rechazarlos**.
+
+Las tiendas, desde "Mi tienda", tienen una caja "📢 Proponer un anuncio":
+lo mandan, queda "Esperando aprobación", y ven ahí mismo si se aprobó,
+se rechazó o sigue pendiente.
+
+Cuando un anuncio se publica (de inmediato o al llegar su fecha programada)
+se manda una **notificación push a todos los usuarios** con notificaciones
+activadas (no correo). Para que los anuncios *programados* salgan solos a
+su hora sin que nadie tenga que abrir la app, la migración 009 programa un
+cron **dentro de Supabase** (pg_cron + pg_net) que revisa cada 5 minutos si
+ya toca publicar alguno — se usa ese mecanismo y no un cron de Vercel
+porque el plan Hobby de Vercel no permite correr un cron más de una vez al
+día.
+
+⚠️ Antes de correr `009_anuncios.sql`, edita el archivo y reemplaza
+`TU-DOMINIO` (tu dominio real de Vercel) y `TU_CRON_SECRET` (el mismo valor
+que pusiste como variable de entorno `CRON_SECRET`) en la parte de hasta
+abajo del archivo.
+
 ## Qué falta / próximos pasos posibles
 
-- Insignia de plan en el encabezado del chat (hoy solo aparece en directorio, búsqueda, mercado y detalle de tienda).
-- Recordatorios por correo además de push (hoy solo push, para quien no lo haya activado no le llega nada).
-- Mostrar la foto de perfil también junto al nombre en resultados de búsqueda, chat y detalle de tienda (hoy solo aparece en el propio botón "Mi cuenta").
+- Permitir que la tienda adjunte una imagen a su anuncio.
+- Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
