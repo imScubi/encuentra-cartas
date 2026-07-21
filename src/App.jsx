@@ -2194,8 +2194,11 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   };
 
   const publicarRevision = async () => {
-    const validas = revision.filas.filter((f) => f.incluir && (f.encontrada?.name || f.nombre || f.nombreManual) && Number(f.precio) > 0);
-    if (!validas.length) { setError("Ponle un precio a al menos una carta para publicarla."); return; }
+    const validas = revision.filas.filter((f) => {
+      const imagen = f.imagenManual || f.encontrada?.imagen_url;
+      return f.incluir && (f.encontrada?.name || f.nombre || f.nombreManual) && Number(f.precio) > 0 && imagen;
+    });
+    if (!validas.length) { setError("Ponle un precio y una foto (del catálogo o subida a mano) a al menos una carta para publicarla."); return; }
     if (contexto === "mercado" && !zonaMercado.trim()) { setError("Escribe tu zona para publicar en el Mercado."); return; }
     setPublicando(true); setError(null);
     try {
@@ -2207,7 +2210,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
         precio: Number(f.precio),
         cantidad: Number(f.cantidad) || 1,
         card_api_id: f.encontrada?.card_api_id || null,
-        imagen_url: f.encontrada?.imagen_url || null,
+        imagen_url: f.imagenManual || f.encontrada?.imagen_url,
         carpeta_id: revision.carpetaId,
         ...(contexto === "tienda"
           ? { tienda_id: tiendaId, idioma: "EN" }
@@ -2277,17 +2280,20 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
               style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
           )}
           <div className="grid gap-2">
-            {revision.filas.map((f, idx) => (
-              <div key={idx} style={{ background: COLORS.surface, border: `1px solid ${f.nombre ? COLORS.surface2 : "#C24444"}`, opacity: f.incluir ? 1 : 0.5 }}
+            {revision.filas.map((f, idx) => {
+              const imagen = f.imagenManual || f.encontrada?.imagen_url;
+              const faltaFoto = !f.cargando && !imagen;
+              return (
+              <div key={idx} style={{ background: COLORS.surface, border: `1px solid ${f.nombre ? COLORS.surface2 : "#C24444"}`, opacity: f.incluir && imagen ? 1 : 0.5 }}
                 className="rounded-lg p-2 flex items-center gap-2 flex-wrap">
-                <input type="checkbox" checked={f.incluir} onChange={(e) => actualizarFila(idx, { incluir: e.target.checked })} />
-                {f.encontrada?.imagen_url && <img src={f.encontrada.imagen_url} alt="" style={{ width: 40, height: 56, objectFit: "contain" }} />}
+                <input type="checkbox" checked={f.incluir && !!imagen} disabled={!imagen} onChange={(e) => actualizarFila(idx, { incluir: e.target.checked })} />
+                {imagen && <img src={imagen} alt="" style={{ width: 40, height: 56, objectFit: "contain" }} />}
                 <div className="flex-1 min-w-[140px]">
                   {f.nombre ? (
                     <>
                       <p className="text-sm font-medium">{f.encontrada?.name || f.nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs">
-                        {f.cargando ? "Buscando en el catálogo..." : f.encontrada?.set_nombre || f.set || "Sin imagen del catálogo — puedes subirla luego a mano"}
+                        {f.cargando ? "Buscando en el catálogo..." : f.encontrada?.set_nombre || f.set || ""}
                       </p>
                     </>
                   ) : (
@@ -2297,13 +2303,21 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
                     <input placeholder="Nombre de la carta (a mano)" value={f.nombreManual || ""} onChange={(e) => actualizarFila(idx, { nombreManual: e.target.value })}
                       style={inputStyle} className="rounded px-2 py-1 text-xs w-full mt-1" />
                   )}
+                  {faltaFoto && (
+                    <div className="mt-1">
+                      <SubirFotoManual session={session} label="📷 Subir foto (obligatorio)"
+                        onSubido={(url) => actualizarFila(idx, { imagenManual: url, incluir: true })} />
+                      <p style={{ color: "#C24444" }} className="text-xs mt-0.5">Sin foto no se puede publicar esta carta.</p>
+                    </div>
+                  )}
                 </div>
                 <input type="number" placeholder="Precio" value={f.precio} onChange={(e) => actualizarFila(idx, { precio: e.target.value })}
                   style={inputStyle} className="rounded px-2 py-1 text-sm w-20" />
                 <input type="number" placeholder="Cant." value={f.cantidad} onChange={(e) => actualizarFila(idx, { cantidad: e.target.value })}
                   style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
               </div>
-            ))}
+              );
+            })}
           </div>
           <div className="flex gap-2">
             <button onClick={publicarRevision} disabled={publicando}

@@ -373,10 +373,15 @@ Ball** en adelante), hay una sección **"📁 Carpetas"** donde puedes:
 
 Limitaciones a tener en cuenta: la IA no es perfecta (letra pequeña,
 cartas dañadas o fotos borrosas pueden fallar) — por eso siempre pasa
-por la revisión antes de publicarse, nunca publica solo. Si no detecta
-o no encuentra la imagen de alguna carta, puedes escribir el nombre a
-mano y luego usar el botón de subir foto manual desde la fila ya
-publicada.
+por la revisión antes de publicarse, nunca publica solo. Se le pide
+explícitamente que ignore cualquier carta de "Pokémon TCG Pocket" (el
+juego para celular, sin cartas físicas reales) y, además, el código
+descarta por su cuenta cualquier detección que caiga en un set
+exclusivo de Pocket, sin depender solo de que la IA obedezca. Si el
+catálogo no encuentra imagen para alguna carta detectada, **es
+obligatorio subirle una foto a mano** (botón "📷 Subir foto") antes de
+poder incluirla en la publicación — no se permite publicar cartas sin
+imagen desde Carpetas.
 
 ## Qué falta / próximos pasos posibles
 
