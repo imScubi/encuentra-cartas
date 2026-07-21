@@ -11,13 +11,12 @@ Carpeta: **`public/branding/`** (en el repositorio de GitHub). Puedes
 subirlos ahí directamente desde la web de GitHub (Add file → Upload files)
 o pedirme que los suba yo si me los compartes.
 
-## Los 8 archivos que puedes reemplazar
+## Los 7 archivos que puedes reemplazar
 
 | Archivo (nombre EXACTO) | Tamaño exacto | Formato | Fondo |
 |---|---|---|---|
 | `logo.png` | **600 × 160 px** (horizontal) | PNG | Transparente |
 | `logo-icon.png` | **512 × 512 px** (cuadrado, solo el símbolo, sin texto) | PNG | Transparente |
-| `fondo.png` (o `fondo.jpg`) | **1920 × 1080 px** o más grande (entre más grande, mejor se ve en pantallas grandes) | JPG o PNG | No aplica |
 | `rango-pokeball.png` | **128 × 128 px** | PNG | Transparente |
 | `rango-superball.png` | **128 × 128 px** | PNG | Transparente |
 | `rango-ultraball.png` | **128 × 128 px** | PNG | Transparente |
@@ -28,8 +27,14 @@ o pedirme que los suba yo si me los compartes.
 
 - **`logo.png`**: arriba a la izquierda, en el encabezado de toda la app (reemplaza el ícono ✨ + texto "Encuentra Cartas" que hay ahora).
 - **`logo-icon.png`**: el ícono que aparece en la pestaña del navegador (favicon).
-- **`fondo.png`**: fondo de pantalla completa detrás de toda la app, cubre toda la pantalla sin deformarse (se recorta según el tamaño de cada pantalla, tipo "cover").
-- **`rango-*.png`**: el ícono junto al nombre de cada rango (Poké/Super/Ultra/Master/Ente Ball) en las insignias que aparecen por toda la app — reemplaza los emojis ⚪🔵🟣🟡🔴 que hay ahora.
+- **`rango-*.png`**: el ícono de gema junto al nombre de cada rango (Cuarzo/Zafiro/Amatista/Diamante/Aurora) en las insignias que aparecen por toda la app — el nombre de archivo NO cambió (sigue siendo `rango-pokeball.png`, `rango-superball.png`, etc., porque así están guardados en la base de datos), solo el dibujo dentro de cada uno debería pasar de Poké Ball a gema. Mientras no subas nada, se ve el emoji ⚪🔵🟣🟡🔴 de siempre.
+
+### Sobre el fondo
+
+Desde el rediseño, el fondo ya no es una imagen fija (`fondo.png`) — es un
+degradado animado con un patrón de heptágonos (panal) que se mueve con el
+scroll y brilla donde pasas el cursor. Es parte del código, no un archivo
+que subas aquí.
 
 ## Botones y colores
 
