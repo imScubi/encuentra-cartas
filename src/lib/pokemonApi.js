@@ -1,3 +1,5 @@
+import { USD_TO_MXN, EUR_TO_MXN } from "../theme.js";
+
 // ---- Foto de perfil: Pokémon (PokeAPI, pública) o foto propia (Supabase Storage) ----
 export const POKEMON_MAX_ID = 1025;
 export const pokemonSpriteUrl = (id) =>
@@ -93,9 +95,15 @@ export async function buscarCartaTCGdex(nombre, numeroHint) {
 // número de carta (con o sin "#") del resto del texto, y si lo que queda
 // tiene más de una palabra, prueba varias formas de partirlo entre
 // "nombre de la carta" y "nombre del set" (ej. "Sprigatito" + "Journey
-// Together"). Cada combinación se manda como filtro a TCGdex en paralelo;
-// las que no existen en su catálogo simplemente no traen resultados, así
-// que no hace falta saber de antemano cuáles palabras son el set.
+// Together"). Cada combinación se manda como filtro en paralelo; las que
+// no existen en el catálogo simplemente no traen resultados, así que no
+// hace falta saber de antemano cuáles palabras son el set.
+//
+// Usa pokemontcg.io (no TCGdex) porque ya era el respaldo que usa esta
+// misma app cuando TCGdex se queda sin imagen — tiene mejor cobertura de
+// cartas de galería/ilustración especial y sets viejos, y cada resultado
+// ya trae imagen + set + precio en el mismo objeto (no hace falta una
+// segunda llamada al seleccionar una carta, a diferencia de TCGdex).
 function extraerNumeroDeTexto(texto) {
   const t = (texto || "").trim();
   const conAlmohadilla = t.match(/^(.*?)\s*#\s*([A-Za-z]{0,5}\d{1,4}[A-Za-z]?)\s*$/);
@@ -121,6 +129,36 @@ function generarCombinacionesNombreSet(restante) {
   return combos;
 }
 
+// Una sola palabra: coincidencia parcial con comodín (útil mientras se
+// sigue escribiendo). Varias palabras: frase exacta entre comillas (ya
+// se asume completa, como cuando se termina de escribir el set/nombre).
+function terminoDeCampo(frase) {
+  if (!frase) return null;
+  const palabras = frase.trim().split(/\s+/).filter(Boolean);
+  if (palabras.length === 1) return `${palabras[0]}*`;
+  return `"${frase.trim()}"`;
+}
+
+function construirQueryPokemonTCG({ nombre, set, numero }) {
+  const partes = [];
+  const nombreTerm = terminoDeCampo(nombre);
+  if (nombreTerm) partes.push(`name:${nombreTerm}`);
+  const setTerm = terminoDeCampo(set);
+  if (setTerm) partes.push(`set.name:${setTerm}`);
+  if (numero) partes.push(`number:${numero}`);
+  return partes.join(" ");
+}
+
+function precioRefDeCartaPokemonTCG(c) {
+  const tp = c.tcgplayer?.prices;
+  if (tp) {
+    const variante = tp.normal || tp.holofoil || tp.reverseHolofoil || tp.unlimited || tp["1stEditionHolofoil"];
+    if (variante?.market) return Math.round(variante.market * USD_TO_MXN);
+  }
+  if (c.cardmarket?.prices?.trendPrice) return Math.round(c.cardmarket.prices.trendPrice * EUR_TO_MXN);
+  return null;
+}
+
 export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
   const q = (texto || "").trim();
   if (q.length < 3) return [];
@@ -128,16 +166,13 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
   const combos = generarCombinacionesNombreSet(restante);
 
   const peticiones = combos.map(async ({ nombre, set }) => {
-    if (!nombre && !set && !numero) return [];
-    const partes = [];
-    if (nombre) partes.push(`name=${encodeURIComponent(nombre)}`);
-    if (set) partes.push(`set.name=${encodeURIComponent(set)}`);
-    if (numero) partes.push(`localId=${encodeURIComponent(numero)}`);
-    partes.push(`pagination:itemsPerPage=${itemsPorCombo}`);
+    const query = construirQueryPokemonTCG({ nombre, set, numero });
+    if (!query) return [];
     try {
-      const res = await fetch(`https://api.tcgdex.net/v2/en/cards?${partes.join("&")}`);
+      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=${itemsPorCombo}`);
+      if (!res.ok) return [];
       const data = await res.json();
-      return Array.isArray(data) ? data : [];
+      return data?.data || [];
     } catch {
       return [];
     }
@@ -153,6 +188,20 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
       combinado.push(c);
     }
   }
-  if (numero) combinado.sort((a, b) => (b.localId === numero) - (a.localId === numero));
-  return combinado.slice(0, 24);
+  if (numero) {
+    combinado.sort((a, b) => {
+      const aExacta = String(a.number).toLowerCase() === String(numero).toLowerCase();
+      const bExacta = String(b.number).toLowerCase() === String(numero).toLowerCase();
+      return bExacta - aExacta;
+    });
+  }
+  return combinado.slice(0, 24).map((c) => ({
+    id: c.id,
+    name: c.name,
+    localId: c.number,
+    setName: c.set?.name || "",
+    setTotal: c.set?.printedTotal || c.set?.total || "",
+    image: c.images?.large || c.images?.small || null,
+    precioRefMxn: precioRefDeCartaPokemonTCG(c),
+  }));
 }

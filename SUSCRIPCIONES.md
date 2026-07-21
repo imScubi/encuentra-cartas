@@ -931,17 +931,15 @@ exigir un formato fijo. Todo esto encuentra la misma carta:
 - `Sprigatito #016`
 - `Sprigatito Journey Together`
 
-**`CardPicker` (catálogo oficial, vía TCGdex)**: separa el número (con o
-sin "#") del resto del texto; si lo que queda tiene más de una palabra,
-prueba varias formas de partirlo entre "nombre de la carta" y "nombre
-del set" (ej. "Sprigatito" + "Journey Together") y manda cada
-combinación como filtro a TCGdex en paralelo — las combinaciones que no
-existen en su catálogo simplemente no traen nada, así que no hace falta
-saber de antemano cuáles palabras son el set. Los resultados ahora se
-muestran en una **cuadrícula visual de cartas** (imagen grande, nombre y
-número debajo, estilo Pokellector) en vez de una lista angosta de texto.
-Se sigue usando TCGdex porque ya estaba integrado en la app y tiene
-cobertura completa de sets — no hizo falta cambiar de API.
+**`CardPicker` (catálogo oficial)**: separa el número (con o sin "#")
+del resto del texto; si lo que queda tiene más de una palabra, prueba
+varias formas de partirlo entre "nombre de la carta" y "nombre del set"
+(ej. "Sprigatito" + "Journey Together") y manda cada combinación como
+filtro en paralelo — las combinaciones que no existen en el catálogo
+simplemente no traen nada, así que no hace falta saber de antemano
+cuáles palabras son el set. Los resultados se muestran en una
+**cuadrícula visual de cartas** (imagen, nombre, set y número, estilo
+Pokellector) en vez de una lista angosta de texto.
 
 **Buscador del Mercado** (publicaciones ya existentes de tiendas/usuarios):
 cada palabra que escribes debe aparecer en el nombre de la carta O en su
@@ -949,17 +947,30 @@ cada palabra que escribes debe aparecer en el nombre de la carta O en su
 016/159") — así "Sprigatito" puede coincidir con el nombre y "016" o
 "Journey Together" con el set, sin importar el orden.
 
-⚠️ **Honestidad sobre una parte sin poder probar en vivo**: el filtro
-`set.name` que le mandamos a TCGdex para acotar por nombre de set se
-basa en cómo TCGdex documenta su filtrado (el mismo mecanismo que ya
-usábamos para `name`, aplicado a un campo anidado) — no en una prueba
-en vivo, porque este entorno de desarrollo no tiene salida de red hacia
-`api.tcgdex.net` para verificarlo directamente. El diseño no debería
-empeorar nada aunque ese filtro específico no funcione como se espera
-(siempre se incluye también la búsqueda de "todo el texto como nombre",
-igual que antes), pero vale la pena probarlo con casos reales — si
-"Sprigatito Journey Together" no encuentra la carta exacta, avisa para
-ajustarlo.
+### 43.1 Cambio de API: de TCGdex a pokemontcg.io (imágenes faltantes)
+
+La primera versión usaba TCGdex para el buscador visual, pero varias
+cartas (sobre todo de galería de arte / ilustración especial y sets
+viejos — ej. "Mareep GG34" de Crown Zenith) aparecían sin imagen en la
+cuadrícula, sin mostrar el set, y con una llamada extra al elegir la
+carta. Causa: los resultados de la lista de TCGdex no siempre traen
+imagen ni el nombre del set, y esta app ya tenía evidencia propia de
+que **pokemontcg.io tiene mejor cobertura de esas variantes** — es la
+razón por la que ya se usaba como respaldo de imagen en otras partes
+(ver sección "Respaldo automático de imagen").
+
+Ahora `buscarCartasVisual()` (en `src/lib/pokemonApi.js`) consulta
+pokemontcg.io directamente en vez de TCGdex: cada resultado ya trae
+imagen, nombre del set, número y precio de referencia en un solo
+objeto, sin necesitar una segunda llamada al seleccionar una carta (más
+rápido) y con mejor cobertura de cartas de galería/ilustración especial
+y vintage. `buscarCartaTCGdex()` (usada solo para prellenar cartas
+detectadas en Carpetas) no se tocó — sigue en TCGdex, es un flujo
+distinto que no se reportó con problemas.
+
+Si alguna carta muy específica sigue sin imagen ni en pokemontcg.io,
+avisa con el nombre exacto y el número para revisarlo — puede ser una
+variante todavía no catalogada en ninguna de las dos APIs.
 
 ## Qué falta / próximos pasos posibles
 
