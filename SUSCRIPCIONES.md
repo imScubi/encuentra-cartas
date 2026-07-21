@@ -831,6 +831,61 @@ el prompt (son más de 100 sets) — dársela a la IA como referencia fija
 podría ayudar más adelante, pero por ahora la mejora principal viene de
 la foto más clara y de la señal de confianza.
 
+## 40. Directorio: filtro por zona + tienda más cercana (Zafiro+)
+
+En "Directorio de tiendas", nuevo desde Zafiro en adelante:
+
+- **Filtro por zona**: un selector con las zonas que ya tienen tiendas
+  registradas (se arma solo a partir de lo que hay en la base, no es una
+  lista fija).
+- **"Usar mi ubicación"**: pide permiso de geolocalización al navegador
+  (el usuario decide si lo da) y, si lo da, calcula la distancia en
+  línea recta (fórmula de Haversine) entre esa ubicación y cada tienda
+  que tenga coordenadas guardadas. Ordena el directorio de la más
+  cercana a la más lejana, muestra la distancia en cada tarjeta y
+  destaca cuál es la más cercana en un aviso arriba de la lista. Las
+  tiendas sin coordenadas guardadas simplemente no entran al cálculo de
+  distancia (siguen apareciendo, sin distancia).
+- Sin plan Zafiro o superior, el directorio se ve igual que siempre —
+  solo el bloque de filtro/ubicación se reemplaza por un aviso para
+  mejorar de plan.
+
+**Cómo se cargan las coordenadas de una tienda**: el panel de Admin
+("Crear tienda") ahora tiene campos opcionales de latitud/longitud (se
+copian de Google Maps o se llenan solas con el botón "Usar mi
+ubicación" si el admin está físicamente ahí), y cada tienda ya creada
+en "Todas las tiendas" tiene un botón "📍 Ubicación" para agregarlas o
+corregirlas después. Sin coordenadas, una tienda sigue funcionando
+normal en todo lo demás (solo no participa del cálculo de distancia).
+
+**Pendiente por aplicar**: migración `033_tiendas_ubicacion.sql`
+(agrega `lat`/`lng` a `tiendas` si no existían ya). Aplica igual que
+las anteriores — copiar y pegar en Supabase → SQL Editor → Run.
+
+## 41. Deck Builder visual: "Mis mazos" (Amatista+)
+
+"Armar mazo" ahora tiene dos pestañas:
+
+- **🧩 Mis mazos** (nuevo, Amatista/Diamante/Aurora): un deck builder
+  visual al estilo Limitless TCG. Se crean varios mazos, cada uno con
+  su propio nombre y etiquetas libres (ej. "Estándar", "Torneo",
+  cualquier texto separado por comas). Dentro de un mazo, el mismo
+  buscador visual de cartas que ya se usa al publicar en el Mercado
+  (imagen, set y precio de referencia) sirve para agregar cartas; cada
+  una lleva su cantidad propia con botones +/− (llegar a 0 la quita del
+  mazo), y se avisa si alguna supera las 4 copias permitidas para una
+  carta que no sea Energía Básica.
+- **🃏 Buscar en el mercado** (la función que ya existía, sin cambios):
+  pegar una decklist de texto y ver qué tiendas/vendedores del Mercado
+  tienen esas cartas.
+- Sin plan Amatista o superior, la pestaña "Mis mazos" muestra un aviso
+  para mejorar de plan; "Buscar en el mercado" sigue siendo gratis para
+  todos, como antes.
+
+**Pendiente por aplicar**: migración `032_mazos.sql` (tablas `mazos` y
+`mazo_cartas`, con RLS para que cada quien solo vea/edite sus propios
+mazos). Aplica igual que las anteriores.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
