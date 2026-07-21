@@ -148,6 +148,15 @@ async function procesarPagoRecurrente(authorizedPaymentId, supabaseUrl, headers)
       headers,
       body: JSON.stringify({ plan, plan_vence: fin.toISOString(), mp_preapproval_id: cobro.preapproval_id }),
     });
+    // Guarda la fecha en la que llegó a Diamante, solo la primera vez (el filtro
+    // diamante_desde=is.null hace que este PATCH no toque nada si ya estaba puesta).
+    if (plan === "masterball") {
+      await fetch(`${supabaseUrl}/rest/v1/perfiles?id=eq.${perfilId}&diamante_desde=is.null`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ diamante_desde: inicio.toISOString() }),
+      });
+    }
   }
 }
 

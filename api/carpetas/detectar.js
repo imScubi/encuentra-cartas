@@ -6,7 +6,7 @@
 // Llama directo a la API REST de Gemini (sin el SDK) y le pregunta a
 // Google qué modelos están disponibles en vez de fijar un nombre — así
 // no se rompe cuando Google retira o renombra un modelo.
-const PLANES_CON_CARPETAS = ["superball", "ultraball", "masterball", "enteball"];
+const PLANES_CON_CARPETAS = ["ultraball", "masterball", "enteball"];
 
 // Nombres de sets que solo existen en Pokémon TCG Pocket (el juego para
 // celular) — ninguno de estos es un set real del TCG físico, así que si

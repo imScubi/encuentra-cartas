@@ -1,8 +1,10 @@
 # Sistema de rangos / suscripciones
 
-Guía para dejar funcionando de verdad lo que se agregó: los 5 rangos (Poké Ball,
-Super Ball, Ultra Ball, Master Ball, Ente Ball), cobro con Mercado Pago,
-Wishlist Premium con notificaciones push, y el importador masivo de Ente Ball.
+Guía para dejar funcionando de verdad lo que se agregó: los 5 rangos (Cuarzo,
+Zafiro, Amatista, Diamante, Aurora — internamente siguen guardados como
+pokeball/superball/ultraball/masterball/enteball en la base de datos), cobro
+con Mercado Pago, Wishlist Premium con notificaciones push, y el importador
+masivo de Aurora.
 
 ## 1. Base de datos (obligatorio, hazlo primero)
 
@@ -16,7 +18,7 @@ Esto agrega:
 - Tabla `push_subscriptions`
 - Tabla `pagos`
 
-Si quieres regalar Master Ball 90 días a las tiendas que ya tienes cargadas
+Si quieres regalar Diamante 90 días a las tiendas que ya tienes cargadas
 (recomendado para poblar la app rápido), descomenta y corre el `update` al
 final del mismo archivo.
 
@@ -74,7 +76,7 @@ real de Vercel, y corre el archivo completo en el **SQL Editor** de
 Supabase. Hace exactamente lo mismo (crea los triggers) sin depender de la
 interfaz.
 
-## 5. Importador masivo (Ente Ball)
+## 5. Importador masivo (Aurora)
 
 Ya funciona sin configuración extra: en "Mi tienda", si el perfil tiene plan
 `enteball`, aparece la caja para pegar una lista de texto o subir un
@@ -344,7 +346,7 @@ variantes:
   algunas cartas muy nuevas o promos raras), sigue disponible el botón
   de subir tu propia foto ("📷 Sin foto").
 
-## 24. Carpetas: publicar un álbum completo desde fotos (Super Ball+)
+## 24. Carpetas: publicar un álbum completo desde fotos (Amatista+)
 
 Corre `supabase/migrations/019_carpetas.sql` (tablas `carpetas` y
 `carpeta_fotos`, columna `carpeta_id` en `inventario_tienda` y
@@ -357,8 +359,8 @@ También necesitas agregar una variable de entorno nueva en Vercel:
 | `GEMINI_API_KEY` | https://aistudio.google.com/apikey (entra con tu cuenta de Google, "Create API key") | **Gratis** dentro de los límites de la capa gratuita de Gemini (un número generoso de fotos por minuto/día, sin tarjeta de crédito). Sin esta variable, "Carpetas" deja de detectar cartas automáticamente (el resto de la app sigue funcionando normal). |
 | `GEMINI_MODEL` (opcional) | — | Normalmente no hace falta: el código le pregunta a Google qué modelos "flash" están disponibles en ese momento y elige el más nuevo automáticamente. Solo defínela si quieres forzar un modelo específico. |
 
-Qué hace: en "Mi tienda" y "Vender en el Mercado" (desde el plan **Super
-Ball** en adelante), hay una sección **"📁 Carpetas"** donde puedes:
+Qué hace: en "Mi tienda" y "Vender en el Mercado" (desde el plan
+**Amatista** en adelante), hay una sección **"📁 Carpetas"** donde puedes:
 
 - Crear varias carpetas (álbumes) con su propio nombre.
 - Subir fotos de las páginas de tu álbum físico a cada carpeta — se
@@ -405,6 +407,42 @@ Corre `supabase/migrations/020_perfil_publico.sql` y
   quieras mantener privadas. La migración 021 agrega los permisos de
   Supabase (RLS) para que la Wishlist y las Carpetas de otra persona
   solo se puedan leer si esa persona no las ocultó.
+
+## 26. Rediseño visual: sistema de gemas y ajustes de beneficios
+
+Los 5 rangos ahora se muestran con nombre e ícono de gema (Cuarzo, Zafiro,
+Amatista, Diamante, Aurora) en vez de Poké Balls — las keys internas
+(`pokeball`/`superball`/`ultraball`/`masterball`/`enteball`) no cambiaron.
+
+Ajustes a los beneficios de cada plan:
+
+- **Zafiro**: el enlace directo dejó de incluir Google Maps para cuentas
+  individuales (no tiene sentido sin un local físico) — ahora una cuenta
+  individual desbloquea Instagram + WhatsApp + Facebook como enlaces
+  directos visibles en su perfil público, mientras que una cuenta de
+  tienda sigue desbloqueando Instagram + Google Maps (se ve en el
+  detalle de la tienda). El componente `RedesSocialesEditor` ahora recibe
+  un prop `esTienda` para saber cuál mostrar.
+- **Carpetas** pasó de ser beneficio de Zafiro a beneficio de **Amatista**
+  en adelante (`PLAN_INFO.superball.carpetas = false`,
+  `PLAN_INFO.ultraball.carpetas = true`). También se actualizó el gate del
+  lado del servidor en `api/carpetas/detectar.js`
+  (`PLANES_CON_CARPETAS`).
+- **Diamante** ahora tiene dos beneficios nuevos:
+  - Una **decoración holográfica** (anillo giratorio con degradado) alrededor
+    de su avatar, visible en su perfil público y en el detalle de su tienda
+    (componente `HoloAvatar`).
+  - Un **emblema** "💎 Diamante desde `<mes y año>`" (componente
+    `DiamanteEmblema`), que muestra desde cuándo llegó a ese rango la
+    primera vez. Corre `supabase/migrations/022_diamante_desde.sql` para
+    agregar la columna `perfiles.diamante_desde` — se llena sola (una sola
+    vez, no se pisa después) tanto al pagar de verdad
+    (`api/mercadopago/webhook.js`) como al cambiarle el plan a un usuario
+    a mano desde el panel de Admin.
+
+También se reemplazaron los 5 archivos `public/branding/rango-*.png` por
+íconos de gema (mismo nombre de archivo, sigue funcionando el mecanismo de
+`DISENO.md`).
 
 ## Qué falta / próximos pasos posibles
 
