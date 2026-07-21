@@ -646,6 +646,34 @@ variables de entorno. El resultado: el navegador ahora descarga un
 archivo CSS ya compilado y pequeño (~19 KB) en vez de tener que
 ejecutar JavaScript para generar los estilos cada vez.
 
+## 34. Técnico: dividir src/App.jsx en módulos (primera parte)
+
+`src/App.jsx` había crecido a 6,491 líneas con más de 70 componentes.
+Como primer paso (el más seguro, sin tocar pantallas ni JSX), se
+sacó la capa de "backend y configuración" a archivos propios:
+
+- `src/lib/supabase.js`: conexión a Supabase (`sb`, `sbWrite`), registro
+  e inicio de sesión, renovación automática del token, subida de
+  fotos/imágenes a Storage.
+- `src/lib/errorReporting.jsx`: captura de errores y el componente
+  `ErrorBoundary` (ahora `src/main.jsx` lo importa directo de aquí).
+- `src/lib/pokemonApi.js`: buscador de Pokémon (PokeAPI) y de cartas
+  (TCGdex / pokemontcg.io de respaldo).
+- `src/theme.js`: colores, fuentes, `PLAN_INFO` y los cálculos de plan/boost.
+
+Detalle técnico relevante: dos variables internas (para avisar cuando
+se renueva la sesión, y para saber qué usuario está conectado al
+reportar un error) se actualizaban reasignándolas directamente desde
+el componente principal. Un módulo de JavaScript no permite reasignar
+así algo que se importa de otro archivo, así que ahora se actualizan
+llamando a una función (`setOnSesionRefrescada`, `setUidActual`) en
+vez de asignarlas directo — mismo comportamiento, pero compatible con
+tenerlas en otro archivo.
+
+`App.jsx` bajó de 6,491 a 6,093 líneas. Falta la parte más grande (los
+más de 70 componentes de pantallas), que se hará por separado para no
+arriesgar todo de un jalón.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
@@ -655,4 +683,4 @@ ejecutar JavaScript para generar los estilos cada vez.
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
 - Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
 - La búsqueda de "Armar mazo" hace match de nombre simple (contiene el texto) — si dos cartas distintas comparten parte del nombre (ej. "Pikachu" y "Pikachu VMAX"), puede haber falsos positivos leves; no ata el nombre a un ID exacto de la carta como sí hace el catálogo de TCGdex.
-- Deuda técnica pendiente: todo el frontend vive en un solo archivo `src/App.jsx` (más de 6,000 líneas) — no bloquea nada hoy, pero valdría la pena dividirlo en módulos más chicos.
+- Deuda técnica pendiente: falta dividir el resto de `src/App.jsx` (los componentes de cada pantalla) en módulos más chicos — ver sección 34.
