@@ -746,6 +746,59 @@ al ver el perfil de cualquier cuenta, individual o tienda). La página
 de detalle de una tienda dentro del Mercado es una vista aparte y no
 lleva estos cambios — se podría extender después si hace falta.
 
+## 37. Apariencia: el tinte por tipo de Pokémon ahora se nota de verdad
+
+Antes, elegir un tipo de Pokémon solo cambiaba el color de algunos
+bordes y textos — muy poco perceptible. Ahora `aplicarTema()` también
+mezcla el color del tipo con el fondo y las superficies (`mezclarHex()`
+hace la mezcla de colores), y las bases de modo día/noche pasan a ser
+neutras (sin su propio tinte azul) para que el color del tipo se vea
+limpio encima. El cambio ahora se nota en toda la pantalla, no solo en
+detalles chicos.
+
+## 38. Admin: sub-perfiles administrados (poblar el Mercado sin crear un correo por cuenta)
+
+Nueva pestaña "Sub-perfiles" en el panel de admin. Permite crear
+cuentas de verdad — con su propio usuario de Supabase Auth — sin que
+el admin tenga que pensar en un correo ni una contraseña para cada
+una: se generan solas por dentro (un correo interno único, nunca
+usado para nada más que identificar la cuenta). Cada sub-perfil:
+
+- Aparece en la lista con su tipo (individual/tienda) y un selector
+  para asignarle cualquier plan directo (Cuarzo a Aurora).
+- Tiene un botón "Entrar como": genera una sesión real de esa cuenta y
+  la usa el navegador del admin, así que a partir de ahí la web se
+  comporta exactamente como si esa cuenta hubiera iniciado sesión —
+  puede publicar en el Mercado, editar su perfil, todo lo que haría
+  cualquier cuenta normal. Sin haber tocado ningún permiso (RLS)
+  existente: es una sesión legítima, como cualquier otra.
+- Al entrar a un sub-perfil aparece una barra dorada arriba ("Estás
+  usando el sub-perfil…") con un botón para volver de inmediato a la
+  cuenta de admin — se guarda aparte mientras tanto, no se pierde.
+
+**Cómo funciona por dentro** (dos endpoints nuevos, ambos verifican
+que quien llama sea admin):
+- `api/admin/crear-subperfil.js`: crea el usuario de Auth (con la
+  Admin API de Supabase, usando la llave de servicio) y su fila en
+  `perfiles`, marcada con `gestionado_por` = el admin que la creó.
+- `api/admin/entrar-subperfil.js`: genera un enlace mágico para el
+  sub-perfil y lo canjea por una sesión real (access token + refresh
+  token) sin necesitar su contraseña — el admin solo puede hacer esto
+  con sub-perfiles que él mismo administra.
+
+**Pendiente por aplicar**: migración `031_subperfiles_admin.sql`
+(agrega `gestionado_por` a `perfiles`; no necesita ninguna política de
+RLS nueva, ya existían las que hacían falta). Aplica igual que las
+anteriores.
+
+**Aviso de honestidad**: la parte de "entrar como" (el intercambio de
+enlace mágico por una sesión, vía la Admin API de Supabase) la escribí
+siguiendo la documentación pero no la pude probar en vivo contra tu
+proyecto real desde este entorno (no tengo aquí la llave de servicio
+para simular la llamada). Es la única pieza de todo lo que hice hoy que
+no verifiqué de punta a punta — si al usar el botón "Entrar como" te
+sale un error, dímelo con el mensaje exacto y lo reviso de inmediato.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
