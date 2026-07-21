@@ -14,7 +14,7 @@ import {
 import { setUidActual } from "./lib/errorReporting.jsx";
 import {
   pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
-  parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex,
+  parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex, buscarCartasVisual,
 } from "./lib/pokemonApi.js";
 import {
   FONTS, USD_TO_MXN, EUR_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
@@ -914,16 +914,15 @@ function CardPicker({ onSelect }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(null); // id de la carta cuyo detalle se está cargando
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (!q.trim() || q.trim().length < 3) { setResults([]); return; }
     setLoading(true);
     const t = setTimeout(() => {
-      fetch(`https://api.tcgdex.net/v2/en/cards?name=${encodeURIComponent(q.trim())}&pagination:itemsPerPage=8`)
-        .then((r) => r.json())
-        .then((data) => setResults(Array.isArray(data) ? data : []))
+      buscarCartasVisual(q.trim())
+        .then(setResults)
         .catch(() => setResults([]))
         .finally(() => setLoading(false));
     }, 400);
@@ -931,7 +930,7 @@ function CardPicker({ onSelect }) {
   }, [q]);
 
   const seleccionar = async (c) => {
-    setLoadingDetail(true);
+    setLoadingDetail(c.id);
     try {
       const res = await fetch(`https://api.tcgdex.net/v2/en/cards/${c.id}`);
       const full = await res.json();
@@ -970,39 +969,51 @@ function CardPicker({ onSelect }) {
         precio_ref_mxn: null,
       });
     } finally {
-      setQ(""); setResults([]); setOpen(false); setLoadingDetail(false);
+      setQ(""); setResults([]); setOpen(false); setLoadingDetail(null);
     }
   };
 
   return (
     <div className="relative">
       <input
-        placeholder="Busca la carta oficial (ej. Mega Charizard EX)"
+        placeholder='Nombre, número (ej. "016" o "#016") o set (ej. Sprigatito Journey Together)'
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
-        disabled={loadingDetail}
+        disabled={!!loadingDetail}
         style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
         className="rounded-lg px-2 py-2 text-sm w-full"
       />
-      {loadingDetail && <p style={{ color: COLORS.muted }} className="text-xs mt-1">Cargando datos exactos de la carta...</p>}
-      {open && !loadingDetail && q.trim().length >= 3 && (
+      {open && q.trim().length >= 3 && (
         <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66` }}
-          className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-lg shadow-xl">
-          {loading && <p style={{ color: COLORS.muted }} className="text-xs p-3">Buscando en el catálogo oficial...</p>}
-          {!loading && results.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs p-3">Sin resultados. Prueba con otro nombre.</p>}
-          {results.map((c) => (
-            <button key={c.id} type="button"
-              onClick={() => seleccionar(c)}
-              className="flex items-center gap-3 w-full text-left p-2 hover:brightness-125"
-              style={{ borderBottom: `1px solid ${COLORS.bg}` }}>
-              {c.image && <img src={`${c.image}/low.webp`} alt={c.name} style={{ width: 48, height: 66, objectFit: "contain" }} />}
-              <div>
-                <p className="text-sm font-medium">{c.name}</p>
-                <p style={{ color: COLORS.muted }} className="text-xs">#{c.localId}</p>
-              </div>
-            </button>
-          ))}
+          className="absolute z-20 mt-1 w-full max-h-80 overflow-y-auto rounded-lg shadow-xl p-2">
+          {loading && <p style={{ color: COLORS.muted }} className="text-xs p-2">Buscando en el catálogo oficial...</p>}
+          {loadingDetail && <p style={{ color: COLORS.muted }} className="text-xs p-2">Cargando datos exactos de la carta...</p>}
+          {!loading && results.length === 0 && (
+            <p style={{ color: COLORS.muted }} className="text-xs p-2">Sin resultados. Prueba con otro nombre, número o set.</p>
+          )}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {results.map((c) => (
+              <button key={c.id} type="button"
+                onClick={() => seleccionar(c)}
+                disabled={!!loadingDetail}
+                className="flex flex-col items-center gap-1 rounded-lg p-1.5 text-center hover:brightness-125"
+                style={{
+                  background: loadingDetail === c.id ? COLORS.azul : "transparent",
+                  opacity: loadingDetail && loadingDetail !== c.id ? 0.4 : 1,
+                }}>
+                <div style={{ background: COLORS.bg }} className="w-full aspect-[63/88] rounded-md overflow-hidden flex items-center justify-center">
+                  {c.image ? (
+                    <img src={`${c.image}/high.webp`} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} loading="lazy" />
+                  ) : (
+                    <Package size={20} color={COLORS.muted} />
+                  )}
+                </div>
+                <p className="text-xs font-medium leading-tight line-clamp-2">{c.name}</p>
+                <p style={{ color: COLORS.muted }} className="text-[10px]">#{c.localId}</p>
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -6055,6 +6066,22 @@ function distanciaKm(lat1, lng1, lat2, lng2) {
 }
 const formatoDistancia = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`);
 
+// ---- Búsqueda del Mercado/tiendas por palabras sueltas contra nombre y set ----
+// Para que "Sprigatito 016", "Sprigatito #016" o "Sprigatito Journey Together"
+// encuentren una publicación sin importar el orden: cada palabra debe aparecer
+// en el nombre de la carta O en su set_nombre (que ya guarda cosas como
+// "Journey Together 016/159"), sin exigir que toda la frase esté en un solo campo.
+function filtroPalabrasCartaOSet(texto) {
+  const palabras = (texto || "")
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.replace(/^#/, ""))
+    .filter(Boolean);
+  if (!palabras.length) return "";
+  const grupos = palabras.map((w) => `or(carta.ilike.*${encodeURIComponent(w)}*,set_nombre.ilike.*${encodeURIComponent(w)}*)`);
+  return `and=(${grupos.join(",")})`;
+}
+
 // ---- Geocodificación: convierte una dirección en texto a lat/lng ----
 // Usa Nominatim (OpenStreetMap), gratis y sin necesitar API key.
 async function buscarCoordenadasPorDireccion(direccion) {
@@ -6254,12 +6281,13 @@ export default function EncuentraCartas() {
       return;
     }
     const q = encodeURIComponent(query.trim());
+    const filtroCartaSet = filtroPalabrasCartaOSet(query);
     setSearching(true);
     setSearchError(null);
     const t = setTimeout(() => {
       Promise.all([
-        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&carta=ilike.*${q}*&order=precio.asc`),
-        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&carta=ilike.*${q}*&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&${filtroCartaSet}&order=precio.asc`),
+        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&${filtroCartaSet}&order=precio.asc`),
         sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&producto=ilike.*${q}*&order=precio.asc`),
       ])
         .then(([inv, merc, sel]) => setSearchResults({ tiendas: conBoostPrimero(inv), mercado: conBoostPrimero(merc), sellado: conBoostPrimero(sel) }))
