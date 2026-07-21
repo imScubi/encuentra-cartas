@@ -383,10 +383,33 @@ obligatorio subirle una foto a mano** (botón "📷 Subir foto") antes de
 poder incluirla en la publicación — no se permite publicar cartas sin
 imagen desde Carpetas.
 
+## 25. Perfil más personalizable + perfil público + Pokémon favoritos
+
+Corre `supabase/migrations/020_perfil_publico.sql` y
+`supabase/migrations/021_visibilidad_publica.sql` (en ese orden).
+
+- En **Editar perfil** ahora puedes elegir hasta **3 Pokémon
+  favoritos** (buscador igual al de la foto de perfil). Las cartas
+  cuyo nombre coincida con alguno de esos 3 Pokémon aparecen primero
+  en la vitrina "🔥 Recién publicado" de la pantalla de inicio —
+  siempre después de las publicaciones con Boost, pero antes que el
+  resto.
+- Cada usuario (individual o tienda) tiene ahora un **perfil
+  público**: se llega ahí tocando el nombre/avatar de un vendedor en
+  el Mercado. Muestra su avatar, plan, Pokémon favoritos, sus cartas y
+  producto sellado en venta (o un enlace a su tienda completa si es
+  cuenta de tienda), su Wishlist y sus Carpetas.
+- En **Editar perfil** hay checkboxes para elegir qué secciones se
+  muestran en tu perfil público (publicaciones, wishlist, favoritos,
+  carpetas) — todas activas por defecto, puedes desactivar las que
+  quieras mantener privadas. La migración 021 agrega los permisos de
+  Supabase (RLS) para que la Wishlist y las Carpetas de otra persona
+  solo se puedan leer si esa persona no las ocultó.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
 - Permitir editar un torneo ya publicado (hoy solo se puede borrar y crear uno nuevo) y adjuntarle una imagen.
 - Mapa de Google en el detalle del torneo (hoy solo muestra la dirección en texto).
 - Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
-- Mostrar las carpetas también en la vista pública de la tienda/perfil (hoy solo se ven en el panel del vendedor).
+- Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
