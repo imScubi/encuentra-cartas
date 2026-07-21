@@ -3,7 +3,7 @@ import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, Navigation,
 } from "lucide-react";
 import {
   VAPID_PUBLIC_KEY,
@@ -1605,11 +1605,22 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   };
 
   // ---- Crear tienda ----
-  const tiendaVacia = { nombre: "", direccion: "", zona: "", telefono: "", vincularCon: "" };
+  const tiendaVacia = { nombre: "", direccion: "", zona: "", telefono: "", vincularCon: "", lat: "", lng: "" };
   const [nuevaTienda, setNuevaTienda] = useState(tiendaVacia);
   const [creandoTienda, setCreandoTienda] = useState(false);
   const [errorCrear, setErrorCrear] = useState(null);
   const [okCrear, setOkCrear] = useState(null);
+  const [buscandoUbicacionNueva, setBuscandoUbicacionNueva] = useState(false);
+
+  const usarMiUbicacionNuevaTienda = () => {
+    if (!navigator.geolocation) { setErrorCrear("Tu navegador no soporta geolocalización."); return; }
+    setBuscandoUbicacionNueva(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setNuevaTienda((t) => ({ ...t, lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) })); setBuscandoUbicacionNueva(false); },
+      () => { setErrorCrear("No pudimos obtener tu ubicación (¿diste permiso?)."); setBuscandoUbicacionNueva(false); },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   const crearTienda = async () => {
     if (!nuevaTienda.nombre.trim() || !nuevaTienda.direccion.trim()) return;
@@ -1621,12 +1632,43 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
         zona: nuevaTienda.zona.trim() || null,
         telefono: nuevaTienda.telefono.trim() || null,
         perfil_id: nuevaTienda.vincularCon || null,
+        lat: nuevaTienda.lat ? Number(nuevaTienda.lat) : null,
+        lng: nuevaTienda.lng ? Number(nuevaTienda.lng) : null,
       }, session);
       setOkCrear(`Tienda "${nuevaTienda.nombre.trim()}" creada.`);
       setNuevaTienda(tiendaVacia);
       cargar();
       cargarTodasTiendas();
     } catch (e) { setErrorCrear(e.message); } finally { setCreandoTienda(false); }
+  };
+
+  // ---- Editar ubicación (lat/lng) de una tienda ya creada ----
+  const [editandoUbicacion, setEditandoUbicacion] = useState(null); // tienda id
+  const [ubicacionEdit, setUbicacionEdit] = useState({ lat: "", lng: "" });
+  const [guardandoUbicacion, setGuardandoUbicacion] = useState(false);
+
+  const abrirEditorUbicacion = (t) => {
+    setEditandoUbicacion(t.id);
+    setUbicacionEdit({ lat: t.lat != null ? String(t.lat) : "", lng: t.lng != null ? String(t.lng) : "" });
+  };
+
+  const usarMiUbicacionEditar = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      setUbicacionEdit({ lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) });
+    });
+  };
+
+  const guardarUbicacionTienda = async (tiendaId) => {
+    setGuardandoUbicacion(true);
+    try {
+      await sbWrite("PATCH", `tiendas?id=eq.${tiendaId}`, {
+        lat: ubicacionEdit.lat ? Number(ubicacionEdit.lat) : null,
+        lng: ubicacionEdit.lng ? Number(ubicacionEdit.lng) : null,
+      }, session);
+      setEditandoUbicacion(null);
+      cargarTodasTiendas();
+    } catch (e) { setError(e.message); } finally { setGuardandoUbicacion(false); }
   };
 
   // ---- Anuncios ----
@@ -1986,6 +2028,22 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                 onChange={(e) => setNuevaTienda({ ...nuevaTienda, telefono: e.target.value })}
                 style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
             </div>
+            <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2">
+              <input placeholder="Latitud (opcional)" value={nuevaTienda.lat}
+                onChange={(e) => setNuevaTienda({ ...nuevaTienda, lat: e.target.value })}
+                style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+              <input placeholder="Longitud (opcional)" value={nuevaTienda.lng}
+                onChange={(e) => setNuevaTienda({ ...nuevaTienda, lng: e.target.value })}
+                style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+              <button type="button" onClick={usarMiUbicacionNuevaTienda} disabled={buscandoUbicacionNueva}
+                style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1 whitespace-nowrap">
+                <Navigation size={12} /> {buscandoUbicacionNueva ? "Ubicando..." : "Usar mi ubicación"}
+              </button>
+            </div>
+            <p style={{ color: COLORS.muted }} className="text-xs -mt-1">
+              La latitud/longitud sirven para el filtro de "tienda más cercana" (Zafiro+). Cópialas de Google Maps (clic derecho en el punto → coordenadas) o usa el botón si estás físicamente en la tienda.
+            </p>
             <select value={nuevaTienda.vincularCon} onChange={(e) => setNuevaTienda({ ...nuevaTienda, vincularCon: e.target.value })}
               style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
               <option value="">Vincular con una cuenta ahora (opcional, puedes hacerlo después)</option>
@@ -2038,23 +2096,49 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
               {todasTiendas.map((t) => {
                 const esDuplicada = conteoNombresTienda[(t.nombre || "").trim().toLowerCase()] > 1;
                 return (
-                  <div key={t.id} style={{ background: COLORS.surface, border: `1px solid ${esDuplicada ? "#C24444" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
-                    <div>
-                      <p className="font-medium text-sm">{t.nombre} {esDuplicada && <span style={{ color: "#C24444" }} className="text-xs font-semibold">· posible duplicado</span>}</p>
-                      <p style={{ color: COLORS.muted }} className="text-xs">{t.direccion}{t.zona ? ` · ${t.zona}` : ""}{t.perfil_id ? "" : " · sin cuenta vinculada"}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {t.perfil_id && (
-                        <button onClick={() => toggleAmatista(t)} disabled={cambiandoAmatista === t.id}
-                          style={{ color: COLORS.violeta, border: `1px solid ${COLORS.violeta}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
-                          {cambiandoAmatista === t.id ? "..." : t.perfiles?.plan === "ultraball" ? "🟣 Quitar Amatista" : "🟣 Dar Amatista"}
+                  <div key={t.id} style={{ background: COLORS.surface, border: `1px solid ${esDuplicada ? "#C24444" : COLORS.surface2}` }} className="rounded-lg p-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <p className="font-medium text-sm">{t.nombre} {esDuplicada && <span style={{ color: "#C24444" }} className="text-xs font-semibold">· posible duplicado</span>}</p>
+                        <p style={{ color: COLORS.muted }} className="text-xs">
+                          {t.direccion}{t.zona ? ` · ${t.zona}` : ""}{t.perfil_id ? "" : " · sin cuenta vinculada"}
+                          {t.lat && t.lng ? " · 📍 con ubicación" : " · sin ubicación"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => (editandoUbicacion === t.id ? setEditandoUbicacion(null) : abrirEditorUbicacion(t))}
+                          style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap flex items-center gap-1">
+                          <MapPin size={12} /> Ubicación
                         </button>
-                      )}
-                      <button onClick={() => borrarTienda(t)} disabled={borrandoTienda === t.id}
-                        style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
-                        {borrandoTienda === t.id ? "Borrando..." : "Borrar tienda"}
-                      </button>
+                        {t.perfil_id && (
+                          <button onClick={() => toggleAmatista(t)} disabled={cambiandoAmatista === t.id}
+                            style={{ color: COLORS.violeta, border: `1px solid ${COLORS.violeta}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                            {cambiandoAmatista === t.id ? "..." : t.perfiles?.plan === "ultraball" ? "🟣 Quitar Amatista" : "🟣 Dar Amatista"}
+                          </button>
+                        )}
+                        <button onClick={() => borrarTienda(t)} disabled={borrandoTienda === t.id}
+                          style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                          {borrandoTienda === t.id ? "Borrando..." : "Borrar tienda"}
+                        </button>
+                      </div>
                     </div>
+                    {editandoUbicacion === t.id && (
+                      <div className="flex flex-wrap items-center gap-2 mt-3 pt-3" style={{ borderTop: `1px solid ${COLORS.surface2}` }}>
+                        <input placeholder="Latitud" value={ubicacionEdit.lat}
+                          onChange={(e) => setUbicacionEdit({ ...ubicacionEdit, lat: e.target.value })}
+                          style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs w-28" />
+                        <input placeholder="Longitud" value={ubicacionEdit.lng}
+                          onChange={(e) => setUbicacionEdit({ ...ubicacionEdit, lng: e.target.value })}
+                          style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs w-28" />
+                        <button onClick={usarMiUbicacionEditar} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-2 py-1.5 text-xs font-semibold flex items-center gap-1">
+                          <Navigation size={12} /> Mi ubicación
+                        </button>
+                        <button onClick={() => guardarUbicacionTienda(t.id)} disabled={guardandoUbicacion}
+                          style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                          {guardandoUbicacion ? "Guardando..." : "Guardar"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -3748,6 +3832,255 @@ function ArmarMazoView({ session, onAbrirChat, onVerTienda }) {
             ))}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ---- Mis mazos: deck builder visual (Amatista+) ----
+// Varios mazos por usuario, cada uno con nombre y etiquetas propias;
+// las cartas se agregan con el mismo CardPicker que usa el resto de la
+// app (buscador con imagen y precio de referencia) y cada una lleva su
+// propia cantidad, incrementable/decrementable.
+function MazosView({ session, perfil, onIrAPlanes }) {
+  const info = planDe(perfil);
+  const [mazos, setMazos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [mazoAbierto, setMazoAbierto] = useState(null);
+  const [nombreNuevo, setNombreNuevo] = useState("");
+  const [etiquetasNuevo, setEtiquetasNuevo] = useState("");
+  const [creando, setCreando] = useState(false);
+  const [borrandoMazo, setBorrandoMazo] = useState(null);
+  const [guardandoCarta, setGuardandoCarta] = useState(false);
+  const [editandoNombre, setEditandoNombre] = useState(false);
+  const [nombreEdit, setNombreEdit] = useState("");
+  const [etiquetasEdit, setEtiquetasEdit] = useState("");
+
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`mazos?select=*,mazo_cartas(*)&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
+      .then(setMazos)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { if (info.mazoBuilder) cargar(); }, []);
+
+  if (!info.mazoBuilder) {
+    return (
+      <div>
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">🧩 Mis mazos</h2>
+        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
+          Arma varios mazos con un selector visual de cartas: elige la cantidad de cada una y ponles nombre y etiquetas propias.
+        </UpsellCard>
+      </div>
+    );
+  }
+
+  if (loading) return <Loading label="Cargando tus mazos..." />;
+
+  const crearMazo = async () => {
+    if (!nombreNuevo.trim()) return;
+    setCreando(true); setError(null);
+    try {
+      const etiquetas = etiquetasNuevo.split(",").map((s) => s.trim()).filter(Boolean);
+      const creados = await sbWrite("POST", "mazos", { perfil_id: session.user.id, nombre: nombreNuevo.trim(), etiquetas }, session);
+      setNombreNuevo(""); setEtiquetasNuevo("");
+      cargar();
+      if (creados?.[0]?.id) setMazoAbierto(creados[0].id);
+    } catch (e) { setError(e.message); } finally { setCreando(false); }
+  };
+
+  const borrarMazo = async (id) => {
+    setBorrandoMazo(id);
+    try {
+      await sbWrite("DELETE", `mazos?id=eq.${id}`, {}, session);
+      if (mazoAbierto === id) setMazoAbierto(null);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setBorrandoMazo(null); }
+  };
+
+  const actual = mazos.find((m) => m.id === mazoAbierto);
+
+  const agregarCarta = async (c) => {
+    if (!actual) return;
+    setGuardandoCarta(true);
+    try {
+      const existente = actual.mazo_cartas.find((mc) => (c.card_api_id && mc.card_api_id === c.card_api_id) || mc.nombre === c.name);
+      if (existente) {
+        await sbWrite("PATCH", `mazo_cartas?id=eq.${existente.id}`, { cantidad: existente.cantidad + 1 }, session);
+      } else {
+        await sbWrite("POST", "mazo_cartas", {
+          mazo_id: actual.id, nombre: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, cantidad: 1,
+        }, session);
+      }
+      cargar();
+    } catch (e) { setError(e.message); } finally { setGuardandoCarta(false); }
+  };
+
+  const cambiarCantidad = async (mc, delta) => {
+    const nueva = mc.cantidad + delta;
+    try {
+      if (nueva <= 0) await sbWrite("DELETE", `mazo_cartas?id=eq.${mc.id}`, {}, session);
+      else await sbWrite("PATCH", `mazo_cartas?id=eq.${mc.id}`, { cantidad: nueva }, session);
+      cargar();
+    } catch (e) { setError(e.message); }
+  };
+
+  const guardarNombreEtiquetas = async () => {
+    if (!actual || !nombreEdit.trim()) return;
+    try {
+      const etiquetas = etiquetasEdit.split(",").map((s) => s.trim()).filter(Boolean);
+      await sbWrite("PATCH", `mazos?id=eq.${actual.id}`, { nombre: nombreEdit.trim(), etiquetas }, session);
+      setEditandoNombre(false);
+      cargar();
+    } catch (e) { setError(e.message); }
+  };
+
+  // ---- Vista de un mazo abierto ----
+  if (actual) {
+    const totalCartas = actual.mazo_cartas.reduce((s, mc) => s + mc.cantidad, 0);
+    const exceso = actual.mazo_cartas.filter((mc) => mc.cantidad > 4 && !esEnergiaBasica(mc.nombre));
+    return (
+      <div>
+        <button onClick={() => setMazoAbierto(null)} style={{ color: COLORS.azulPalido }} className="text-sm mb-4 flex items-center gap-1">← Mis mazos</button>
+        {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+        {editandoNombre ? (
+          <div className="flex flex-wrap gap-2 mb-3">
+            <input value={nombreEdit} onChange={(e) => setNombreEdit(e.target.value)} placeholder="Nombre del mazo" style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+            <input value={etiquetasEdit} onChange={(e) => setEtiquetasEdit(e.target.value)} placeholder="Etiquetas separadas por coma" style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+            <button onClick={guardarNombreEtiquetas} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-2 text-sm font-semibold">Guardar</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">{actual.nombre}</h2>
+            <button onClick={() => { setEditandoNombre(true); setNombreEdit(actual.nombre); setEtiquetasEdit((actual.etiquetas || []).join(", ")); }}
+              style={{ color: COLORS.muted }} className="text-xs underline">Editar</button>
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap mb-6">
+          {(actual.etiquetas || []).map((e) => <Badge key={e} color={COLORS.violeta}>{e}</Badge>)}
+          <p style={{ color: COLORS.muted }} className="text-xs">{totalCartas} carta{totalCartas === 1 ? "" : "s"}</p>
+        </div>
+
+        {exceso.length > 0 && (
+          <div style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55`, color: COLORS.gold }} className="rounded-lg p-3 mb-4 text-xs">
+            ⚠️ Un mazo oficial de Pokémon TCG permite máximo 4 copias de una carta que no sea Energía Básica — revisa: {exceso.map((mc) => mc.nombre).join(", ")}.
+          </div>
+        )}
+
+        <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-2 text-sm uppercase">Agregar carta</p>
+        <div className="mb-6"><CardPicker onSelect={agregarCarta} /></div>
+        {guardandoCarta && <p style={{ color: COLORS.muted }} className="text-xs mb-4">Guardando...</p>}
+
+        {actual.mazo_cartas.length === 0 ? (
+          <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Todavía no agregas cartas a este mazo. Búscalas arriba.</p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {actual.mazo_cartas.map((mc) => (
+              <div key={mc.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl overflow-hidden flex flex-col">
+                <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
+                  {mc.imagen_url ? (
+                    <img src={mc.imagen_url} alt={mc.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  ) : (
+                    <Package size={32} color={COLORS.muted} />
+                  )}
+                </div>
+                <div className="p-2 flex flex-col gap-1 flex-1">
+                  <p className="text-xs font-semibold leading-snug line-clamp-2">{mc.nombre}</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs truncate">{mc.set_nombre}</p>
+                  <div className="flex items-center justify-between gap-1 mt-auto pt-1">
+                    <button onClick={() => cambiarCantidad(mc, -1)} style={{ background: COLORS.surface2, color: COLORS.text }} className="w-6 h-6 rounded-md text-sm font-bold">−</button>
+                    <span style={{ fontFamily: "'Space Mono', monospace" }} className="text-sm font-semibold">{mc.cantidad}</span>
+                    <button onClick={() => cambiarCantidad(mc, 1)} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="w-6 h-6 rounded-md text-sm font-bold">+</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---- Lista de mazos ----
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🧩 Mis mazos</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Arma tus mazos con un selector visual de cartas: elige la cantidad de cada una y ponles nombre y etiquetas.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-8 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+        <input placeholder="Nombre del mazo (ej. Charizard ex)" value={nombreNuevo} onChange={(e) => setNombreNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+        <input placeholder="Etiquetas (ej. Estándar, Torneo)" value={etiquetasNuevo} onChange={(e) => setEtiquetasNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+        <button onClick={crearMazo} disabled={creando || !nombreNuevo.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+          {creando ? "Creando..." : "+ Nuevo mazo"}
+        </button>
+      </div>
+
+      {mazos.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Todavía no tienes mazos. Crea el primero arriba.</p>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {mazos.map((m) => {
+            const total = (m.mazo_cartas || []).reduce((s, mc) => s + mc.cantidad, 0);
+            return (
+              <div key={m.id} onClick={() => setMazoAbierto(m.id)}
+                style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                className="rounded-xl p-4 cursor-pointer transition-transform duration-200 hover:-translate-y-1">
+                <p className="font-semibold mb-1">{m.nombre}</p>
+                <div className="flex items-center gap-1 flex-wrap mb-2">
+                  {(m.etiquetas || []).map((e) => <Badge key={e} color={COLORS.violeta}>{e}</Badge>)}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <p style={{ color: COLORS.muted }} className="text-xs">{total} carta{total === 1 ? "" : "s"} · {(m.mazo_cartas || []).length} única{(m.mazo_cartas || []).length === 1 ? "" : "s"}</p>
+                  <button onClick={(e) => { e.stopPropagation(); borrarMazo(m.id); }} disabled={borrandoMazo === m.id} style={{ color: "#C24444" }} className="text-xs font-semibold whitespace-nowrap">
+                    {borrandoMazo === m.id ? "..." : "Borrar"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Envoltura de "Armar mazo": pestaña de deck builder (Mis mazos) +
+// la pestaña original de buscar decklist contra el mercado ----
+function ArmarMazoSection({ session, perfil, onAbrirChat, onVerTienda, onIrAPlanes }) {
+  const [tab, setTab] = useState("mios");
+  return (
+    <div>
+      <div className="flex gap-2 mb-6">
+        <button onClick={() => setTab("mios")}
+          style={{
+            background: tab === "mios" ? COLORS.surface2 : "transparent",
+            border: `1px solid ${tab === "mios" ? COLORS.azulPalido : COLORS.surface2}`,
+            color: tab === "mios" ? COLORS.azulPalido : COLORS.muted,
+          }}
+          className="rounded-lg px-4 py-2 text-sm font-semibold">🧩 Mis mazos</button>
+        <button onClick={() => setTab("buscar")}
+          style={{
+            background: tab === "buscar" ? COLORS.surface2 : "transparent",
+            border: `1px solid ${tab === "buscar" ? COLORS.azulPalido : COLORS.surface2}`,
+            color: tab === "buscar" ? COLORS.azulPalido : COLORS.muted,
+          }}
+          className="rounded-lg px-4 py-2 text-sm font-semibold">🃏 Buscar en el mercado</button>
+      </div>
+      {tab === "mios" ? (
+        session ? (
+          <MazosView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
+        ) : (
+          <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">Inicia sesión para armar y guardar tus mazos.</p>
+        )
+      ) : (
+        <ArmarMazoView session={session} onAbrirChat={onAbrirChat} onVerTienda={onVerTienda} />
       )}
     </div>
   );
@@ -5547,6 +5880,16 @@ function BackgroundField() {
   );
 }
 
+// ---- Distancia en línea recta entre dos coordenadas (fórmula de Haversine) ----
+function distanciaKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+const formatoDistancia = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`);
+
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
@@ -5662,6 +6005,38 @@ export default function EncuentraCartas() {
   const [tiendas, setTiendas] = useState([]);
   const [loadingTiendas, setLoadingTiendas] = useState(true);
   const [errorTiendas, setErrorTiendas] = useState(null);
+
+  // ---- Directorio: filtro por zona + tienda más cercana (Zafiro+) ----
+  const [filtroZona, setFiltroZona] = useState("");
+  const [ubicacionUsuario, setUbicacionUsuario] = useState(null); // { lat, lng }
+  const [buscandoUbicacion, setBuscandoUbicacion] = useState(false);
+  const [errorUbicacion, setErrorUbicacion] = useState(null);
+
+  const usarMiUbicacion = () => {
+    if (!navigator.geolocation) { setErrorUbicacion("Tu navegador no soporta geolocalización."); return; }
+    setBuscandoUbicacion(true); setErrorUbicacion(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setUbicacionUsuario({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setBuscandoUbicacion(false); },
+      () => { setErrorUbicacion("No pudimos obtener tu ubicación (¿diste permiso en el navegador?)."); setBuscandoUbicacion(false); },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const zonasDisponibles = [...new Set(tiendas.map((t) => t.zona).filter(Boolean))].sort();
+  const tiendasConDistancia = tiendas.map((t) => ({
+    ...t,
+    _distanciaKm: ubicacionUsuario && t.lat != null && t.lng != null ? distanciaKm(ubicacionUsuario.lat, ubicacionUsuario.lng, t.lat, t.lng) : null,
+  }));
+  const tiendasFiltradas = tiendasConDistancia
+    .filter((t) => !filtroZona || t.zona === filtroZona)
+    .sort((a, b) => {
+      if (!ubicacionUsuario) return 0;
+      if (a._distanciaKm == null && b._distanciaKm == null) return 0;
+      if (a._distanciaKm == null) return 1;
+      if (b._distanciaKm == null) return -1;
+      return a._distanciaKm - b._distanciaKm;
+    });
+  const tiendaMasCercana = ubicacionUsuario ? tiendasFiltradas.find((t) => t._distanciaKm != null) : null;
 
   const [searchResults, setSearchResults] = useState({ tiendas: [], mercado: [], sellado: [] });
   const [searching, setSearching] = useState(false);
@@ -6150,8 +6525,44 @@ export default function EncuentraCartas() {
             <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">Directorio de tiendas</h2>
             {loadingTiendas && <Loading label="Cargando tiendas desde Supabase..." />}
             {errorTiendas && <ErrorBox message={errorTiendas} />}
+
+            {!planDe(perfil).ubicacion ? (
+              <div className="mb-6">
+                <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={() => setView("planes")}>
+                  Filtra tiendas por zona y encuentra la más cercana con tu ubicación.
+                </UpsellCard>
+              </div>
+            ) : (
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 flex flex-wrap items-center gap-3">
+                <select value={filtroZona} onChange={(e) => setFiltroZona(e.target.value)}
+                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
+                  <option value="">Todas las zonas</option>
+                  {zonasDisponibles.map((z) => <option key={z} value={z}>{z}</option>)}
+                </select>
+                <button onClick={usarMiUbicacion} disabled={buscandoUbicacion}
+                  style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                  className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1">
+                  <Navigation size={14} /> {buscandoUbicacion ? "Buscando tu ubicación..." : ubicacionUsuario ? "📍 Ubicación activa" : "Usar mi ubicación"}
+                </button>
+                {ubicacionUsuario && (
+                  <button onClick={() => setUbicacionUsuario(null)} style={{ color: COLORS.muted }} className="text-xs underline">Quitar</button>
+                )}
+                {errorUbicacion && <p style={{ color: "#C24444" }} className="text-xs">{errorUbicacion}</p>}
+              </div>
+            )}
+
+            {tiendaMasCercana && (
+              <div style={{ background: `${COLORS.gold}15`, border: `1px solid ${COLORS.gold}55` }} className="rounded-xl p-4 mb-6 text-sm">
+                📍 Tu tienda más cercana es <strong>{tiendaMasCercana.nombre}</strong>, a {formatoDistancia(tiendaMasCercana._distanciaKm)}.
+              </div>
+            )}
+
+            {!loadingTiendas && tiendasFiltradas.length === 0 && (
+              <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">No hay tiendas en esa zona todavía.</p>
+            )}
+
             <div className="grid sm:grid-cols-2 gap-4">
-              {tiendas.map((store, i) => (
+              {tiendasFiltradas.map((store, i) => (
                 <div key={store.id} onClick={() => openStore(store)}
                   style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${planDe(store.perfiles).color}44` }}
                   className="text-left rounded-2xl p-5 cursor-pointer transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)]">
@@ -6162,7 +6573,10 @@ export default function EncuentraCartas() {
                       <PlanBadge perfil={store.perfiles} />
                       <VerificadoBadge perfil={store.perfiles} />
                     </button>
-                    {store.zona && <Badge color={colorFor(i)}>{store.zona}</Badge>}
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {store._distanciaKm != null && <Badge color={COLORS.gold}>📍 {formatoDistancia(store._distanciaKm)}</Badge>}
+                      {store.zona && <Badge color={colorFor(i)}>{store.zona}</Badge>}
+                    </div>
                   </div>
                   <p style={{ color: COLORS.muted }} className="text-sm mt-2 flex items-start gap-1">
                     <MapPin size={14} className="mt-0.5 shrink-0" /> {store.direccion}
@@ -6515,7 +6929,9 @@ export default function EncuentraCartas() {
           <LegalView tipo={view === "privacidad" ? "privacidad" : "terminos"} onVolver={() => setView(vistaAntesLegal)} />
         )}
 
-        {view === "armarMazo" && <ArmarMazoView session={session} onAbrirChat={abrirChat} onVerTienda={verTiendaDesdePerfil} />}
+        {view === "armarMazo" && (
+          <ArmarMazoSection session={session} perfil={perfil} onAbrirChat={abrirChat} onVerTienda={verTiendaDesdePerfil} onIrAPlanes={() => setView("planes")} />
+        )}
         {view === "comunidad" && <ComunidadView session={session} onVerPerfil={verPerfil} />}
         {view === "siguiendo" && session && <SiguiendoView session={session} onVerPerfil={verPerfil} onVerTienda={verTiendaDesdePerfil} />}
         {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
