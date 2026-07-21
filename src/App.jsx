@@ -258,20 +258,41 @@ async function subirImagenCarta(file, session) {
   return `${SUPABASE_URL}/storage/v1/object/public/cartas/${path}`;
 }
 
+// Extrae el número exacto y el nombre del set desde un texto tipo
+// "Crown Zenith GG56/GG70" (formato que usa set_nombre en la app).
+function parseNumeroYSet(setNombre) {
+  if (!setNombre) return { set: null, numero: null };
+  const limpio = setNombre.trim();
+  const conSet = limpio.match(/^(.+?)\s+([A-Za-z]*\d+[A-Za-z]*)(?:\/[A-Za-z0-9]*)?$/);
+  if (conSet) return { set: conSet[1].trim(), numero: conSet[2] };
+  const soloNumero = limpio.match(/^([A-Za-z]*\d+[A-Za-z]*)(?:\/[A-Za-z0-9]*)?$/);
+  if (soloNumero) return { set: null, numero: soloNumero[1] };
+  return { set: limpio, numero: null };
+}
+
 // Respaldo cuando TCGdex no tiene la imagen (pasa seguido con arte especial / secretas).
-// pokemontcg.io tiene mejor cobertura de esas variantes.
-async function buscarImagenRespaldo(nombre, numero) {
-  if (!nombre) return null;
+// pokemontcg.io tiene mejor cobertura de esas variantes. Exige nombre + número
+// exactos (y set si lo tenemos) para no traer la imagen de una versión distinta
+// de la misma carta — si no hay coincidencia exacta, no arriesga y devuelve null.
+async function buscarImagenRespaldo(nombre, numero, setNombre) {
+  if (!nombre || !numero) return null;
   try {
-    const q = encodeURIComponent(`name:"${nombre}"`);
-    const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}&pageSize=20`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const cartas = data?.data || [];
+    const buscar = async (conSet) => {
+      let query = `name:"${nombre}" number:"${numero}"`;
+      if (conSet && setNombre) query += ` set.name:"${setNombre}"`;
+      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=20`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data?.data || [];
+    };
+
+    let cartas = await buscar(true);
+    if (!cartas.length) cartas = await buscar(false);
     if (!cartas.length) return null;
-    const num = numero ? String(numero).replace(/\/.*/, "") : null;
-    const elegida = (num && cartas.find((c) => c.number === num)) || cartas[0];
-    return elegida?.images?.large || elegida?.images?.small || null;
+
+    const exacta = cartas.find((c) => String(c.number).toLowerCase() === String(numero).toLowerCase());
+    if (!exacta) return null;
+    return exacta.images?.large || exacta.images?.small || null;
   } catch {
     return null;
   }
@@ -810,13 +831,14 @@ function SubirFotoManual({ session, onSubido, label }) {
   );
 }
 
-function ReintentarImagen({ nombre, onEncontrada }) {
+function ReintentarImagen({ nombre, setNombre, onEncontrada }) {
   const [buscando, setBuscando] = useState(false);
   const [sinSuerte, setSinSuerte] = useState(false);
 
   const intentar = async () => {
     setBuscando(true); setSinSuerte(false);
-    const url = await buscarImagenRespaldo(nombre);
+    const { set, numero } = parseNumeroYSet(setNombre);
+    const url = await buscarImagenRespaldo(nombre, numero, set);
     setBuscando(false);
     if (url) onEncontrada(url); else setSinSuerte(true);
   };
@@ -828,7 +850,7 @@ function ReintentarImagen({ nombre, onEncontrada }) {
         className="rounded-lg px-2 py-1.5 text-xs font-semibold whitespace-nowrap">
         {buscando ? "Buscando..." : "🔄 Buscar foto"}
       </button>
-      {sinSuerte && <span style={{ color: COLORS.muted }} className="text-xs">No se encontró</span>}
+      {sinSuerte && <span style={{ color: COLORS.muted }} className="text-xs">No se encontró la versión exacta</span>}
     </span>
   );
 }
@@ -872,7 +894,7 @@ function CardPicker({ onSelect }) {
       }
 
       let imagen = full.image ? `${full.image}/high.webp` : "";
-      if (!imagen) imagen = (await buscarImagenRespaldo(full.name, full.localId)) || "";
+      if (!imagen) imagen = (await buscarImagenRespaldo(full.name, full.localId, full.set?.name)) || "";
 
       onSelect({
         name: full.name,
@@ -884,7 +906,7 @@ function CardPicker({ onSelect }) {
     } catch {
       // si falla el detalle, usamos lo que ya teníamos de la lista
       let imagenFallback = c.image ? `${c.image}/high.webp` : "";
-      if (!imagenFallback) imagenFallback = (await buscarImagenRespaldo(c.name, c.localId)) || "";
+      if (!imagenFallback) imagenFallback = (await buscarImagenRespaldo(c.name, c.localId, null)) || "";
       onSelect({
         name: c.name,
         set_nombre: `#${c.localId}`,
@@ -1327,7 +1349,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
             <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
-            {!item.imagen_url && <ReintentarImagen nombre={item.carta} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
+            {!item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
@@ -2238,7 +2260,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
               style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarCarta(item.id, "cantidad", e.target.value)}
               style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
-            {!item.imagen_url && <ReintentarImagen nombre={item.carta} onEncontrada={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />}
+            {!item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />}
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />
             <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
             <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
