@@ -448,8 +448,10 @@ También se reemplazaron los 5 archivos `public/branding/rango-*.png` por
 
 Primer lote (de una lista más grande de 12 ideas) de mejoras de confianza
 para el marketplace — el resto (reseñas con estrellas, contador de ventas,
-recompensas, seguir tiendas, historial de precios, feed de comunidad,
-armar mazo, páginas indexables por Google) queda pendiente para después.
+recompensas, seguir tiendas, armar mazo, feed de comunidad) queda
+pendiente para después. Se descartaron 3 de las 12 ideas originales:
+estadísticas de vistas/mensajes por tienda, historial de precios con
+gráfica, y páginas de tienda indexables por Google.
 
 Corre `supabase/migrations/023_reportes.sql`.
 
@@ -483,4 +485,4 @@ Corre `supabase/migrations/023_reportes.sql`.
 - Mapa de Google en el detalle del torneo (hoy solo muestra la dirección en texto).
 - Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
-- Las 8 ideas restantes de la lista de "confianza y comunidad": reseñas de 1-5 estrellas (ligadas a marcar una venta como completada), contador de ventas completadas, sistema de recompensas, estadísticas de vistas/mensajes por tienda, historial de precios con gráfica, seguir tiendas/vendedores favoritos, modo "armar mazo" con matching de inventario entre tiendas, feed de comunidad, y páginas de tienda indexables por Google (esta última requiere agregar renderizado del lado del servidor, ya que hoy la app es 100% del lado del cliente).
+- Las ideas restantes de la lista de "confianza y comunidad" (5 de las 12 originales, tras descartar estadísticas por tienda, historial de precios y páginas indexables por Google): reseñas de 1-5 estrellas (ligadas a marcar una venta como completada), contador de ventas completadas, sistema de recompensas, seguir tiendas/vendedores favoritos, modo "armar mazo" con matching de inventario entre tiendas, y feed de comunidad.
