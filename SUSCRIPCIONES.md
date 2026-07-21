@@ -582,6 +582,25 @@ con sus ventas confirmadas, promedio de estrellas, número de reseñas y
 su insignia de vendedor, ordenada de más a menos ventas, con un botón
 para ir directo a su perfil público.
 
+## 31. Armar mazo: buscador de decklist contra el mercado
+
+No requiere migración — funciona con las tablas que ya existen.
+
+En **"Armar mazo"** (menú, disponible sin iniciar sesión para buscar,
+requiere sesión solo para "Contactar") pegas la lista de cartas que te
+faltan, una por línea — acepta "4 Charizard ex", "Charizard ex x4" o
+solo el nombre (implica 1 copia). Antes de buscar, se valida contra
+las reglas oficiales del Pokémon TCG: **máximo 4 copias de una carta
+que no sea Energía Básica** (la Energía Básica no tiene límite) — si
+alguna línea se pasa, se avisa con un mensaje, pero no bloquea la
+búsqueda (por si de verdad necesitas varias copias para intercambiar).
+
+La búsqueda compara tu lista contra todo el inventario activo del
+Mercado y de las tiendas (coincidencia de nombre, sin distinguir
+mayúsculas ni requerir el nombre exacto completo), agrupa por vendedor,
+y ordena de quién te puede completar más cartas de tu lista a menos,
+mostrando el precio de cada una y si tiene suficiente cantidad.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
@@ -590,4 +609,5 @@ para ir directo a su perfil público.
 - Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
 - Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
-- Las ideas restantes de la lista de "confianza y comunidad" (2 de las 12 originales, tras descartar estadísticas por tienda/historial de precios/páginas indexables por Google, y ya construir reportes + insignias + legal + reseñas/ventas + recompensas + seguir tiendas): modo "armar mazo" con matching de inventario entre tiendas, y feed de comunidad.
+- La última idea pendiente de la lista original de "confianza y comunidad" (1 de las 12, tras descartar 3 y ya construir 8): el feed de comunidad (fotos de pulls, aperturas de sobres, logros).
+- La búsqueda de "Armar mazo" hace match de nombre simple (contiene el texto) — si dos cartas distintas comparten parte del nombre (ej. "Pikachu" y "Pikachu VMAX"), puede haber falsos positivos leves; no ata el nombre a un ID exacto de la carta como sí hace el catálogo de TCGdex.
