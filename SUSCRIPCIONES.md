@@ -551,6 +551,37 @@ sistema de recompensas no le quita ingresos por suscripción a la
 plataforma, solo da beneficios que ya no cuestan nada extra (Boost e
 insignias).
 
+## 30. Seguir tiendas/vendedores + insignia de Vendedor + panel de Admin
+
+Corre `supabase/migrations/026_ventas_lectura_publica.sql` y
+`supabase/migrations/027_seguidores.sql` (en ese orden).
+
+**Bug corregido de paso** (migración 026): el contador "🛒 X ventas
+completadas" del perfil público en realidad siempre mostraba 0 para
+cualquiera que no fuera el propio vendedor o comprador, porque la
+única política de lectura de `ventas` era "solo los participantes".
+Ahora las ventas ya **confirmadas** son de lectura pública (es un
+registro de que el trato sí ocurrió, mismo criterio que las reseñas),
+y el admin puede ver todas — incluidas pendientes y rechazadas.
+
+**Seguir tiendas/vendedores** (migración 027): botón "+ Seguir" en
+cualquier perfil público o detalle de tienda (no en el tuyo propio).
+Se ve cuántos seguidores tiene cada quien. Cuando alguien que sigues
+publica una carta o producto nuevo, te llega una notificación, y en la
+nueva sección **"Siguiendo"** (menú) ves la lista de a quién sigues más
+un feed combinado de lo último que han publicado.
+
+**Insignia de Vendedor** (`VendedorBadge`, distinta de "✓ Verificado"
+que depende del plan pagado): premia el volumen **y** la calidad de
+ventas, no solo el plan:
+- 🎖️ Vendedor Confiable: 5+ ventas confirmadas y 4.0+ estrellas de promedio.
+- 🏆 Vendedor Destacado: 20+ ventas confirmadas y 4.5+ estrellas de promedio.
+
+**Panel de Admin → pestaña "Vendedores"**: tabla de todos los perfiles
+con sus ventas confirmadas, promedio de estrellas, número de reseñas y
+su insignia de vendedor, ordenada de más a menos ventas, con un botón
+para ir directo a su perfil público.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
@@ -559,4 +590,4 @@ insignias).
 - Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
 - Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
-- Las ideas restantes de la lista de "confianza y comunidad" (3 de las 12 originales, tras descartar estadísticas por tienda/historial de precios/páginas indexables por Google, y ya construir reportes + insignias + legal + reseñas/ventas + recompensas): seguir tiendas/vendedores favoritos, modo "armar mazo" con matching de inventario entre tiendas, y feed de comunidad.
+- Las ideas restantes de la lista de "confianza y comunidad" (2 de las 12 originales, tras descartar estadísticas por tienda/historial de precios/páginas indexables por Google, y ya construir reportes + insignias + legal + reseñas/ventas + recompensas + seguir tiendas): modo "armar mazo" con matching de inventario entre tiendas, y feed de comunidad.

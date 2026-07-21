@@ -531,6 +531,27 @@ function InsigniasActividad({ perfil, wishlist, carpetas }) {
   );
 }
 
+// ---- Insignia de vendedor por volumen + calidad de ventas (distinta del "Verificado" de plan pagado) ----
+const NIVELES_VENDEDOR = [
+  { ventasMin: 20, estrellasMin: 4.5, nombre: "Vendedor Destacado", emoji: "🏆", color: COLORS.gold },
+  { ventasMin: 5, estrellasMin: 4.0, nombre: "Vendedor Confiable", emoji: "🎖️", color: COLORS.azulPalido },
+];
+
+function VendedorBadge({ ventasCompletadas, resenas, promedioEstrellas }) {
+  const promedio = promedioEstrellas ?? (resenas?.length ? resenas.reduce((s, r) => s + r.estrellas, 0) / resenas.length : 0);
+  const nivel = NIVELES_VENDEDOR.find((n) => ventasCompletadas >= n.ventasMin && promedio >= n.estrellasMin);
+  if (!nivel) return null;
+  return (
+    <span
+      title={`${nivel.nombre}: ${ventasCompletadas} ventas completadas, ${promedio.toFixed(1)}★ de promedio`}
+      style={{ border: `1px solid ${nivel.color}`, color: nivel.color, boxShadow: `0 0 8px ${nivel.color}66` }}
+      className="inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap px-2 py-0.5 text-xs"
+    >
+      {nivel.emoji} {nivel.nombre}
+    </span>
+  );
+}
+
 function MiembroDesde({ perfil }) {
   if (!perfil?.created_at) return null;
   const fecha = new Date(perfil.created_at).toLocaleDateString("es-MX", { month: "long", year: "numeric" });
@@ -875,6 +896,40 @@ function MarcarVendidaBoton({ session, tabla, itemId, descripcion, precio, onVen
         <MarcarVendidaModal session={session} tabla={tabla} itemId={itemId} descripcion={descripcion} precio={precio} onClose={() => setAbierto(false)} onVendida={onVendida} />
       )}
     </>
+  );
+}
+
+// ---- Seguir tiendas o vendedores ----
+function SeguirBoton({ session, seguidoPerfilId }) {
+  const [siguiendo, setSiguiendo] = useState(null); // null = cargando
+  const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    sb(`seguidores?select=id&perfil_id=eq.${session.user.id}&seguido_perfil_id=eq.${seguidoPerfilId}`, session)
+      .then((rows) => setSiguiendo(rows.length > 0))
+      .catch(() => setSiguiendo(false));
+  }, [session.user.id, seguidoPerfilId]);
+
+  const alternar = async () => {
+    setEnviando(true);
+    try {
+      if (siguiendo) {
+        await sbWrite("DELETE", `seguidores?perfil_id=eq.${session.user.id}&seguido_perfil_id=eq.${seguidoPerfilId}`, {}, session);
+        setSiguiendo(false);
+      } else {
+        await sbWrite("POST", "seguidores", { perfil_id: session.user.id, seguido_perfil_id: seguidoPerfilId }, session);
+        setSiguiendo(true);
+      }
+    } catch {} finally { setEnviando(false); }
+  };
+
+  if (siguiendo === null) return null;
+  return (
+    <button onClick={alternar} disabled={enviando}
+      style={siguiendo ? { color: COLORS.muted, border: `1px solid ${COLORS.surface2}` } : { background: COLORS.azulClaro, color: COLORS.bg }}
+      className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap">
+      {siguiendo ? "Siguiendo ✓" : "+ Seguir"}
+    </button>
   );
 }
 
@@ -1905,7 +1960,7 @@ function CambiarPlanAdmin({ session }) {
   );
 }
 
-function AdminPanel({ session }) {
+function AdminPanel({ session, onVerPerfil }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [tabAdmin, setTabAdmin] = useState("planes");
   const [tiendasSinDueno, setTiendasSinDueno] = useState([]);
@@ -2072,6 +2127,43 @@ function AdminPanel({ session }) {
     } catch {} finally { setResolviendoReporte(null); }
   };
 
+  // ---- Vendedores: reseñas y tratos realizados de cada quien ----
+  const [vendedores, setVendedores] = useState([]);
+  const [loadingVendedores, setLoadingVendedores] = useState(true);
+
+  const cargarVendedores = () => {
+    setLoadingVendedores(true);
+    Promise.all([
+      sb(`perfiles?select=id,nombre,tipo,avatar_url,plan`, session),
+      sb(`ventas?select=vendedor_perfil_id&estado=eq.confirmada`, session),
+      sb(`resenas?select=objetivo_perfil_id,estrellas`, session),
+    ])
+      .then(([perfiles, ventas, resenas]) => {
+        const ventasPorPerfil = {};
+        ventas.forEach((v) => { ventasPorPerfil[v.vendedor_perfil_id] = (ventasPorPerfil[v.vendedor_perfil_id] || 0) + 1; });
+        const resenasPorPerfil = {};
+        resenas.forEach((r) => {
+          if (!resenasPorPerfil[r.objetivo_perfil_id]) resenasPorPerfil[r.objetivo_perfil_id] = [];
+          resenasPorPerfil[r.objetivo_perfil_id].push(r.estrellas);
+        });
+        const combinado = perfiles.map((p) => {
+          const misResenas = resenasPorPerfil[p.id] || [];
+          return {
+            ...p,
+            ventasConfirmadas: ventasPorPerfil[p.id] || 0,
+            numResenas: misResenas.length,
+            promedioEstrellas: misResenas.length ? misResenas.reduce((s, e) => s + e, 0) / misResenas.length : 0,
+          };
+        });
+        combinado.sort((a, b) => b.ventasConfirmadas - a.ventasConfirmadas);
+        setVendedores(combinado);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingVendedores(false));
+  };
+
+  useEffect(() => { cargarVendedores(); }, []);
+
   // ---- Todas las tiendas (para detectar duplicadas y borrar) ----
   const [todasTiendas, setTodasTiendas] = useState([]);
   const [loadingTodasTiendas, setLoadingTodasTiendas] = useState(true);
@@ -2142,6 +2234,7 @@ function AdminPanel({ session }) {
     { id: "anuncios", label: "Anuncios" },
     { id: "publicaciones", label: "Publicaciones" },
     { id: "reportes", label: `Reportes${reportes.length ? ` (${reportes.length})` : ""}` },
+    { id: "vendedores", label: "Vendedores" },
     { id: "errores", label: "Errores" },
   ];
 
@@ -2408,6 +2501,51 @@ function AdminPanel({ session }) {
                         Descartar
                       </button>
                     </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tabAdmin === "vendedores" && (
+        <div>
+          <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Vendedores</h2>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-4">Tratos realizados (ventas confirmadas) y reseñas de cada perfil, ordenado de más a menos ventas.</p>
+          {loadingVendedores ? <Loading label="Cargando vendedores..." /> : (
+            <div className="grid gap-2">
+              {vendedores.map((v) => (
+                <div key={v.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <AvatarImg url={v.avatar_url} size={32} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium truncate">{v.nombre}</p>
+                        <Badge color={v.tipo === "tienda" ? COLORS.azulPalido : COLORS.azulClaro}>{v.tipo === "tienda" ? "Tienda" : "Individual"}</Badge>
+                        <VendedorBadge ventasCompletadas={v.ventasConfirmadas} promedioEstrellas={v.promedioEstrellas} />
+                      </div>
+                      <p style={{ color: COLORS.muted }} className="text-xs mt-0.5">Plan: {PLAN_INFO[v.plan]?.nombre || v.plan}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="text-center">
+                      <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="text-lg font-bold">{v.ventasConfirmadas}</p>
+                      <p style={{ color: COLORS.muted }} className="text-[10px] uppercase">Ventas</p>
+                    </div>
+                    <div className="text-center">
+                      {v.numResenas > 0 ? (
+                        <>
+                          <div className="flex items-center gap-1"><EstrellasDisplay valor={v.promedioEstrellas} size={12} /></div>
+                          <p style={{ color: COLORS.muted }} className="text-[10px]">{v.promedioEstrellas.toFixed(1)} ({v.numResenas})</p>
+                        </>
+                      ) : (
+                        <p style={{ color: COLORS.muted }} className="text-[10px]">Sin reseñas</p>
+                      )}
+                    </div>
+                    <button onClick={() => onVerPerfil?.(v.id)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">
+                      Ver perfil
+                    </button>
                   </div>
                 </div>
               ))}
@@ -3449,6 +3587,126 @@ function RecompensasView({ session, perfil }) {
   );
 }
 
+// ---- Siguiendo: tiendas/vendedores que sigo + sus publicaciones nuevas ----
+function SiguiendoView({ session, onVerPerfil, onVerTienda }) {
+  const [seguidos, setSeguidos] = useState([]);
+  const [feed, setFeed] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [dejandoDeSeguir, setDejandoDeSeguir] = useState(null);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`seguidores?select=seguido_perfil_id,seguido:seguido_perfil_id(nombre,avatar_url,tipo)&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
+      .then(async (filas) => {
+        setSeguidos(filas);
+        const individuales = filas.filter((f) => f.seguido?.tipo === "individual").map((f) => f.seguido_perfil_id);
+        const tiendas = filas.filter((f) => f.seguido?.tipo === "tienda").map((f) => f.seguido_perfil_id);
+
+        const tareas = [];
+        if (individuales.length) {
+          tareas.push(
+            sb(`mercado_listings?select=*,perfiles(nombre,avatar_url)&perfil_id=in.(${individuales.join(",")})&order=created_at.desc&limit=20`)
+          );
+        }
+        let tiendaIds = [];
+        if (tiendas.length) {
+          const filasT = await sb(`tiendas?select=id,nombre,perfil_id,perfiles(avatar_url)&perfil_id=in.(${tiendas.join(",")})`);
+          tiendaIds = filasT;
+        }
+        const idsSoloTiendas = tiendaIds.map((t) => t.id);
+        if (idsSoloTiendas.length) {
+          tareas.push(
+            Promise.all([
+              sb(`inventario_tienda?select=*&tienda_id=in.(${idsSoloTiendas.join(",")})&order=created_at.desc&limit=20`),
+              sb(`sellado_tienda?select=*&tienda_id=in.(${idsSoloTiendas.join(",")})&order=created_at.desc&limit=20`),
+            ]).then(([inv, sell]) => {
+              const mapaTienda = Object.fromEntries(tiendaIds.map((t) => [t.id, t]));
+              return [
+                ...inv.map((f) => ({ ...f, _origen: "tienda", _nombre: mapaTienda[f.tienda_id]?.nombre, _perfilId: mapaTienda[f.tienda_id]?.perfil_id, _avatar: mapaTienda[f.tienda_id]?.perfiles?.avatar_url, _titulo: f.carta })),
+                ...sell.map((f) => ({ ...f, _origen: "tienda", _nombre: mapaTienda[f.tienda_id]?.nombre, _perfilId: mapaTienda[f.tienda_id]?.perfil_id, _avatar: mapaTienda[f.tienda_id]?.perfiles?.avatar_url, _titulo: f.producto })),
+              ];
+            })
+          );
+        }
+        const resultados = await Promise.all(tareas);
+        const deIndividuales = individuales.length
+          ? resultados[0].map((f) => ({ ...f, _origen: "individual", _nombre: f.perfiles?.nombre, _perfilId: f.perfil_id, _avatar: f.perfiles?.avatar_url, _titulo: f.carta || f.producto }))
+          : [];
+        const deTiendas = idsSoloTiendas.length ? resultados[individuales.length ? 1 : 0] : [];
+        const combinado = [...deIndividuales, ...deTiendas].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        setFeed(combinado.slice(0, 30));
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, [session.user.id]);
+
+  const dejarDeSeguir = async (seguidoPerfilId) => {
+    setDejandoDeSeguir(seguidoPerfilId);
+    try {
+      await sbWrite("DELETE", `seguidores?perfil_id=eq.${session.user.id}&seguido_perfil_id=eq.${seguidoPerfilId}`, {}, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setDejandoDeSeguir(null); }
+  };
+
+  if (loading) return <Loading label="Cargando..." />;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Siguiendo</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Tiendas y vendedores que sigues, y lo último que han publicado.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {seguidos.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
+          Todavía no sigues a nadie. Desde el perfil de una tienda o vendedor, toca "+ Seguir".
+        </p>
+      ) : (
+        <>
+          <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+            {seguidos.map((s) => (
+              <div key={s.seguido_perfil_id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}`, width: 100 }} className="rounded-xl p-3 flex flex-col items-center gap-1 shrink-0">
+                <button onClick={() => (s.seguido?.tipo === "tienda" ? onVerTienda?.(s.seguido_perfil_id) : onVerPerfil?.(s.seguido_perfil_id))} className="flex flex-col items-center gap-1">
+                  <AvatarImg url={s.seguido?.avatar_url} size={40} />
+                  <p className="text-xs text-center line-clamp-1" style={{ maxWidth: 90 }}>{s.seguido?.nombre}</p>
+                </button>
+                <button onClick={() => dejarDeSeguir(s.seguido_perfil_id)} disabled={dejandoDeSeguir === s.seguido_perfil_id} style={{ color: COLORS.muted }} className="text-[10px]">
+                  {dejandoDeSeguir === s.seguido_perfil_id ? "..." : "Dejar de seguir"}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Publicado recientemente</h3>
+          {feed.length === 0 ? (
+            <p style={{ color: COLORS.muted }} className="text-sm">Nadie que sigues ha publicado algo todavía.</p>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              {feed.map((r) => (
+                <div key={`${r._origen}-${r.id}`} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl overflow-hidden flex flex-col">
+                  <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
+                    {r.imagen_url ? <img src={r.imagen_url} alt={r._titulo} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
+                  </div>
+                  <div className="p-2">
+                    <p className="text-xs font-semibold line-clamp-2">{r._titulo}</p>
+                    <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="sm" />
+                    <button onClick={() => (r._origen === "tienda" ? onVerTienda?.(r._perfilId) : onVerPerfil?.(r._perfilId))} className="flex items-center gap-1 mt-1 hover:brightness-125">
+                      <AvatarImg url={r._avatar} size={16} />
+                      <p style={{ color: COLORS.muted }} className="text-[10px] truncate">{r._nombre}</p>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---- Mis compras y ventas: confirmar/rechazar ventas pendientes y calificar tras confirmarse ----
 function ComprasVentasView({ session }) {
   const [tab, setTab] = useState("compras");
@@ -3581,12 +3839,13 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
   const [resenas, setResenas] = useState([]);
   const [ventasCompletadas, setVentasCompletadas] = useState(0);
   const [totalDestellos, setTotalDestellos] = useState(0);
+  const [numSeguidores, setNumSeguidores] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     setLoading(true); setError(null);
-    setPerfil(undefined); setCartas([]); setSellado([]); setTienda(null); setWishlist([]); setCarpetas([]); setResenas([]); setVentasCompletadas(0); setTotalDestellos(0);
+    setPerfil(undefined); setCartas([]); setSellado([]); setTienda(null); setWishlist([]); setCarpetas([]); setResenas([]); setVentasCompletadas(0); setTotalDestellos(0); setNumSeguidores(0);
     sb(`perfiles?select=*&id=eq.${perfilId}`)
       .then(async (rows) => {
         const p = rows[0] || null;
@@ -3621,6 +3880,9 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
         tareas.push(
           sb(`destellos_movimientos?select=cantidad&perfil_id=eq.${perfilId}`).then((filas) => setTotalDestellos(filas.reduce((s, m) => s + m.cantidad, 0)))
         );
+        tareas.push(
+          sb(`seguidores?select=id&seguido_perfil_id=eq.${perfilId}`).then((filas) => setNumSeguidores(filas.length))
+        );
         await Promise.all(tareas);
       })
       .catch((e) => setError(e.message))
@@ -3653,15 +3915,18 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
               <PlanBadge perfil={perfil} />
               <VerificadoBadge perfil={perfil} />
               <NivelBadge total={totalDestellos} />
+              <VendedorBadge ventasCompletadas={ventasCompletadas} resenas={resenas} />
             </div>
             {tienda?.zona && <p style={{ color: COLORS.muted }} className="text-sm">{tienda.zona}</p>}
             <div className="flex items-center gap-3 flex-wrap mt-0.5">
               <MiembroDesde perfil={perfil} />
               {ventasCompletadas > 0 && <p style={{ color: COLORS.muted }} className="text-xs">🛒 {ventasCompletadas} venta{ventasCompletadas === 1 ? "" : "s"} completada{ventasCompletadas === 1 ? "" : "s"}</p>}
+              <p style={{ color: COLORS.muted }} className="text-xs">👥 {numSeguidores} seguidor{numSeguidores === 1 ? "" : "es"}</p>
             </div>
           </div>
           {session && session.user.id !== perfilId && (
             <div className="ml-auto flex items-center gap-2">
+              <SeguirBoton session={session} seguidoPerfilId={perfilId} />
               <button
                 onClick={() => onAbrirChat(perfilId, perfil.nombre, "Perfil", perfil.whatsapp, perfil.facebook, perfil.avatar_url)}
                 style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
@@ -4657,7 +4922,7 @@ function LegalView({ tipo, onVolver }) {
   );
 }
 
-const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Calendar, plan: Shield, boost: Sparkles, error: AlertCircle, venta: Star };
+const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Calendar, plan: Shield, boost: Sparkles, error: AlertCircle, venta: Star, seguido_publico: User };
 
 // Las notificaciones "globales" (perfil_id null, ej. Anuncios) no tienen
 // dueño en la base de datos, así que no se pueden marcar "leida" ahí — se
@@ -4714,7 +4979,7 @@ function NotificationBell({ session, onNavigate }) {
     }
   };
 
-  const VISTA_POR_TIPO = { wishlist: "alertas", anuncio: "news", mensaje: "inbox", venta: "comprasVentas" };
+  const VISTA_POR_TIPO = { wishlist: "alertas", anuncio: "news", mensaje: "inbox", venta: "comprasVentas", seguido_publico: "siguiendo" };
 
   // Marca como leídas todas las que están en pantalla — ver la lista ya
   // cuenta como "leído", así el numerito no depende de acertarle al click
@@ -5066,6 +5331,7 @@ export default function EncuentraCartas() {
   const [storeResenas, setStoreResenas] = useState([]);
   const [storeVentasCompletadas, setStoreVentasCompletadas] = useState(0);
   const [storeDestellos, setStoreDestellos] = useState(0);
+  const [storeSeguidores, setStoreSeguidores] = useState(0);
 
   const [market, setMarket] = useState([]);
   const [loadingMarket, setLoadingMarket] = useState(false);
@@ -5167,7 +5433,7 @@ export default function EncuentraCartas() {
     setSelectedStore(store);
     setView("storeDetail");
     setLoadingStoreDetail(true);
-    setStoreResenas([]); setStoreVentasCompletadas(0); setStoreDestellos(0);
+    setStoreResenas([]); setStoreVentasCompletadas(0); setStoreDestellos(0); setStoreSeguidores(0);
     Promise.all([
       sb(`inventario_tienda?select=*&tienda_id=eq.${store.id}`),
       sb(`sellado_tienda?select=*&tienda_id=eq.${store.id}`),
@@ -5178,6 +5444,7 @@ export default function EncuentraCartas() {
       sb(`resenas?select=*,autor:autor_perfil_id(nombre,avatar_url)&objetivo_perfil_id=eq.${store.perfil_id}&order=created_at.desc&limit=20`).then(setStoreResenas).catch(() => {});
       sb(`ventas?select=id&vendedor_perfil_id=eq.${store.perfil_id}&estado=eq.confirmada`).then((filas) => setStoreVentasCompletadas(filas.length)).catch(() => {});
       sb(`destellos_movimientos?select=cantidad&perfil_id=eq.${store.perfil_id}`).then((filas) => setStoreDestellos(filas.reduce((s, m) => s + m.cantidad, 0))).catch(() => {});
+      sb(`seguidores?select=id&seguido_perfil_id=eq.${store.perfil_id}`).then((filas) => setStoreSeguidores(filas.length)).catch(() => {});
     }
   };
 
@@ -5205,6 +5472,7 @@ export default function EncuentraCartas() {
     { id: "news", label: "Anuncios y noticias", icon: Megaphone },
     { id: "torneos", label: "Torneos", icon: Calendar },
     ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
+    ...(session ? [{ id: "siguiendo", label: "Siguiendo", icon: User }] : []),
     ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
     ...(session ? [{ id: "recompensas", label: "Recompensas", icon: Sparkles }] : []),
     { id: "planes", label: "Planes", icon: Shield },
@@ -5719,7 +5987,7 @@ export default function EncuentraCartas() {
         {view === "misPagos" && session && <MisPagosPanel session={session} />}
 
         {/* ADMIN */}
-        {view === "admin" && session && perfil?.es_admin && <AdminPanel session={session} />}
+        {view === "admin" && session && perfil?.es_admin && <AdminPanel session={session} onVerPerfil={verPerfil} />}
 
         {/* MI MERCADO */}
         {view === "myMarket" && session && <MyMarketPanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />}
@@ -5751,15 +6019,18 @@ export default function EncuentraCartas() {
                     <PlanBadge perfil={selectedStore.perfiles} size="lg" />
                     <VerificadoBadge perfil={selectedStore.perfiles} />
                     <NivelBadge total={storeDestellos} />
+                    <VendedorBadge ventasCompletadas={storeVentasCompletadas} resenas={storeResenas} />
                   </div>
                   {session && session.user.id !== selectedStore.perfil_id && (
-                    <div className="ml-auto pb-1.5">
+                    <div className="ml-auto pb-1.5 flex items-center gap-2">
+                      <SeguirBoton session={session} seguidoPerfilId={selectedStore.perfil_id} />
                       <ReportarBoton session={session} tipo="perfil" tablaObjetivo="tiendas" objetivoId={selectedStore.id} objetivoPerfilId={selectedStore.perfil_id} objetivoNombre={selectedStore.nombre} />
                     </div>
                   )}
                 </div>
               <div className="mt-3"><DiamanteEmblema perfil={selectedStore.perfiles} /></div>
               <div className="flex items-center gap-3 flex-wrap">
+                <p style={{ color: COLORS.muted }} className="text-xs">👥 {storeSeguidores} seguidor{storeSeguidores === 1 ? "" : "es"}</p>
                 <MiembroDesde perfil={selectedStore.perfiles} />
                 {storeVentasCompletadas > 0 && <p style={{ color: COLORS.muted }} className="text-xs">🛒 {storeVentasCompletadas} venta{storeVentasCompletadas === 1 ? "" : "s"} completada{storeVentasCompletadas === 1 ? "" : "s"}</p>}
                 {storeResenas.length > 0 && (
@@ -5885,6 +6156,7 @@ export default function EncuentraCartas() {
           <LegalView tipo={view === "privacidad" ? "privacidad" : "terminos"} onVolver={() => setView(vistaAntesLegal)} />
         )}
 
+        {view === "siguiendo" && session && <SiguiendoView session={session} onVerPerfil={verPerfil} onVerTienda={verTiendaDesdePerfil} />}
         {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
         {view === "recompensas" && session && <RecompensasView session={session} perfil={perfil} />}
       </main>
