@@ -386,7 +386,7 @@ function PokemonPicker({ onSelect }) {
             <button
               key={p.id}
               type="button"
-              onClick={() => { onSelect(pokemonSpriteUrl(p.id)); setQ(""); setOpen(false); }}
+              onClick={() => { onSelect(pokemonSpriteUrl(p.id), p.name); setQ(""); setOpen(false); }}
               className="flex flex-col items-center gap-1 p-1 rounded hover:brightness-125"
             >
               <img src={pokemonSpriteUrl(p.id)} alt={p.name} style={{ width: 48, height: 48, objectFit: "contain" }} loading="lazy" />
@@ -397,6 +397,20 @@ function PokemonPicker({ onSelect }) {
       )}
     </div>
   );
+}
+
+function PokemonFavSprite({ name, size = 40 }) {
+  const [id, setId] = useState(null);
+  useEffect(() => {
+    let activo = true;
+    obtenerListaPokemon().then((lista) => {
+      const p = lista.find((x) => x.name === String(name).toLowerCase());
+      if (activo) setId(p?.id || null);
+    });
+    return () => { activo = false; };
+  }, [name]);
+  if (!id) return <div style={{ width: size, height: size, background: COLORS.surface2 }} className="rounded-full" />;
+  return <img src={pokemonSpriteUrl(id)} alt={name} style={{ width: size, height: size, objectFit: "contain" }} loading="lazy" />;
 }
 
 const FONTS = `
@@ -468,6 +482,11 @@ const limiteAlcanzado = (perfil, total) => total >= planDe(perfil).limiteCartas;
 // ---- Boost: destacar una publicación por unos días ----
 const BOOST_PRECIOS = { 3: 15, 7: 29 };
 const estaDestacado = (item) => !!(item?.destacado_hasta && new Date(item.destacado_hasta) > new Date());
+const esCartaFavorita = (nombre, favoritos) => {
+  if (!nombre || !favoritos?.length) return false;
+  const texto = nombre.toLowerCase();
+  return favoritos.some((f) => f && texto.includes(f.toLowerCase()));
+};
 const conBoostPrimero = (lista) => {
   const destacados = lista.filter(estaDestacado);
   const resto = lista.filter((x) => !estaDestacado(x));
@@ -2831,6 +2850,171 @@ const JUEGOS_TORNEO = {
   pokemon: "Pokémon", yugioh: "Yu-Gi-Oh!", lorcana: "Lorcana", magic: "Magic", onepiece: "One Piece", otro: "Otro",
 };
 
+function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTienda }) {
+  const [perfil, setPerfil] = useState(undefined); // undefined = cargando, null = no existe
+  const [cartas, setCartas] = useState([]);
+  const [sellado, setSellado] = useState([]);
+  const [tienda, setTienda] = useState(null);
+  const [wishlist, setWishlist] = useState([]);
+  const [carpetas, setCarpetas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setLoading(true); setError(null);
+    setPerfil(undefined); setCartas([]); setSellado([]); setTienda(null); setWishlist([]); setCarpetas([]);
+    sb(`perfiles?select=*&id=eq.${perfilId}`)
+      .then(async (rows) => {
+        const p = rows[0] || null;
+        setPerfil(p);
+        if (!p) return;
+        const vis = p.visibilidad || {};
+        const tareas = [];
+        if (p.tipo === "individual" && vis.publicaciones !== false) {
+          tareas.push(
+            sb(`mercado_listings?select=*&perfil_id=eq.${perfilId}&order=created_at.desc`).then((filas) => {
+              setCartas(filas.filter((f) => f.tipo !== "sellado"));
+              setSellado(filas.filter((f) => f.tipo === "sellado"));
+            })
+          );
+        }
+        if (p.tipo === "tienda") {
+          tareas.push(sb(`tiendas?select=id,nombre,zona&perfil_id=eq.${perfilId}`).then((filas) => setTienda(filas[0] || null)));
+        }
+        if (vis.wishlist !== false) {
+          tareas.push(sb(`alertas?select=*&perfil_id=eq.${perfilId}&order=created_at.desc`).then(setWishlist));
+        }
+        if (vis.carpetas !== false) {
+          tareas.push(sb(`carpetas?select=*,carpeta_fotos(id,imagen_url)&perfil_id=eq.${perfilId}&order=created_at.desc`).then(setCarpetas));
+        }
+        await Promise.all(tareas);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [perfilId]);
+
+  if (loading) return <Loading label="Cargando perfil..." />;
+  if (!perfil) return (
+    <div>
+      <button onClick={onVolver} style={{ color: COLORS.muted }} className="flex items-center gap-1 text-sm mb-6"><ChevronLeft size={16} /> Volver</button>
+      <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">Este perfil no existe.</p>
+    </div>
+  );
+
+  const vis = perfil.visibilidad || {};
+  const favoritos = perfil.pokemon_favoritos || [];
+
+  return (
+    <div>
+      <button onClick={onVolver} style={{ color: COLORS.muted }} className="flex items-center gap-1 text-sm mb-6"><ChevronLeft size={16} /> Volver</button>
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-6 mb-6">
+        <div className="flex items-center gap-3 flex-wrap">
+          <AvatarImg url={perfil.avatar_url} size={56} />
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-xl font-bold">{perfil.nombre}</h2>
+              <PlanBadge perfil={perfil} />
+              <VerificadoBadge perfil={perfil} />
+            </div>
+            {tienda?.zona && <p style={{ color: COLORS.muted }} className="text-sm">{tienda.zona}</p>}
+          </div>
+          {session && session.user.id !== perfilId && (
+            <button
+              onClick={() => onAbrirChat(perfilId, perfil.nombre, "Perfil", perfil.whatsapp, perfil.facebook, perfil.avatar_url)}
+              style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+              className="ml-auto text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 whitespace-nowrap">
+              <MessageCircle size={12} /> Contactar
+            </button>
+          )}
+        </div>
+
+        {vis.favoritos !== false && favoritos.length > 0 && (
+          <div className="mt-4">
+            <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-2">Pokémon favoritos</p>
+            <div className="flex gap-4">
+              {favoritos.map((f) => (
+                <div key={f} className="flex flex-col items-center gap-1">
+                  <PokemonFavSprite name={f} size={48} />
+                  <p style={{ color: COLORS.muted }} className="text-xs capitalize">{f}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tienda && (
+          <button onClick={() => onVerTienda(tienda.id)} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="mt-4 text-xs px-3 py-1.5 rounded-lg">
+            Ver tienda completa →
+          </button>
+        )}
+      </div>
+
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {perfil.tipo === "individual" && vis.publicaciones !== false && (cartas.length > 0 || sellado.length > 0) && (
+        <div className="mb-8">
+          <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">En venta</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {[...cartas, ...sellado].map((r) => (
+              <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-xl overflow-hidden flex flex-col">
+                <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
+                  {r.imagen_url ? <img src={r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
+                </div>
+                <div className="p-2">
+                  <div className="flex items-center gap-1 flex-wrap mb-1">
+                    {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
+                    <BoostBadge item={r} />
+                  </div>
+                  <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
+                  <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="sm" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {vis.wishlist !== false && wishlist.length > 0 && (
+        <div className="mb-8">
+          <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Wishlist</h3>
+          <div className="grid gap-2">
+            {wishlist.map((a) => (
+              <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3">
+                {a.imagen_url && <img src={a.imagen_url} alt={a.carta} style={{ width: 40, height: 56, objectFit: "contain" }} />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{a.carta}</p>
+                  {a.precio_max && <p style={{ color: COLORS.muted }} className="text-xs">Hasta ${Number(a.precio_max).toLocaleString("es-MX")}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {vis.carpetas !== false && carpetas.length > 0 && (
+        <div>
+          <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">📁 Carpetas</h3>
+          <div className="grid gap-3">
+            {carpetas.map((c) => (
+              <div key={c.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3">
+                <p className="text-sm font-semibold mb-2">{c.nombre}</p>
+                {c.carpeta_fotos?.length > 0 ? (
+                  <div className="flex gap-2 flex-wrap">
+                    {c.carpeta_fotos.map((f) => <img key={f.id} src={f.imagen_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />)}
+                  </div>
+                ) : (
+                  <p style={{ color: COLORS.muted }} className="text-xs">Sin fotos todavía.</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TorneosView({ session, onRequireLogin }) {
   const [torneos, setTorneos] = useState([]);
   const [interesados, setInteresados] = useState(new Set());
@@ -3434,6 +3618,17 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPokemonUrl, setAvatarPokemonUrl] = useState(null);
   const [mostrarPokemonPicker, setMostrarPokemonPicker] = useState(false);
+  const [favoritos, setFavoritos] = useState(() => {
+    const base = perfil?.pokemon_favoritos || [];
+    return [base[0] || null, base[1] || null, base[2] || null];
+  });
+  const [slotEditando, setSlotEditando] = useState(null);
+  const [vis, setVis] = useState({
+    publicaciones: perfil?.visibilidad?.publicaciones !== false,
+    wishlist: perfil?.visibilidad?.wishlist !== false,
+    favoritos: perfil?.visibilidad?.favoritos !== false,
+    carpetas: perfil?.visibilidad?.carpetas !== false,
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -3452,6 +3647,15 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
     setMostrarPokemonPicker(false);
   };
 
+  const elegirFavorito = (slot, url, name) => {
+    setFavoritos((prev) => { const next = [...prev]; next[slot] = name.toLowerCase(); return next; });
+    setSlotEditando(null);
+  };
+
+  const quitarFavorito = (slot) => {
+    setFavoritos((prev) => { const next = [...prev]; next[slot] = null; return next; });
+  };
+
   const guardar = async () => {
     if (!nombre.trim()) return;
     setSaving(true); setError(null);
@@ -3466,6 +3670,8 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
         facebook: facebook || null,
         ...(info.redesExtra ? { instagram: instagram || null, google_maps_url: googleMaps || null } : {}),
         avatar_url,
+        pokemon_favoritos: favoritos.filter(Boolean),
+        visibilidad: vis,
       }, session);
       onGuardado();
       onClose();
@@ -3518,6 +3724,49 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
           ) : (
             <p style={{ color: COLORS.muted }} className="text-xs">🔒 Enlaces de Instagram y Google Maps disponibles desde Super Ball.</p>
           )}
+
+          <div>
+            <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-1">Tus 3 Pokémon favoritos</p>
+            <p style={{ color: COLORS.muted }} className="text-xs mb-2">Aparecen en tu perfil público, y las cartas de esos Pokémon aparecen primero en el inicio de la app (después de las destacadas).</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[0, 1, 2].map((slot) => (
+                <div key={slot} className="relative">
+                  {favoritos[slot] ? (
+                    <div className="flex flex-col items-center gap-1">
+                      <PokemonFavSprite name={favoritos[slot]} size={48} />
+                      <p className="text-xs capitalize truncate w-full text-center">{favoritos[slot]}</p>
+                      <button type="button" onClick={() => quitarFavorito(slot)} style={{ color: "#C24444" }} className="text-xs">Quitar</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setSlotEditando(slot === slotEditando ? null : slot)}
+                      style={{ border: `1px dashed ${COLORS.surface2}`, color: COLORS.muted }}
+                      className="rounded-lg w-full h-full min-h-[64px] text-xs">
+                      + Agregar
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {slotEditando !== null && (
+              <div className="mt-2"><PokemonPicker onSelect={(url, name) => elegirFavorito(slotEditando, url, name)} /></div>
+            )}
+          </div>
+
+          <div>
+            <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-1">Qué se ve en tu perfil público</p>
+            {[
+              { key: "publicaciones", label: "Mis cartas y producto sellado en venta" },
+              { key: "wishlist", label: "Mi Wishlist" },
+              { key: "favoritos", label: "Mis Pokémon favoritos" },
+              { key: "carpetas", label: "Mis carpetas" },
+            ].map((op) => (
+              <label key={op.key} className="flex items-center gap-2 text-sm py-0.5 cursor-pointer">
+                <input type="checkbox" checked={vis[op.key]} onChange={(e) => setVis((v) => ({ ...v, [op.key]: e.target.checked }))} />
+                {op.label}
+              </label>
+            ))}
+          </div>
+
           <button onClick={guardar} disabled={saving || !nombre.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: saving ? 0.6 : 1 }} className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
             {saving && <Loader2 size={16} className="animate-spin" />} Guardar cambios
           </button>
@@ -3782,6 +4031,7 @@ export default function EncuentraCartas() {
   const [searchError, setSearchError] = useState(null);
 
   const [selectedStore, setSelectedStore] = useState(null);
+  const [selectedPerfilId, setSelectedPerfilId] = useState(null);
   const [storeInventory, setStoreInventory] = useState([]);
   const [storeSellado, setStoreSellado] = useState([]);
   const [loadingStoreDetail, setLoadingStoreDetail] = useState(false);
@@ -3892,6 +4142,17 @@ export default function EncuentraCartas() {
     ])
       .then(([inv, sell]) => { setStoreInventory(conBoostPrimero(inv)); setStoreSellado(conBoostPrimero(sell)); })
       .finally(() => setLoadingStoreDetail(false));
+  };
+
+  const verPerfil = (perfilId) => {
+    if (!perfilId) return;
+    setSelectedPerfilId(perfilId);
+    setView("perfilPublico");
+  };
+
+  const verTiendaDesdePerfil = (tiendaId) => {
+    sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url)&id=eq.${tiendaId}`)
+      .then((rows) => { if (rows[0]) openStore(rows[0]); });
   };
 
   // Esenciales: siempre visibles, en cualquier tamaño de pantalla.
@@ -4077,7 +4338,14 @@ export default function EncuentraCartas() {
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
                       {[...market.map((r) => ({ ...r, _esTienda: false })), ...inicioTienda.map((r) => ({ ...r, _esTienda: true }))]
-                        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                        .sort((a, b) => {
+                          const da = estaDestacado(a) ? 1 : 0, db = estaDestacado(b) ? 1 : 0;
+                          if (da !== db) return db - da;
+                          const favoritos = perfil?.pokemon_favoritos;
+                          const fa = esCartaFavorita(a.carta, favoritos) ? 1 : 0, fb = esCartaFavorita(b.carta, favoritos) ? 1 : 0;
+                          if (fa !== fb) return fb - fa;
+                          return new Date(b.created_at) - new Date(a.created_at);
+                        })
                         .slice(0, 10)
                         .map((r) => (
                           <button key={`${r._esTienda ? "t" : "m"}-${r.id}`}
@@ -4150,10 +4418,10 @@ export default function EncuentraCartas() {
                       <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
-                      <div className="flex items-center gap-2 mt-2">
+                      <button onClick={() => verPerfil(r.perfil_id)} className="flex items-center gap-2 mt-2 hover:brightness-125">
                         <AvatarImg url={r.perfiles?.avatar_url} size={22} />
                         <p style={{ color: COLORS.muted }} className="text-xs">{r.perfiles?.nombre || "Usuario"}</p>
-                      </div>
+                      </button>
                     </div>
                   </div>
                   <div className="text-right">
@@ -4259,10 +4527,10 @@ export default function EncuentraCartas() {
                       <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="md" />
                     </div>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs -mt-1">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                    <div className="flex items-center gap-2 mt-auto pt-2">
+                    <button onClick={() => verPerfil(r.perfil_id)} className="flex items-center gap-2 mt-auto pt-2 hover:brightness-125">
                       <AvatarImg url={r.perfiles?.avatar_url} size={20} />
                       <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.perfiles?.nombre || "Usuario"}</p>
-                    </div>
+                    </button>
                     <button
                       onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url)}
                       style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
@@ -4518,6 +4786,16 @@ export default function EncuentraCartas() {
               </>
             )}
           </div>
+        )}
+
+        {view === "perfilPublico" && selectedPerfilId && (
+          <PerfilPublicoView
+            perfilId={selectedPerfilId}
+            session={session}
+            onVolver={() => setView("market")}
+            onAbrirChat={abrirChat}
+            onVerTienda={verTiendaDesdePerfil}
+          />
         )}
       </main>
     </div>
