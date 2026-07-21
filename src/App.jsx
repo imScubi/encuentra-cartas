@@ -193,10 +193,10 @@ function BoostButton({ session, tabla, item, onBoosted }) {
   const destacar = async (dias) => {
     setPagando(dias); setError(null);
     try {
-      const res = await fetch("/api/mercadopago/crear-boost", {
+      const res = await fetch("/api/mercadopago/gestionar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ perfilId: session.user.id, tabla, listingId: item.id, dias, email: session.user.email }),
+        body: JSON.stringify({ accion: "crear_boost", perfilId: session.user.id, tabla, listingId: item.id, dias, email: session.user.email }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo iniciar el pago");
@@ -1895,10 +1895,10 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
     if (!nombreSubperfil.trim()) return;
     setCreandoSubperfil(true); setErrorSubperfil(null);
     try {
-      const res = await fetch("/api/admin/crear-subperfil", {
+      const res = await fetch("/api/admin/subperfiles", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ nombre: nombreSubperfil.trim(), tipo: tipoSubperfil }),
+        body: JSON.stringify({ accion: "crear", nombre: nombreSubperfil.trim(), tipo: tipoSubperfil }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo crear el sub-perfil");
@@ -1918,10 +1918,10 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const entrarComoSub = async (subperfilId) => {
     setEntrandoSub(subperfilId); setErrorSubperfil(null);
     try {
-      const res = await fetch("/api/admin/entrar-subperfil", {
+      const res = await fetch("/api/admin/subperfiles", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ subperfilId }),
+        body: JSON.stringify({ accion: "entrar", subperfilId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo entrar al sub-perfil");
@@ -4775,10 +4775,10 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
     if (!session) { onRequireLogin(); return; }
     setSuscribiendo(plan); setError(null);
     try {
-      const res = await fetch("/api/mercadopago/crear-suscripcion", {
+      const res = await fetch("/api/mercadopago/gestionar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ perfilId: session.user.id, plan, email: session.user.email }),
+        body: JSON.stringify({ accion: "crear_suscripcion", perfilId: session.user.id, plan, email: session.user.email }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo iniciar la suscripción");
@@ -4793,10 +4793,10 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
     if (!session) return;
     setCancelando(true); setError(null);
     try {
-      const res = await fetch("/api/mercadopago/cancelar-suscripcion", {
+      const res = await fetch("/api/mercadopago/gestionar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ perfilId: session.user.id }),
+        body: JSON.stringify({ accion: "cancelar_suscripcion", perfilId: session.user.id }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo cancelar la renovación");
