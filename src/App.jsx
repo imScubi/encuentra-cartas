@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
-  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star,
+  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers,
 } from "lucide-react";
 
 // ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
@@ -3587,6 +3587,161 @@ function RecompensasView({ session, perfil }) {
   );
 }
 
+// ---- Armar mazo: encuentra qué tiendas/vendedores tienen las cartas que te faltan ----
+// Reglas oficiales del Pokémon TCG que validamos (sin bloquear la búsqueda,
+// solo avisamos): máximo 4 copias de una carta que no sea Energía Básica —
+// la Energía Básica no tiene límite de copias en un mazo legal.
+const ENERGIAS_BASICAS_REGEX = /\b(grass|fire|water|lightning|psychic|fighting|darkness|metal|fairy)\s+energy\b|\benerg[íi]a\s+b[áa]sica\b/i;
+const esEnergiaBasica = (nombre) => ENERGIAS_BASICAS_REGEX.test(nombre || "");
+
+function parsearDecklist(texto) {
+  return texto
+    .split("\n")
+    .map((linea) => linea.trim())
+    .filter(Boolean)
+    .map((linea) => {
+      // Acepta "4 Charizard ex", "Charizard ex x4", "Charizard ex x 4" o solo "Charizard ex" (implica 1).
+      let m = linea.match(/^(\d+)\s*[xX]?\s+(.+)$/);
+      if (m) return { cantidad: Number(m[1]), carta: m[2].trim() };
+      m = linea.match(/^(.+?)\s*[xX]\s*(\d+)$/);
+      if (m) return { cantidad: Number(m[2]), carta: m[1].trim() };
+      return { cantidad: 1, carta: linea };
+    })
+    .filter((f) => f.carta);
+}
+
+function coincideCarta(nombreListado, nombreBuscado) {
+  const a = (nombreListado || "").toLowerCase();
+  const b = (nombreBuscado || "").toLowerCase();
+  return a.includes(b) || b.includes(a);
+}
+
+function ArmarMazoView({ session, onAbrirChat, onVerTienda }) {
+  const [texto, setTexto] = useState("");
+  const [decklist, setDecklist] = useState(null);
+  const [buscando, setBuscando] = useState(false);
+  const [resultados, setResultados] = useState(null); // [{ vendedorKey, tipo, nombre, avatar, perfilId, tiendaId, items: [...], countMatched }]
+  const [error, setError] = useState(null);
+
+  const buscar = async () => {
+    const lista = parsearDecklist(texto);
+    if (!lista.length) return;
+    setDecklist(lista);
+    setBuscando(true); setError(null); setResultados(null);
+    try {
+      const [mercado, inventario] = await Promise.all([
+        sb(`mercado_listings?select=*,perfiles(nombre,avatar_url)&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(id,nombre,perfil_id,perfiles(avatar_url))&order=precio.asc`),
+      ]);
+
+      const vendedores = {}; // key -> { tipo, nombre, avatar, perfilId, tiendaId, coincidencias: Map(carta -> mejor item) }
+
+      mercado.forEach((r) => {
+        lista.forEach((item) => {
+          if (!coincideCarta(r.carta, item.carta)) return;
+          const key = `individual-${r.perfil_id}`;
+          if (!vendedores[key]) {
+            vendedores[key] = { tipo: "individual", nombre: r.perfiles?.nombre || "Usuario", avatar: r.perfiles?.avatar_url, perfilId: r.perfil_id, coincidencias: new Map() };
+          }
+          const actual = vendedores[key].coincidencias.get(item.carta);
+          if (!actual || Number(r.precio) < Number(actual.precio)) {
+            vendedores[key].coincidencias.set(item.carta, { carta: r.carta, precio: r.precio, cantidadNecesaria: item.cantidad, cantidadDisponible: r.cantidad || 1 });
+          }
+        });
+      });
+
+      inventario.forEach((r) => {
+        lista.forEach((item) => {
+          if (!coincideCarta(r.carta, item.carta)) return;
+          const tiendaId = r.tiendas?.id;
+          if (!tiendaId) return;
+          const key = `tienda-${tiendaId}`;
+          if (!vendedores[key]) {
+            vendedores[key] = { tipo: "tienda", nombre: r.tiendas?.nombre || "Tienda", avatar: r.tiendas?.perfiles?.avatar_url, perfilId: r.tiendas?.perfil_id, tiendaId, coincidencias: new Map() };
+          }
+          const actual = vendedores[key].coincidencias.get(item.carta);
+          if (!actual || Number(r.precio) < Number(actual.precio)) {
+            vendedores[key].coincidencias.set(item.carta, { carta: r.carta, precio: r.precio, cantidadNecesaria: item.cantidad, cantidadDisponible: r.cantidad || 1 });
+          }
+        });
+      });
+
+      const lista2 = Object.values(vendedores)
+        .map((v) => ({ ...v, items: [...v.coincidencias.values()], countMatched: v.coincidencias.size }))
+        .sort((a, b) => b.countMatched - a.countMatched);
+
+      setResultados(lista2);
+    } catch (e) { setError(e.message); } finally { setBuscando(false); }
+  };
+
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const advertenciaExceso = decklist?.filter((f) => f.cantidad > 4 && !esEnergiaBasica(f.carta)) || [];
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🃏 Armar mazo</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">
+        Escribe las cartas que te faltan (una por línea, ej. "4 Charizard ex" o "Charizard ex x4") y te decimos qué tiendas o vendedores te las pueden completar.
+      </p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <textarea value={texto} onChange={(e) => setTexto(e.target.value)}
+        placeholder={"4 Charizard ex\n2 Pikachu VMAX\n3 Iono\n10 Basic Fire Energy"}
+        style={inputStyle} className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-2" rows={8} />
+
+      {advertenciaExceso.length > 0 && (
+        <div style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55`, color: COLORS.gold }} className="rounded-lg p-3 mb-3 text-xs">
+          ⚠️ Un mazo oficial de Pokémon TCG permite máximo 4 copias de una carta que no sea Energía Básica — revisa: {advertenciaExceso.map((f) => f.carta).join(", ")}.
+        </div>
+      )}
+
+      <button onClick={buscar} disabled={buscando || !texto.trim()} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold mb-6">
+        {buscando ? "Buscando..." : "Buscar en el mercado"}
+      </button>
+
+      {resultados && (
+        <>
+          <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">
+            {resultados.length === 0 ? "Sin coincidencias" : `${resultados.length} vendedor${resultados.length === 1 ? "" : "es"} tienen algo de tu lista`}
+          </h3>
+          <div className="grid gap-3">
+            {resultados.map((v) => (
+              <div key={`${v.tipo}-${v.tiendaId || v.perfilId}`} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                  <button onClick={() => (v.tipo === "tienda" ? onVerTienda?.(v.tiendaId) : null)} className="flex items-center gap-2 hover:brightness-125" disabled={v.tipo !== "tienda"}>
+                    <AvatarImg url={v.avatar} size={28} />
+                    <p className="text-sm font-semibold">{v.nombre}</p>
+                    <Badge color={v.tipo === "tienda" ? COLORS.azulPalido : COLORS.azulClaro}>{v.tipo === "tienda" ? "Tienda" : "Vendedor"}</Badge>
+                  </button>
+                  <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold whitespace-nowrap">
+                    {v.countMatched} / {decklist.length} cartas de tu lista
+                  </p>
+                </div>
+                <div className="grid gap-1 mb-3">
+                  {v.items.map((it) => (
+                    <div key={it.carta} className="flex items-center justify-between gap-2 text-xs">
+                      <p className="truncate">{it.carta} {it.cantidadDisponible < it.cantidadNecesaria && <span style={{ color: COLORS.muted }}>(solo tiene {it.cantidadDisponible} de {it.cantidadNecesaria})</span>}</p>
+                      <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }} className="whitespace-nowrap">${Number(it.precio).toLocaleString("es-MX")}</p>
+                    </div>
+                  ))}
+                </div>
+                {session && (
+                  <button
+                    onClick={() => onAbrirChat(v.perfilId, v.nombre, "Armar mazo", null, null, v.avatar)}
+                    style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                    className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                    <MessageCircle size={12} /> Contactar
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---- Siguiendo: tiendas/vendedores que sigo + sus publicaciones nuevas ----
 function SiguiendoView({ session, onVerPerfil, onVerTienda }) {
   const [seguidos, setSeguidos] = useState([]);
@@ -5471,6 +5626,7 @@ export default function EncuentraCartas() {
   const navSecundarios = [
     { id: "news", label: "Anuncios y noticias", icon: Megaphone },
     { id: "torneos", label: "Torneos", icon: Calendar },
+    { id: "armarMazo", label: "Armar mazo", icon: Layers },
     ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
     ...(session ? [{ id: "siguiendo", label: "Siguiendo", icon: User }] : []),
     ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
@@ -6156,6 +6312,7 @@ export default function EncuentraCartas() {
           <LegalView tipo={view === "privacidad" ? "privacidad" : "terminos"} onVolver={() => setView(vistaAntesLegal)} />
         )}
 
+        {view === "armarMazo" && <ArmarMazoView session={session} onAbrirChat={abrirChat} onVerTienda={verTiendaDesdePerfil} />}
         {view === "siguiendo" && session && <SiguiendoView session={session} onVerPerfil={verPerfil} onVerTienda={verTiendaDesdePerfil} />}
         {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
         {view === "recompensas" && session && <RecompensasView session={session} perfil={perfil} />}
