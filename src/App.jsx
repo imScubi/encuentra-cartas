@@ -1611,6 +1611,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const [errorCrear, setErrorCrear] = useState(null);
   const [okCrear, setOkCrear] = useState(null);
   const [buscandoUbicacionNueva, setBuscandoUbicacionNueva] = useState(false);
+  const [buscandoCoordsNueva, setBuscandoCoordsNueva] = useState(false);
 
   const usarMiUbicacionNuevaTienda = () => {
     if (!navigator.geolocation) { setErrorCrear("Tu navegador no soporta geolocalización."); return; }
@@ -1620,6 +1621,15 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
       () => { setErrorCrear("No pudimos obtener tu ubicación (¿diste permiso?)."); setBuscandoUbicacionNueva(false); },
       { enableHighAccuracy: true, timeout: 10000 }
     );
+  };
+
+  const buscarCoordsNuevaTienda = async () => {
+    if (!nuevaTienda.direccion.trim()) { setErrorCrear("Escribe la dirección primero."); return; }
+    setBuscandoCoordsNueva(true); setErrorCrear(null);
+    try {
+      const { lat, lng } = await buscarCoordenadasPorDireccion(nuevaTienda.direccion.trim());
+      setNuevaTienda((t) => ({ ...t, lat: String(lat), lng: String(lng) }));
+    } catch (e) { setErrorCrear(e.message); } finally { setBuscandoCoordsNueva(false); }
   };
 
   const crearTienda = async () => {
@@ -1664,6 +1674,16 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
     navigator.geolocation.getCurrentPosition((pos) => {
       setTiendaEdit((t) => ({ ...t, lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) }));
     });
+  };
+
+  const [buscandoCoordsEdit, setBuscandoCoordsEdit] = useState(false);
+  const buscarCoordsTiendaEdit = async () => {
+    if (!tiendaEdit.direccion.trim()) { setError("Escribe la dirección primero."); return; }
+    setBuscandoCoordsEdit(true); setError(null);
+    try {
+      const { lat, lng } = await buscarCoordenadasPorDireccion(tiendaEdit.direccion.trim());
+      setTiendaEdit((t) => ({ ...t, lat: String(lat), lng: String(lng) }));
+    } catch (e) { setError(e.message); } finally { setBuscandoCoordsEdit(false); }
   };
 
   const guardarTiendaEditada = async (tiendaId) => {
@@ -2041,6 +2061,11 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                 onChange={(e) => setNuevaTienda({ ...nuevaTienda, telefono: e.target.value })}
                 style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
             </div>
+            <button type="button" onClick={buscarCoordsNuevaTienda} disabled={buscandoCoordsNueva || !nuevaTienda.direccion.trim()}
+              style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+              className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center justify-center gap-1 whitespace-nowrap">
+              📍 {buscandoCoordsNueva ? "Buscando coordenadas..." : "Buscar coordenadas por la dirección"}
+            </button>
             <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2">
               <input placeholder="Latitud (opcional)" value={nuevaTienda.lat}
                 onChange={(e) => setNuevaTienda({ ...nuevaTienda, lat: e.target.value })}
@@ -2055,7 +2080,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
               </button>
             </div>
             <p style={{ color: COLORS.muted }} className="text-xs -mt-1">
-              La latitud/longitud sirven para el filtro de "tienda más cercana" (Zafiro+). Cópialas de Google Maps (clic derecho en el punto → coordenadas) o usa el botón si estás físicamente en la tienda.
+              La latitud/longitud sirven para el filtro de "tienda más cercana" (Zafiro+). Escribe la dirección arriba y dale "Buscar coordenadas" para llenarlas solas, o usa "Usar mi ubicación" si estás físicamente en la tienda.
             </p>
             <select value={nuevaTienda.vincularCon} onChange={(e) => setNuevaTienda({ ...nuevaTienda, vincularCon: e.target.value })}
               style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
@@ -2151,6 +2176,11 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                             onChange={(e) => setTiendaEdit({ ...tiendaEdit, telefono: e.target.value })}
                             style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs" />
                         </div>
+                        <button onClick={buscarCoordsTiendaEdit} disabled={buscandoCoordsEdit || !tiendaEdit.direccion.trim()}
+                          style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                          className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center justify-center gap-1">
+                          📍 {buscandoCoordsEdit ? "Buscando coordenadas..." : "Buscar coordenadas por la dirección"}
+                        </button>
                         <div className="flex flex-wrap items-center gap-2">
                           <input placeholder="Latitud" value={tiendaEdit.lat}
                             onChange={(e) => setTiendaEdit({ ...tiendaEdit, lat: e.target.value })}
@@ -5918,6 +5948,17 @@ function distanciaKm(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 const formatoDistancia = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`);
+
+// ---- Geocodificación: convierte una dirección en texto a lat/lng ----
+// Usa Nominatim (OpenStreetMap), gratis y sin necesitar API key.
+async function buscarCoordenadasPorDireccion(direccion) {
+  const q = encodeURIComponent(direccion);
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=mx&q=${q}`);
+  if (!res.ok) throw new Error("No se pudo buscar la dirección.");
+  const data = await res.json();
+  if (!data?.length) throw new Error("No se encontró esa dirección. Prueba escribirla más completa (calle, número, colonia, ciudad).");
+  return { lat: Number(data[0].lat), lng: Number(data[0].lon) };
+}
 
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
