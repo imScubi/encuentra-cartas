@@ -101,9 +101,12 @@ export const conBoostPrimero = (lista) => {
 // acento principal de botones/bordes). gold y violeta se quedan fijos siempre,
 // porque ya tienen un significado propio (Aurora y Amatista, respectivamente).
 
+// Bases deliberadamente neutras (sin tinte azul propio): así, cuando aplicarTema()
+// mezcla el color del tipo de Pokémon encima, el tinte resultante se ve limpio y
+// fiel al tipo elegido, en vez de mezclarse con un azul de fondo que ya traía el modo.
 export const MODOS_COLOR = {
-  noche: { bg: "#050810", surface: "#0A1330", surface2: "#101A36", text: "#F4F6FB", muted: "#8291B5" },
-  dia: { bg: "#F3F6FC", surface: "#FFFFFF", surface2: "#E6EBF7", text: "#0B1220", muted: "#5B6B85" },
+  noche: { bg: "#08080B", surface: "#131318", surface2: "#1D1D24", text: "#F4F6FB", muted: "#8B93A8" },
+  dia: { bg: "#F4F4F6", surface: "#FFFFFF", surface2: "#E7E7EC", text: "#0B1220", muted: "#5B6472" },
 };
 
 export const TIPOS_POKEMON_INFO = {
@@ -153,10 +156,31 @@ export const TIPOS_POKEMON_COLOR = {
 export const TEMA_MODO_KEY = "ec_tema_modo";
 export const TEMA_TIPO_KEY = "ec_tema_tipo";
 
+function mezclarHex(hexBase, hexTinte, cantidad) {
+  const parse = (hex) => {
+    const limpio = hex.replace("#", "");
+    const n = parseInt(limpio, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const [br, bg, bb] = parse(hexBase);
+  const [tr, tg, tb] = parse(hexTinte);
+  const mezcla = (a, b) => Math.round(a + (b - a) * cantidad);
+  return `#${[mezcla(br, tr), mezcla(bg, tg), mezcla(bb, tb)].map((x) => x.toString(16).padStart(2, "0")).join("")}`;
+}
+
 export function aplicarTema(modo, tipo) {
   const m = MODOS_COLOR[modo] || MODOS_COLOR.noche;
   const t = TIPOS_POKEMON_COLOR[tipo] || TIPOS_POKEMON_COLOR.default;
-  Object.assign(COLORS, m, t);
+  // No solo cambiamos el acento (botones/bordes) — también teñimos el fondo y las
+  // superficies con el color del tipo, para que el cambio se note de verdad y no
+  // solo en detalles pequeños de texto.
+  Object.assign(COLORS, {
+    bg: mezclarHex(m.bg, t.azul, 0.22),
+    surface: mezclarHex(m.surface, t.azul, 0.28),
+    surface2: mezclarHex(m.surface2, t.azulMedio, 0.34),
+    text: m.text,
+    muted: m.muted,
+  }, t);
   STORE_COLORS.splice(0, STORE_COLORS.length, COLORS.azul, COLORS.azulClaro, COLORS.azulMedio, COLORS.azulPalido);
 }
 
