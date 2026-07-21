@@ -2,10 +2,53 @@
 // y usa la IA con visión de Google (Gemini, capa gratuita) para
 // identificar cada carta visible. Requiere: SUPABASE_URL,
 // SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY (gratis en aistudio.google.com/apikey).
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
+//
+// Llama directo a la API REST de Gemini (sin el SDK) y le pregunta a
+// Google qué modelos están disponibles en vez de fijar un nombre — así
+// no se rompe cuando Google retira o renombra un modelo.
 const PLANES_CON_CARPETAS = ["superball", "ultraball", "masterball", "enteball"];
-const MODELO_GEMINI = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+async function elegirModeloGemini(apiKey, preferido) {
+  const candidatos = [];
+  if (preferido) candidatos.push(preferido);
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (res.ok) {
+      const data = await res.json();
+      const flash = (data.models || [])
+        .filter((m) => m.supportedGenerationMethods?.includes("generateContent") && /flash/i.test(m.name) && !/tts|embedding/i.test(m.name))
+        .map((m) => m.name.replace(/^models\//, ""));
+      // Prefiere el más nuevo (mayor número de versión en el nombre, ej. 2.5 > 2.0 > 1.5).
+      flash.sort((a, b) => {
+        const na = parseFloat((a.match(/[\d.]+/) || ["0"])[0]);
+        const nb = parseFloat((b.match(/[\d.]+/) || ["0"])[0]);
+        return nb - na;
+      });
+      candidatos.push(...flash);
+    }
+  } catch {
+    // si falla la lista, seguimos con los candidatos fijos de abajo
+  }
+  candidatos.push("gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash");
+  return [...new Set(candidatos)];
+}
+
+async function llamarGemini(apiKey, modelo, base64, mimeType, prompt) {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ inline_data: { mime_type: mimeType, data: base64 } }, { text: prompt }] }],
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data?.error?.message || `Gemini respondió con error ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -41,9 +84,6 @@ export default async function handler(req, res) {
     const buffer = Buffer.from(await imgRes.arrayBuffer());
     const base64 = buffer.toString("base64");
 
-    const genAI = new GoogleGenerativeAI(geminiKey);
-    const modelo = genAI.getGenerativeModel({ model: MODELO_GEMINI });
-
     const prompt =
       "Esta es una foto de una página de un álbum/carpeta de cartas coleccionables (Pokémon u otro TCG). " +
       "Identifica cada carta individual que veas. Para cada una da: el nombre exacto de la carta tal como " +
@@ -52,12 +92,20 @@ export default async function handler(req, res) {
       "Responde ÚNICAMENTE con un JSON array (sin texto antes ni después, sin markdown), con este formato exacto: " +
       '[{"nombre": "...", "set": "...", "numero": "..."}, ...]';
 
-    const resultado = await modelo.generateContent([
-      { inlineData: { data: base64, mimeType } },
-      prompt,
-    ]);
+    const candidatos = await elegirModeloGemini(geminiKey, process.env.GEMINI_MODEL);
+    let texto = null;
+    let ultimoError = null;
+    for (const modelo of candidatos) {
+      try {
+        texto = await llamarGemini(geminiKey, modelo, base64, mimeType, prompt);
+        break;
+      } catch (e) {
+        ultimoError = e;
+        if (e.status !== 404) break; // si no es "modelo no encontrado", no tiene caso probar otro
+      }
+    }
+    if (texto === null) throw ultimoError || new Error("No se pudo contactar a Gemini.");
 
-    const texto = resultado.response.text() || "[]";
     const inicio = texto.indexOf("[");
     const fin = texto.lastIndexOf("]");
     const json = inicio >= 0 && fin >= inicio ? texto.slice(inicio, fin + 1) : "[]";
