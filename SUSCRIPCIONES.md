@@ -851,17 +851,28 @@ En "Directorio de tiendas", nuevo desde Zafiro en adelante:
   mejorar de plan.
 
 **Cómo se cargan las coordenadas de una tienda**: el panel de Admin
-("Crear tienda") tiene campos opcionales de latitud/longitud (se copian
-de Google Maps o se llenan solas con el botón "Usar mi ubicación" si el
-admin está físicamente ahí). Para una tienda que ya existe, el botón
-"✏️ Editar" en "Todas las tiendas" abre un formulario completo (nombre,
-dirección, zona, teléfono, latitud/longitud) — antes solo se podía
-crear, vincular o borrar una tienda, nunca editar sus datos ya
-guardados. Usa la política de RLS `"tiendas: admin actualiza
-cualquiera"` que ya existía desde la migración 017 (moderación de
-publicaciones), así que no hace falta ninguna migración nueva para
-esto. Sin coordenadas, una tienda sigue funcionando normal en todo lo
-demás (solo no participa del cálculo de distancia).
+("Crear tienda", y también "✏️ Editar" en "Todas las tiendas" para una
+que ya existe) tiene un botón **"📍 Buscar coordenadas por la
+dirección"**: toma el texto ya escrito en "Dirección" y llama a
+Nominatim (el geocodificador gratis de OpenStreetMap, sin API key ni
+costo) para llenar solas la latitud y longitud. Si la dirección es muy
+vaga o no se encuentra, avisa el error para que se intente con una más
+completa (calle, número, colonia, ciudad); en ese caso, o si prefieres
+más precisión, siguen ahí las otras dos formas: pegar las coordenadas
+copiadas de Google Maps (clic derecho sobre el punto exacto — si
+Google te las da en formato grados/minutos/segundos como
+`25°42'44.4"N 100°22'20.9"W`, conviértelas a decimal con
+`grados + minutos/60 + segundos/3600`, negativo si es Sur u Oeste), o
+el botón "Usar mi ubicación" si el admin está físicamente en la tienda.
+
+El botón "✏️ Editar" en "Todas las tiendas" abre además nombre,
+dirección, zona y teléfono — antes solo se podía crear, vincular o
+borrar una tienda, nunca editar sus datos ya guardados. Usa la política
+de RLS `"tiendas: admin actualiza cualquiera"` que ya existía desde la
+migración 017 (moderación de publicaciones), así que no hace falta
+ninguna migración nueva para esto. Sin coordenadas, una tienda sigue
+funcionando normal en todo lo demás (solo no participa del cálculo de
+distancia).
 
 **Pendiente por aplicar**: migración `033_tiendas_ubicacion.sql`
 (agrega `lat`/`lng` a `tiendas` si no existían ya). Aplica igual que
