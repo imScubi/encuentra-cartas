@@ -85,10 +85,14 @@ export default async function handler(req, res) {
     const base64 = buffer.toString("base64");
 
     const prompt =
-      "Esta es una foto de una página de un álbum/carpeta de cartas coleccionables (Pokémon u otro TCG). " +
-      "Identifica cada carta individual que veas. Para cada una da: el nombre exacto de la carta tal como " +
-      "aparece impreso, el nombre del set si lo puedes leer, y el número de carta/set si es legible (ej. '054/198' o 'GG56'). " +
-      "Si no puedes leer o identificar una carta con confianza razonable, no la inventes: pon \"nombre\": null en esa posición. " +
+      "Esta es una foto de una página de un álbum/carpeta de cartas físicas del Pokémon Trading Card Game (el juego de " +
+      "cartas de papel/cartón, no el videojuego). Identifica solo cartas del TCG físico real. " +
+      "IMPORTANTE: excluye por completo cualquier carta de 'Pokémon TCG Pocket' (el juego para celular, con su propio " +
+      "arte y numeración de sets distinta) — si ves una carta de TCG Pocket, no la incluyas en el resultado, ni siquiera como nula. " +
+      "Para cada carta física real que identifiques, da: el nombre exacto de la carta tal como aparece impreso, el nombre " +
+      "del set del TCG físico si lo puedes leer, y el número de carta/set exactamente como aparece impreso, incluyendo el " +
+      "total (ej. '054/198' o 'GG56/GG70'). " +
+      "Si no puedes leer o identificar una carta física con confianza razonable, no la inventes: pon \"nombre\": null en esa posición. " +
       "Responde ÚNICAMENTE con un JSON array (sin texto antes ni después, sin markdown), con este formato exacto: " +
       '[{"nombre": "...", "set": "...", "numero": "..."}, ...]';
 
