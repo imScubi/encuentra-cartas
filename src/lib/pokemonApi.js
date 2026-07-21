@@ -86,3 +86,73 @@ export async function buscarCartaTCGdex(nombre, numeroHint) {
     return null;
   }
 }
+
+// ---- Búsqueda visual de cartas (estilo Pokellector) ----
+// Deja escribir libremente "Sprigatito 016", "Sprigatito #016" o
+// "Sprigatito Journey Together" sin exigir un formato fijo: separa el
+// número de carta (con o sin "#") del resto del texto, y si lo que queda
+// tiene más de una palabra, prueba varias formas de partirlo entre
+// "nombre de la carta" y "nombre del set" (ej. "Sprigatito" + "Journey
+// Together"). Cada combinación se manda como filtro a TCGdex en paralelo;
+// las que no existen en su catálogo simplemente no traen resultados, así
+// que no hace falta saber de antemano cuáles palabras son el set.
+function extraerNumeroDeTexto(texto) {
+  const t = (texto || "").trim();
+  const conAlmohadilla = t.match(/^(.*?)\s*#\s*([A-Za-z]{0,5}\d{1,4}[A-Za-z]?)\s*$/);
+  if (conAlmohadilla) return { restante: conAlmohadilla[1].trim(), numero: conAlmohadilla[2] };
+
+  const palabras = t.split(/\s+/).filter(Boolean);
+  const ultima = palabras[palabras.length - 1] || "";
+  const pareceNumeroDeCarta = /^[A-Za-z]{0,5}\d{1,4}[A-Za-z]?$/.test(ultima);
+  if (pareceNumeroDeCarta) {
+    return { restante: palabras.slice(0, -1).join(" "), numero: ultima };
+  }
+  return { restante: t, numero: null };
+}
+
+function generarCombinacionesNombreSet(restante) {
+  const palabras = restante.split(/\s+/).filter(Boolean);
+  if (palabras.length <= 1) return [{ nombre: restante || null, set: null }];
+  const combos = [{ nombre: restante, set: null }]; // todo el texto como nombre (comportamiento de siempre)
+  const maxCombos = 5;
+  for (let k = 1; k < palabras.length && combos.length < maxCombos; k++) {
+    combos.push({ nombre: palabras.slice(0, k).join(" "), set: palabras.slice(k).join(" ") });
+  }
+  return combos;
+}
+
+export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
+  const q = (texto || "").trim();
+  if (q.length < 3) return [];
+  const { restante, numero } = extraerNumeroDeTexto(q);
+  const combos = generarCombinacionesNombreSet(restante);
+
+  const peticiones = combos.map(async ({ nombre, set }) => {
+    if (!nombre && !set && !numero) return [];
+    const partes = [];
+    if (nombre) partes.push(`name=${encodeURIComponent(nombre)}`);
+    if (set) partes.push(`set.name=${encodeURIComponent(set)}`);
+    if (numero) partes.push(`localId=${encodeURIComponent(numero)}`);
+    partes.push(`pagination:itemsPerPage=${itemsPorCombo}`);
+    try {
+      const res = await fetch(`https://api.tcgdex.net/v2/en/cards?${partes.join("&")}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const listas = await Promise.all(peticiones);
+  const vistos = new Set();
+  const combinado = [];
+  for (const lista of listas) {
+    for (const c of lista) {
+      if (vistos.has(c.id)) continue;
+      vistos.add(c.id);
+      combinado.push(c);
+    }
+  }
+  if (numero) combinado.sort((a, b) => (b.localId === numero) - (a.localId === numero));
+  return combinado.slice(0, 24);
+}
