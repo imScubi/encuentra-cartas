@@ -344,9 +344,43 @@ variantes:
   algunas cartas muy nuevas o promos raras), sigue disponible el botón
   de subir tu propia foto ("📷 Sin foto").
 
+## 24. Carpetas: publicar un álbum completo desde fotos (Super Ball+)
+
+Corre `supabase/migrations/019_carpetas.sql` (tablas `carpetas` y
+`carpeta_fotos`, columna `carpeta_id` en `inventario_tienda` y
+`mercado_listings`, y el bucket de Storage `carpetas`).
+
+También necesitas agregar una variable de entorno nueva en Vercel:
+
+| Variable | De dónde sale | Notas |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | https://console.anthropic.com → API Keys (crea tu propia cuenta si no tienes) | **Tiene costo de uso**: se cobra por cada foto que se procese (normalmente fracciones de centavo de dólar por foto, pero se acumula con el uso). Sin esta variable, "Carpetas" deja de detectar cartas automáticamente (el resto de la app sigue funcionando normal). |
+
+Qué hace: en "Mi tienda" y "Vender en el Mercado" (desde el plan **Super
+Ball** en adelante), hay una sección **"📁 Carpetas"** donde puedes:
+
+- Crear varias carpetas (álbumes) con su propio nombre.
+- Subir fotos de las páginas de tu álbum físico a cada carpeta — se
+  guardan ahí para siempre, como una galería.
+- Cada foto que subes se manda a la IA (Claude, la misma tecnología
+  detrás de este asistente) para que identifique cada carta visible.
+- Te muestra una pantalla de revisión con lo que detectó (nombre, set e
+  imagen si los encontró en el catálogo): puedes destildar las que no
+  quieras publicar, corregir el nombre a mano si no se detectó bien,
+  y ponerle precio y cantidad a cada una.
+- Al confirmar, publica todas de un jalón, ya agrupadas por esa carpeta.
+
+Limitaciones a tener en cuenta: la IA no es perfecta (letra pequeña,
+cartas dañadas o fotos borrosas pueden fallar) — por eso siempre pasa
+por la revisión antes de publicarse, nunca publica solo. Si no detecta
+o no encuentra la imagen de alguna carta, puedes escribir el nombre a
+mano y luego usar el botón de subir foto manual desde la fila ya
+publicada.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
 - Permitir editar un torneo ya publicado (hoy solo se puede borrar y crear uno nuevo) y adjuntarle una imagen.
 - Mapa de Google en el detalle del torneo (hoy solo muestra la dirección en texto).
 - Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
+- Mostrar las carpetas también en la vista pública de la tienda/perfil (hoy solo se ven en el panel del vendedor).
