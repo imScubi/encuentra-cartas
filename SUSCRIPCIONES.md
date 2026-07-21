@@ -1,4 +1,6 @@
 # Sistema de rangos / suscripciones
+<!-- ping deploy 2026-07-21 16:03 UTC -->
+
 
 Guía para dejar funcionando de verdad lo que se agregó: los 5 rangos (Cuarzo,
 Zafiro, Amatista, Diamante, Aurora — internamente siguen guardados como
