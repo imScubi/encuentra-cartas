@@ -1001,6 +1001,31 @@ no la tenía.
 `idioma` a `mercado_listings` si no existía, con un `check` en ambas
 tablas para que solo acepte `EN`/`ES`/`JP`).
 
+## 45. Íconos nuevos: gemas de plan + rangos de participación
+
+Handoff de diseño (`design_handoff_rangos_participacion`) con dos sets de íconos:
+
+- **Gemas de plan** (`gemas-planes/`): reemplazan los 5 PNG que ya
+  existían en `public/branding/rango-{pokeball,superball,ultraball,masterball,enteball}.png`
+  — mismo nombre de archivo, no requirió ningún cambio de código
+  (`RankIcon` ya los carga por convención de nombre).
+- **Rangos de participación** (`rangos-participacion/`): el README del
+  handoff decía que este era un sistema nuevo por construir desde cero,
+  pero en realidad **ya existía** — es el sistema de niveles de
+  Destellos (`NIVELES_DESTELLOS` / `NivelBadge`, sección de Recompensas),
+  que ya tenía exactamente los mismos 5 nombres (Novato, Buscador,
+  Cazador, Maestro Cazador, Leyenda) basados en el total de Destellos
+  ganados, solo que mostraba un emoji en vez de un ícono propio. En vez
+  de crear un sistema paralelo, se agregó un campo `slug` a cada nivel
+  y un componente `NivelIcon` (mismo patrón que `RankIcon`: `<img
+  src="/branding/nivel-{slug}.png">` con respaldo a emoji si la imagen
+  falla), y `NivelBadge` ahora lo usa. Los 5 PNG se guardaron como
+  `public/branding/nivel-{novato,buscador,cazador,maestro-cazador,leyenda}.png`.
+
+No requiere ninguna migración ni cambio de base de datos — es solo
+reemplazo/adición de imágenes y su conexión a un sistema que ya
+funcionaba.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

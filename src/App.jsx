@@ -3544,13 +3544,29 @@ const JUEGOS_TORNEO = {
 };
 
 // ---- Destellos ✨: recompensas por actividad real (ventas, reseñas, publicar, perfil completo) ----
+// Este es el "rango de participación" del usuario (novato → leyenda): mide
+// actividad real en la web, no tiene nada que ver con el plan de tienda/perfil.
 const NIVELES_DESTELLOS = [
-  { min: 0, nombre: "Novato", emoji: "🌱", color: COLORS.muted },
-  { min: 50, nombre: "Buscador", emoji: "🔍", color: COLORS.azulClaro },
-  { min: 200, nombre: "Cazador", emoji: "🎯", color: COLORS.violeta },
-  { min: 500, nombre: "Maestro Cazador", emoji: "🏹", color: COLORS.azulPalido },
-  { min: 1000, nombre: "Leyenda", emoji: "👑", color: COLORS.gold },
+  { min: 0, nombre: "Novato", slug: "novato", emoji: "🌱", color: COLORS.muted },
+  { min: 50, nombre: "Buscador", slug: "buscador", emoji: "🔍", color: COLORS.azulClaro },
+  { min: 200, nombre: "Cazador", slug: "cazador", emoji: "🎯", color: COLORS.violeta },
+  { min: 500, nombre: "Maestro Cazador", slug: "maestro-cazador", emoji: "🏹", color: COLORS.azulPalido },
+  { min: 1000, nombre: "Leyenda", slug: "leyenda", emoji: "👑", color: COLORS.gold },
 ];
+
+// Ícono del nivel de participación (con respaldo a emoji si la imagen no carga).
+function NivelIcon({ slug, emoji, size = 16 }) {
+  const [iconError, setIconError] = useState(false);
+  if (iconError) return <>{emoji}</>;
+  return (
+    <img
+      src={`/branding/nivel-${slug}.png`}
+      alt=""
+      onError={() => setIconError(true)}
+      style={{ width: size, height: size, display: "inline-block", objectFit: "contain" }}
+    />
+  );
+}
 
 function nivelDestellos(total) {
   let actual = NIVELES_DESTELLOS[0];
@@ -3578,13 +3594,14 @@ const MOTIVO_DESTELLOS_LABEL = {
 // Insignia pública de nivel (se ve en el perfil, no se puede ocultar).
 function NivelBadge({ total, size = "sm" }) {
   const { actual } = nivelDestellos(total);
+  const iconPx = size === "lg" ? 18 : 14;
   return (
     <span
       title={`Nivel de Destellos: ${actual.nombre}`}
       style={{ border: `1px solid ${actual.color}`, color: actual.color, boxShadow: `0 0 8px ${actual.color}66` }}
       className={`inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap ${size === "lg" ? "px-3 py-1 text-sm" : "px-2 py-0.5 text-xs"}`}
     >
-      {actual.emoji} {actual.nombre}
+      <NivelIcon slug={actual.slug} emoji={actual.emoji} size={iconPx} /> {actual.nombre}
     </span>
   );
 }
