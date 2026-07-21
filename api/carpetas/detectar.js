@@ -1,13 +1,11 @@
 // Recibe la foto de una página de un álbum/carpeta ya subida a Storage,
-// y usa la IA de Anthropic (Claude, con visión) para identificar cada
-// carta visible. Requiere: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
-// ANTHROPIC_API_KEY.
-//
-// Valida el plan del perfil contra Supabase (no confía en el cliente),
-// porque cada llamada tiene un costo real de la API de Anthropic.
-import Anthropic from "@anthropic-ai/sdk";
+// y usa la IA con visión de Google (Gemini, capa gratuita) para
+// identificar cada carta visible. Requiere: SUPABASE_URL,
+// SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY (gratis en aistudio.google.com/apikey).
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const PLANES_CON_CARPETAS = ["superball", "ultraball", "masterball", "enteball"];
+const MODELO_GEMINI = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -21,9 +19,9 @@ export default async function handler(req, res) {
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (!anthropicKey) {
-    return res.status(500).json({ error: "Falta configurar ANTHROPIC_API_KEY en Vercel." });
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    return res.status(500).json({ error: "Falta configurar GEMINI_API_KEY en Vercel." });
   }
 
   try {
@@ -39,35 +37,27 @@ export default async function handler(req, res) {
 
     const imgRes = await fetch(imagenUrl);
     if (!imgRes.ok) return res.status(400).json({ error: "No se pudo leer la imagen de la foto." });
-    const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+    const mimeType = imgRes.headers.get("content-type") || "image/jpeg";
     const buffer = Buffer.from(await imgRes.arrayBuffer());
     const base64 = buffer.toString("base64");
 
-    const anthropic = new Anthropic({ apiKey: anthropicKey });
-    const mensaje = await anthropic.messages.create({
-      model: "claude-sonnet-5",
-      max_tokens: 2048,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: contentType, data: base64 } },
-            {
-              type: "text",
-              text:
-                "Esta es una foto de una página de un álbum/carpeta de cartas coleccionables (Pokémon u otro TCG). " +
-                "Identifica cada carta individual que veas. Para cada una da: el nombre exacto de la carta tal como " +
-                "aparece impreso, el nombre del set si lo puedes leer, y el número de carta/set si es legible (ej. '054/198' o 'GG56'). " +
-                "Si no puedes leer o identificar una carta con confianza razonable, no la inventes: pon \"nombre\": null en esa posición. " +
-                "Responde ÚNICAMENTE con un JSON array (sin texto antes ni después, sin markdown), con este formato exacto: " +
-                '[{"nombre": "...", "set": "...", "numero": "..."}, ...]',
-            },
-          ],
-        },
-      ],
-    });
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    const modelo = genAI.getGenerativeModel({ model: MODELO_GEMINI });
 
-    const texto = mensaje.content?.[0]?.text || "[]";
+    const prompt =
+      "Esta es una foto de una página de un álbum/carpeta de cartas coleccionables (Pokémon u otro TCG). " +
+      "Identifica cada carta individual que veas. Para cada una da: el nombre exacto de la carta tal como " +
+      "aparece impreso, el nombre del set si lo puedes leer, y el número de carta/set si es legible (ej. '054/198' o 'GG56'). " +
+      "Si no puedes leer o identificar una carta con confianza razonable, no la inventes: pon \"nombre\": null en esa posición. " +
+      "Responde ÚNICAMENTE con un JSON array (sin texto antes ni después, sin markdown), con este formato exacto: " +
+      '[{"nombre": "...", "set": "...", "numero": "..."}, ...]';
+
+    const resultado = await modelo.generateContent([
+      { inlineData: { data: base64, mimeType } },
+      prompt,
+    ]);
+
+    const texto = resultado.response.text() || "[]";
     const inicio = texto.indexOf("[");
     const fin = texto.lastIndexOf("]");
     const json = inicio >= 0 && fin >= inicio ? texto.slice(inicio, fin + 1) : "[]";
