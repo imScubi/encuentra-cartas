@@ -335,7 +335,12 @@ variantes:
 - En las cartas que ya publicaste y quedaron sin foto, ahora hay un
   botón **"🔄 Buscar foto"** junto al de subir manual — lo intenta de
   nuevo contra esa segunda base de datos por si ya está disponible ahí.
-- Si ninguna de las dos bases de datos tiene la imagen (pasa con
+- Para no traer la imagen de una versión distinta de la misma carta
+  (por ejemplo el arte normal en vez del arte especial), el respaldo
+  exige que coincidan el **número exacto de la carta y el set** — si no
+  hay una coincidencia exacta, dice "No se encontró la versión exacta"
+  en vez de arriesgarse a poner una foto equivocada.
+- Si ninguna de las dos bases de datos tiene la imagen exacta (pasa con
   algunas cartas muy nuevas o promos raras), sigue disponible el botón
   de subir tu propia foto ("📷 Sin foto").
 
