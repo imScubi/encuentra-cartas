@@ -355,7 +355,7 @@ También necesitas agregar una variable de entorno nueva en Vercel:
 | Variable | De dónde sale | Notas |
 |---|---|---|
 | `GEMINI_API_KEY` | https://aistudio.google.com/apikey (entra con tu cuenta de Google, "Create API key") | **Gratis** dentro de los límites de la capa gratuita de Gemini (un número generoso de fotos por minuto/día, sin tarjeta de crédito). Sin esta variable, "Carpetas" deja de detectar cartas automáticamente (el resto de la app sigue funcionando normal). |
-| `GEMINI_MODEL` (opcional) | — | Por si Google cambia el nombre del modelo más adelante. Si no la pones, usa `gemini-2.5-flash` por defecto. |
+| `GEMINI_MODEL` (opcional) | — | Normalmente no hace falta: el código le pregunta a Google qué modelos "flash" están disponibles en ese momento y elige el más nuevo automáticamente. Solo defínela si quieres forzar un modelo específico. |
 
 Qué hace: en "Mi tienda" y "Vender en el Mercado" (desde el plan **Super
 Ball** en adelante), hay una sección **"📁 Carpetas"** donde puedes:
