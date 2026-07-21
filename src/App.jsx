@@ -1642,33 +1642,46 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
     } catch (e) { setErrorCrear(e.message); } finally { setCreandoTienda(false); }
   };
 
-  // ---- Editar ubicación (lat/lng) de una tienda ya creada ----
-  const [editandoUbicacion, setEditandoUbicacion] = useState(null); // tienda id
-  const [ubicacionEdit, setUbicacionEdit] = useState({ lat: "", lng: "" });
-  const [guardandoUbicacion, setGuardandoUbicacion] = useState(false);
+  // ---- Editar información de una tienda ya creada (nombre, dirección, zona, teléfono, lat/lng) ----
+  const [editandoTienda, setEditandoTienda] = useState(null); // tienda id
+  const [tiendaEdit, setTiendaEdit] = useState({ nombre: "", direccion: "", zona: "", telefono: "", lat: "", lng: "" });
+  const [guardandoTienda, setGuardandoTienda] = useState(null);
 
-  const abrirEditorUbicacion = (t) => {
-    setEditandoUbicacion(t.id);
-    setUbicacionEdit({ lat: t.lat != null ? String(t.lat) : "", lng: t.lng != null ? String(t.lng) : "" });
-  };
-
-  const usarMiUbicacionEditar = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((pos) => {
-      setUbicacionEdit({ lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) });
+  const abrirEditorTienda = (t) => {
+    setEditandoTienda(t.id);
+    setTiendaEdit({
+      nombre: t.nombre || "",
+      direccion: t.direccion || "",
+      zona: t.zona || "",
+      telefono: t.telefono || "",
+      lat: t.lat != null ? String(t.lat) : "",
+      lng: t.lng != null ? String(t.lng) : "",
     });
   };
 
-  const guardarUbicacionTienda = async (tiendaId) => {
-    setGuardandoUbicacion(true);
+  const usarMiUbicacionEditarTienda = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      setTiendaEdit((t) => ({ ...t, lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) }));
+    });
+  };
+
+  const guardarTiendaEditada = async (tiendaId) => {
+    if (!tiendaEdit.nombre.trim() || !tiendaEdit.direccion.trim()) return;
+    setGuardandoTienda(tiendaId);
     try {
       await sbWrite("PATCH", `tiendas?id=eq.${tiendaId}`, {
-        lat: ubicacionEdit.lat ? Number(ubicacionEdit.lat) : null,
-        lng: ubicacionEdit.lng ? Number(ubicacionEdit.lng) : null,
+        nombre: tiendaEdit.nombre.trim(),
+        direccion: tiendaEdit.direccion.trim(),
+        zona: tiendaEdit.zona.trim() || null,
+        telefono: tiendaEdit.telefono.trim() || null,
+        lat: tiendaEdit.lat ? Number(tiendaEdit.lat) : null,
+        lng: tiendaEdit.lng ? Number(tiendaEdit.lng) : null,
       }, session);
-      setEditandoUbicacion(null);
+      setEditandoTienda(null);
+      cargar();
       cargarTodasTiendas();
-    } catch (e) { setError(e.message); } finally { setGuardandoUbicacion(false); }
+    } catch (e) { setError(e.message); } finally { setGuardandoTienda(null); }
   };
 
   // ---- Anuncios ----
@@ -2106,9 +2119,9 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button onClick={() => (editandoUbicacion === t.id ? setEditandoUbicacion(null) : abrirEditorUbicacion(t))}
+                        <button onClick={() => (editandoTienda === t.id ? setEditandoTienda(null) : abrirEditorTienda(t))}
                           style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap flex items-center gap-1">
-                          <MapPin size={12} /> Ubicación
+                          ✏️ Editar
                         </button>
                         {t.perfil_id && (
                           <button onClick={() => toggleAmatista(t)} disabled={cambiandoAmatista === t.id}
@@ -2122,21 +2135,37 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                         </button>
                       </div>
                     </div>
-                    {editandoUbicacion === t.id && (
-                      <div className="flex flex-wrap items-center gap-2 mt-3 pt-3" style={{ borderTop: `1px solid ${COLORS.surface2}` }}>
-                        <input placeholder="Latitud" value={ubicacionEdit.lat}
-                          onChange={(e) => setUbicacionEdit({ ...ubicacionEdit, lat: e.target.value })}
-                          style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs w-28" />
-                        <input placeholder="Longitud" value={ubicacionEdit.lng}
-                          onChange={(e) => setUbicacionEdit({ ...ubicacionEdit, lng: e.target.value })}
-                          style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs w-28" />
-                        <button onClick={usarMiUbicacionEditar} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-2 py-1.5 text-xs font-semibold flex items-center gap-1">
-                          <Navigation size={12} /> Mi ubicación
-                        </button>
-                        <button onClick={() => guardarUbicacionTienda(t.id)} disabled={guardandoUbicacion}
-                          style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
-                          {guardandoUbicacion ? "Guardando..." : "Guardar"}
-                        </button>
+                    {editandoTienda === t.id && (
+                      <div className="grid gap-2 mt-3 pt-3" style={{ borderTop: `1px solid ${COLORS.surface2}` }}>
+                        <input placeholder="Nombre de la tienda" value={tiendaEdit.nombre}
+                          onChange={(e) => setTiendaEdit({ ...tiendaEdit, nombre: e.target.value })}
+                          style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs" />
+                        <input placeholder="Dirección completa" value={tiendaEdit.direccion}
+                          onChange={(e) => setTiendaEdit({ ...tiendaEdit, direccion: e.target.value })}
+                          style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs" />
+                        <div className="grid sm:grid-cols-2 gap-2">
+                          <input placeholder="Zona" value={tiendaEdit.zona}
+                            onChange={(e) => setTiendaEdit({ ...tiendaEdit, zona: e.target.value })}
+                            style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs" />
+                          <input placeholder="Teléfono" value={tiendaEdit.telefono}
+                            onChange={(e) => setTiendaEdit({ ...tiendaEdit, telefono: e.target.value })}
+                            style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs" />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input placeholder="Latitud" value={tiendaEdit.lat}
+                            onChange={(e) => setTiendaEdit({ ...tiendaEdit, lat: e.target.value })}
+                            style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs w-28" />
+                          <input placeholder="Longitud" value={tiendaEdit.lng}
+                            onChange={(e) => setTiendaEdit({ ...tiendaEdit, lng: e.target.value })}
+                            style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs w-28" />
+                          <button onClick={usarMiUbicacionEditarTienda} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-2 py-1.5 text-xs font-semibold flex items-center gap-1">
+                            <Navigation size={12} /> Mi ubicación
+                          </button>
+                          <button onClick={() => guardarTiendaEditada(t.id)} disabled={guardandoTienda === t.id || !tiendaEdit.nombre.trim() || !tiendaEdit.direccion.trim()}
+                            style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                            {guardandoTienda === t.id ? "Guardando..." : "Guardar cambios"}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

@@ -851,12 +851,17 @@ En "Directorio de tiendas", nuevo desde Zafiro en adelante:
   mejorar de plan.
 
 **Cómo se cargan las coordenadas de una tienda**: el panel de Admin
-("Crear tienda") ahora tiene campos opcionales de latitud/longitud (se
-copian de Google Maps o se llenan solas con el botón "Usar mi
-ubicación" si el admin está físicamente ahí), y cada tienda ya creada
-en "Todas las tiendas" tiene un botón "📍 Ubicación" para agregarlas o
-corregirlas después. Sin coordenadas, una tienda sigue funcionando
-normal en todo lo demás (solo no participa del cálculo de distancia).
+("Crear tienda") tiene campos opcionales de latitud/longitud (se copian
+de Google Maps o se llenan solas con el botón "Usar mi ubicación" si el
+admin está físicamente ahí). Para una tienda que ya existe, el botón
+"✏️ Editar" en "Todas las tiendas" abre un formulario completo (nombre,
+dirección, zona, teléfono, latitud/longitud) — antes solo se podía
+crear, vincular o borrar una tienda, nunca editar sus datos ya
+guardados. Usa la política de RLS `"tiendas: admin actualiza
+cualquiera"` que ya existía desde la migración 017 (moderación de
+publicaciones), así que no hace falta ninguna migración nueva para
+esto. Sin coordenadas, una tienda sigue funcionando normal en todo lo
+demás (solo no participa del cálculo de distancia).
 
 **Pendiente por aplicar**: migración `033_tiendas_ubicacion.sql`
 (agrega `lat`/`lng` a `tiendas` si no existían ya). Aplica igual que
@@ -896,5 +901,4 @@ mazos). Aplica igual que las anteriores.
 - Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
 - La búsqueda de "Armar mazo" hace match de nombre simple (contiene el texto) — si dos cartas distintas comparten parte del nombre (ej. "Pikachu" y "Pikachu VMAX"), puede haber falsos positivos leves; no ata el nombre a un ID exacto de la carta como sí hace el catálogo de TCGdex.
 - Deuda técnica pendiente: falta dividir el resto de `src/App.jsx` (los componentes de cada pantalla) en módulos más chicos — ver sección 34.
-- Permitir editar (no solo crear) nombre/dirección/zona/teléfono de una tienda ya existente desde el panel de admin — hoy solo se puede crear, vincular o borrar.
 - Extender el color de acento y la biografía a la página de detalle de tienda del Mercado (hoy solo aplica en "Perfil público").
