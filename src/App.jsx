@@ -3078,7 +3078,7 @@ function RecompensasView({ session, perfil }) {
     setLoading(true); setError(null);
     const tareas = [sb(`destellos_movimientos?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session).then(setMovimientos)];
     if (perfil?.tipo === "individual") {
-      tareas.push(sb(`mercado_listings?select=id,carta,producto,tipo,destacado_hasta&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
+      tareas.push(sb(`mercado_listings?select=id,carta,destacado_hasta&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
         .then((filas) => setPublicaciones(filas.map((f) => ({ ...f, tabla: "mercado_listings", nombre: f.carta })))));
     } else if (perfil?.tipo === "tienda") {
       tareas.push(
