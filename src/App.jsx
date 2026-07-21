@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
@@ -5822,13 +5823,29 @@ function NotificationBell({ session, onNavigate }) {
   const esNoLeida = (n) => (n.perfil_id ? !n.leida : !leidasLocal.has(n.id));
   const noLeidas = notis.filter(esNoLeida).length;
 
-  // Calcula la posición fija a partir del botón real (en vez de depender de
-  // que algún ancestro tenga el ancho/posición "correcta"), para que el
-  // panel jamás quede cortado por el borde de la pantalla, en celular o web.
+  // Calcula la posición a partir del botón real (en vez de depender de que
+  // algún ancestro tenga el ancho/posición "correcta"). El panel se manda
+  // por portal a document.body (ver más abajo) precisamente porque el
+  // <header> tiene backdrop-filter: blur(...), y eso convierte a cualquier
+  // descendiente "position: fixed" en fijo respecto al header en vez del
+  // viewport real (una regla del CSS, no un bug de este componente) — por
+  // más que las coordenadas se calcularan bien, se aplicaban en el marco de
+  // referencia equivocado y el panel terminaba cortado en varios celulares.
+  // Con el portal, el panel ya no es descendiente del header, así que
+  // "fixed" vuelve a significar "fijo respecto a la pantalla" de verdad.
   const posicionar = () => {
     const r = btnRef.current?.getBoundingClientRect();
     if (!r) return;
-    setPos({ top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) });
+    const margen = 8;
+    const ancho = Math.min(320, window.innerWidth - margen * 2);
+    // Ancla el borde derecho del panel al del botón, pero SIEMPRE lo recorta
+    // para que quede dentro de la pantalla — si solo se ancla al botón sin
+    // este límite, en celulares donde la campanita no está pegada al borde
+    // derecho (hay más íconos después, como el menú) el panel se sale por
+    // la izquierda en vez de quedar cortado por la derecha.
+    let left = r.right - ancho;
+    left = Math.max(margen, Math.min(left, window.innerWidth - ancho - margen));
+    setPos({ top: r.bottom + 8, left, ancho });
   };
 
   const abrir = () => {
@@ -5839,6 +5856,17 @@ function NotificationBell({ session, onNavigate }) {
       posicionar();
     }
   };
+
+  // Vuelve a calcular la posición si cambia el tamaño de la pantalla (girar
+  // el celular, aparecer/ocultarse la barra de direcciones) mientras el
+  // panel sigue abierto.
+  useEffect(() => {
+    if (!abierto) return;
+    const onResize = () => posicionar();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto]);
 
   const VISTA_POR_TIPO = { wishlist: "alertas", anuncio: "news", mensaje: "inbox", venta: "comprasVentas", seguido_publico: "siguiendo" };
 
@@ -5887,18 +5915,22 @@ function NotificationBell({ session, onNavigate }) {
         )}
       </button>
 
-      {abierto && pos && (
+      {abierto && pos && createPortal(
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setAbierto(false)} />
-          {/* position:fixed calculado desde el botón real (no un ancestro) —
-              así nunca se sale de la pantalla, sea cual sea el ancho del
-              header o del dispositivo. */}
+          <div className="fixed inset-0 z-[90]" onClick={() => setAbierto(false)} />
+          {/* Portal a document.body + position:fixed calculado desde el botón
+              real: así el panel nunca es descendiente del <header> (que tiene
+              backdrop-filter, y por lo tanto redefine el marco de referencia
+              de "fixed" para sus descendientes) y nunca se sale de la
+              pantalla, sea cual sea el ancho del header o del dispositivo.
+              z-index por encima del header (que usa 50) porque, al vivir en
+              el portal, ya no comparten el mismo contexto de apilamiento. */}
           <div
             style={{
               background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33`,
-              position: "fixed", top: pos.top, right: pos.right,
+              position: "fixed", top: pos.top, left: pos.left, width: pos.ancho,
             }}
-            className="w-80 max-w-[calc(100vw-1rem)] rounded-xl overflow-hidden z-40"
+            className="rounded-xl overflow-hidden z-[91]"
           >
             <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: `1px solid ${COLORS.bg}` }}>
               <p className="text-sm font-semibold">Notificaciones</p>
@@ -5926,7 +5958,8 @@ function NotificationBell({ session, onNavigate }) {
               })}
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </>
   );

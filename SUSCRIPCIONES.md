@@ -1026,6 +1026,37 @@ No requiere ninguna migración ni cambio de base de datos — es solo
 reemplazo/adición de imágenes y su conexión a un sistema que ya
 funcionaba.
 
+## 46. Bandeja de notificaciones: reconstruida para no cortarse nunca (portal + reposicionamiento)
+
+Se seguía viendo cortada en celular a pesar del arreglo anterior
+(sección 33/72). Encontramos dos causas reales, no una:
+
+1. **El `<header>` tiene `backdrop-filter: blur(...)`**. Por regla del
+   CSS (no un bug de este componente), eso convierte a cualquier
+   descendiente `position: fixed` en fijo respecto al *header*, no al
+   viewport real — así que aunque las coordenadas se calcularan bien
+   (ya se hacía desde la sección 72), se aplicaban en el marco de
+   referencia equivocado. **Arreglo**: el panel ahora se renderiza con
+   `createPortal(..., document.body)`, así deja de ser descendiente del
+   header y `fixed` vuelve a significar "fijo respecto a la pantalla"
+   de verdad, sin importar qué estilos tenga el header ahora o en el
+   futuro.
+2. **El panel se anclaba solo al borde derecho del botón**, sin nunca
+   comprobar si le cabía a la izquierda. Si la campanita no está pegada
+   al borde derecho de la pantalla (ej. hay más íconos después, como el
+   menú ☰), el panel de 320px se salía por la izquierda en vez de por
+   la derecha. **Arreglo**: el cálculo de posición ahora recorta
+   matemáticamente el panel para que `left` nunca sea menor que el
+   margen ni haga que `left + ancho` pase del borde derecho — es
+   imposible que se salga de la pantalla sin importar dónde esté el
+   botón o qué tan angosta sea la pantalla.
+
+También se agregó un listener de `resize` mientras el panel está
+abierto, para que se reacomode si gira el celular o cambia el tamaño de
+la ventana. Verificado visualmente en 320px, 375px y escritorio (1280px)
+— el panel siempre queda completo, con márgenes, sin cortarse por
+ningún lado.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
