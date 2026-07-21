@@ -626,6 +626,26 @@ Con esto se completaron las 12 ideas originales de "confianza y
 comunidad" (se descartaron 3: estadísticas por tienda, historial de
 precios, páginas indexables por Google).
 
+## 33. Técnico: Tailwind compilado en vez de cargado por CDN
+
+Antes, el sitio cargaba `<script src="https://cdn.tailwindcss.com">` en
+`index.html` — Tailwind generaba todos los estilos **en el navegador de
+cada visitante**, cada vez que abrían la página (la documentación
+oficial de Tailwind desaconseja esto en producción). Ahora los estilos
+se compilan una sola vez, al desplegar, con Tailwind v4 integrado a
+Vite (`@tailwindcss/vite`):
+
+- Se agregó `tailwindcss` y `@tailwindcss/vite` como dependencias de
+  desarrollo, y el plugin en `vite.config.js`.
+- Nuevo archivo `src/index.css` (solo tiene `@import "tailwindcss";`),
+  importado desde `src/main.jsx`.
+- Se quitó el `<script>` del CDN de `index.html`.
+
+No hay nada que configurar en Vercel — es un cambio de build, no de
+variables de entorno. El resultado: el navegador ahora descarga un
+archivo CSS ya compilado y pequeño (~19 KB) en vez de tener que
+ejecutar JavaScript para generar los estilos cada vez.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
@@ -635,4 +655,4 @@ precios, páginas indexables por Google).
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
 - Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
 - La búsqueda de "Armar mazo" hace match de nombre simple (contiene el texto) — si dos cartas distintas comparten parte del nombre (ej. "Pikachu" y "Pikachu VMAX"), puede haber falsos positivos leves; no ata el nombre a un ID exacto de la carta como sí hace el catálogo de TCGdex.
-- Deuda técnica pendiente: el sitio carga Tailwind desde su CDN en vez de compilarlo (Tailwind lo desaconseja en producción), y todo el frontend vive en un solo archivo `src/App.jsx` (más de 6,000 líneas) — ninguno de los dos bloquea nada hoy, pero valdría la pena atenderlos.
+- Deuda técnica pendiente: todo el frontend vive en un solo archivo `src/App.jsx` (más de 6,000 líneas) — no bloquea nada hoy, pero valdría la pena dividirlo en módulos más chicos.
