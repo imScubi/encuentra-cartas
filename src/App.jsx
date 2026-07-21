@@ -1566,7 +1566,7 @@ function CambiarPlanAdmin({ session }) {
   );
 }
 
-function AdminPanel({ session, onVerPerfil }) {
+function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [tabAdmin, setTabAdmin] = useState("planes");
   const [tiendasSinDueno, setTiendasSinDueno] = useState([]);
@@ -1871,11 +1871,70 @@ function AdminPanel({ session, onVerPerfil }) {
     } catch (e) { setError(e.message); } finally { setBorrandoPub(null); }
   };
 
+  // ---- Sub-perfiles: cuentas que este admin administra libremente, sin correo propio ----
+  const [subperfiles, setSubperfiles] = useState([]);
+  const [loadingSubperfiles, setLoadingSubperfiles] = useState(true);
+  const [nombreSubperfil, setNombreSubperfil] = useState("");
+  const [tipoSubperfil, setTipoSubperfil] = useState("individual");
+  const [creandoSubperfil, setCreandoSubperfil] = useState(false);
+  const [errorSubperfil, setErrorSubperfil] = useState(null);
+  const [cambiandoPlanSub, setCambiandoPlanSub] = useState(null);
+  const [entrandoSub, setEntrandoSub] = useState(null);
+
+  const cargarSubperfiles = () => {
+    setLoadingSubperfiles(true);
+    sb(`perfiles?select=id,nombre,tipo,plan,plan_vence&gestionado_por=eq.${session.user.id}&order=nombre.asc`, session)
+      .then(setSubperfiles)
+      .catch((e) => setErrorSubperfil(e.message))
+      .finally(() => setLoadingSubperfiles(false));
+  };
+
+  useEffect(() => { cargarSubperfiles(); }, []);
+
+  const crearSubperfil = async () => {
+    if (!nombreSubperfil.trim()) return;
+    setCreandoSubperfil(true); setErrorSubperfil(null);
+    try {
+      const res = await fetch("/api/admin/crear-subperfil", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ nombre: nombreSubperfil.trim(), tipo: tipoSubperfil }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo crear el sub-perfil");
+      setNombreSubperfil("");
+      cargarSubperfiles();
+    } catch (e) { setErrorSubperfil(e.message); } finally { setCreandoSubperfil(false); }
+  };
+
+  const cambiarPlanSub = async (subperfilId, nuevoPlan) => {
+    setCambiandoPlanSub(subperfilId);
+    try {
+      await sbWrite("PATCH", `perfiles?id=eq.${subperfilId}`, { plan: nuevoPlan, plan_vence: null }, session);
+      setSubperfiles((prev) => prev.map((p) => (p.id === subperfilId ? { ...p, plan: nuevoPlan } : p)));
+    } catch (e) { setErrorSubperfil(e.message); } finally { setCambiandoPlanSub(null); }
+  };
+
+  const entrarComoSub = async (subperfilId) => {
+    setEntrandoSub(subperfilId); setErrorSubperfil(null);
+    try {
+      const res = await fetch("/api/admin/entrar-subperfil", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ subperfilId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo entrar al sub-perfil");
+      onEntrarComoSubperfil(data.session);
+    } catch (e) { setErrorSubperfil(e.message); } finally { setEntrandoSub(null); }
+  };
+
   if (loading) return <Loading label="Cargando panel de administración..." />;
 
   const tabs = [
     { id: "planes", label: "Planes" },
     { id: "tiendas", label: "Tiendas" },
+    { id: "subperfiles", label: "Sub-perfiles" },
     { id: "anuncios", label: "Anuncios" },
     { id: "publicaciones", label: "Publicaciones" },
     { id: "reportes", label: `Reportes${reportes.length ? ` (${reportes.length})` : ""}` },
@@ -1999,6 +2058,54 @@ function AdminPanel({ session, onVerPerfil }) {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tabAdmin === "subperfiles" && (
+        <div>
+          <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Sub-perfiles</h2>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-6">
+            Cuentas de verdad que tú administras, sin necesitar un correo propio para cada una. Sirven, por ejemplo, para poblar el Mercado con publicaciones orgánicas. Puedes cambiarles el plan y "entrar" a usarlas como si fueras esa cuenta.
+          </p>
+          {errorSubperfil && <div className="mb-4"><ErrorBox message={errorSubperfil} /></div>}
+
+          <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-8 grid gap-2 sm:grid-cols-[1fr_auto_auto] items-start">
+            <input placeholder="Nombre del sub-perfil" value={nombreSubperfil} onChange={(e) => setNombreSubperfil(e.target.value)}
+              style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+            <select value={tipoSubperfil} onChange={(e) => setTipoSubperfil(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+              <option value="individual">Individual</option>
+              <option value="tienda">Tienda</option>
+            </select>
+            <button onClick={crearSubperfil} disabled={creandoSubperfil || !nombreSubperfil.trim()}
+              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+              {creandoSubperfil ? "Creando..." : "Crear sub-perfil"}
+            </button>
+          </div>
+
+          {loadingSubperfiles ? <Loading label="Cargando sub-perfiles..." /> : subperfiles.length === 0 ? (
+            <p style={{ color: COLORS.muted }} className="text-sm">Todavía no has creado ningún sub-perfil.</p>
+          ) : (
+            <div className="grid gap-2">
+              {subperfiles.map((s) => (
+                <div key={s.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="font-medium text-sm">{s.nombre}</p>
+                    <p style={{ color: COLORS.muted }} className="text-xs capitalize">{s.tipo}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select value={s.plan} onChange={(e) => cambiarPlanSub(s.id, e.target.value)} disabled={cambiandoPlanSub === s.id}
+                      style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs">
+                      {PLAN_ORDER.map((p) => <option key={p} value={p}>{PLAN_INFO[p].nombre}</option>)}
+                    </select>
+                    <button onClick={() => entrarComoSub(s.id)} disabled={entrandoSub === s.id}
+                      style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                      {entrandoSub === s.id ? "Entrando..." : "Entrar como"}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -5389,6 +5496,10 @@ export default function EncuentraCartas() {
   const [showDrawer, setShowDrawer] = useState(false);
   const [, setTemaVersion] = useState(0);
   const [chatContext, setChatContext] = useState(null);
+  const [adminStash, setAdminStash] = useState(() => {
+    const s = localStorage.getItem("ec_session_admin_stash");
+    return s ? JSON.parse(s) : null;
+  });
 
   // Cuando sb()/sbWrite() renuevan la sesión sola (el token expiró), nos enteramos aquí.
   useEffect(() => {
@@ -5459,8 +5570,31 @@ export default function EncuentraCartas() {
 
   const handleLogout = () => {
     localStorage.removeItem("ec_session");
+    localStorage.removeItem("ec_session_admin_stash");
+    setAdminStash(null);
     setSession(null);
     setPerfil(null);
+  };
+
+  // Un admin puede "entrar" a un sub-perfil que administra (ver AdminPanel > Sub-perfiles):
+  // guardamos su propia sesión aparte para poder regresar a ella después.
+  const entrarComoSubperfil = (subSession) => {
+    localStorage.setItem("ec_session_admin_stash", JSON.stringify(session));
+    localStorage.setItem("ec_session", JSON.stringify(subSession));
+    setAdminStash(session);
+    setSession(subSession);
+    cargarOCrearPerfil(subSession);
+    setView("myMarket");
+  };
+
+  const volverAMiCuentaAdmin = () => {
+    if (!adminStash) return;
+    localStorage.setItem("ec_session", JSON.stringify(adminStash));
+    localStorage.removeItem("ec_session_admin_stash");
+    setSession(adminStash);
+    cargarOCrearPerfil(adminStash);
+    setAdminStash(null);
+    setView("admin");
   };
 
   const [tiendas, setTiendas] = useState([]);
@@ -5692,6 +5826,14 @@ export default function EncuentraCartas() {
           </nav>
         </div>
       </header>
+
+      {adminStash && (
+        <div style={{ position: "relative", zIndex: 10, background: COLORS.gold, color: COLORS.bg }}
+          className="px-4 py-2 text-sm font-semibold flex items-center justify-center gap-3 flex-wrap text-center">
+          <span>🔀 Estás usando el sub-perfil "{perfil?.nombre}"</span>
+          <button onClick={volverAMiCuentaAdmin} className="underline whitespace-nowrap">Volver a mi cuenta admin</button>
+        </div>
+      )}
 
       {showDrawer && (
         <Drawer
@@ -6142,7 +6284,7 @@ export default function EncuentraCartas() {
         {view === "misPagos" && session && <MisPagosPanel session={session} />}
 
         {/* ADMIN */}
-        {view === "admin" && session && perfil?.es_admin && <AdminPanel session={session} onVerPerfil={verPerfil} />}
+        {view === "admin" && session && perfil?.es_admin && <AdminPanel session={session} onVerPerfil={verPerfil} onEntrarComoSubperfil={entrarComoSubperfil} />}
 
         {/* MI MERCADO */}
         {view === "myMarket" && session && <MyMarketPanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />}
