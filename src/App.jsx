@@ -1602,6 +1602,31 @@ function AdminPanel({ session, onVerPerfil }) {
     } catch (e) { setError(e.message); } finally { setVinculando(null); }
   };
 
+  // ---- Crear tienda ----
+  const tiendaVacia = { nombre: "", direccion: "", zona: "", telefono: "", vincularCon: "" };
+  const [nuevaTienda, setNuevaTienda] = useState(tiendaVacia);
+  const [creandoTienda, setCreandoTienda] = useState(false);
+  const [errorCrear, setErrorCrear] = useState(null);
+  const [okCrear, setOkCrear] = useState(null);
+
+  const crearTienda = async () => {
+    if (!nuevaTienda.nombre.trim() || !nuevaTienda.direccion.trim()) return;
+    setCreandoTienda(true); setErrorCrear(null); setOkCrear(null);
+    try {
+      await sbWrite("POST", "tiendas", {
+        nombre: nuevaTienda.nombre.trim(),
+        direccion: nuevaTienda.direccion.trim(),
+        zona: nuevaTienda.zona.trim() || null,
+        telefono: nuevaTienda.telefono.trim() || null,
+        perfil_id: nuevaTienda.vincularCon || null,
+      }, session);
+      setOkCrear(`Tienda "${nuevaTienda.nombre.trim()}" creada.`);
+      setNuevaTienda(tiendaVacia);
+      cargar();
+      cargarTodasTiendas();
+    } catch (e) { setErrorCrear(e.message); } finally { setCreandoTienda(false); }
+  };
+
   // ---- Anuncios ----
   const inputStyleAnuncio = inputStyle;
   const [tituloAnuncio, setTituloAnuncio] = useState("");
@@ -1772,10 +1797,11 @@ function AdminPanel({ session, onVerPerfil }) {
   const [todasTiendas, setTodasTiendas] = useState([]);
   const [loadingTodasTiendas, setLoadingTodasTiendas] = useState(true);
   const [borrandoTienda, setBorrandoTienda] = useState(null);
+  const [cambiandoAmatista, setCambiandoAmatista] = useState(null);
 
   const cargarTodasTiendas = () => {
     setLoadingTodasTiendas(true);
-    sb(`tiendas?select=*&order=nombre.asc`, session)
+    sb(`tiendas?select=*,perfiles(plan)&order=nombre.asc`, session)
       .then(setTodasTiendas)
       .catch((e) => setError(e.message))
       .finally(() => setLoadingTodasTiendas(false));
@@ -1788,6 +1814,19 @@ function AdminPanel({ session, onVerPerfil }) {
     const k = (t.nombre || "").trim().toLowerCase();
     conteoNombresTienda[k] = (conteoNombresTienda[k] || 0) + 1;
   });
+
+  const toggleAmatista = async (t) => {
+    if (!t.perfil_id) return;
+    const tieneAmatista = t.perfiles?.plan === "ultraball";
+    setCambiandoAmatista(t.id);
+    try {
+      await sbWrite("PATCH", `perfiles?id=eq.${t.perfil_id}`, {
+        plan: tieneAmatista ? "pokeball" : "ultraball",
+        plan_vence: null,
+      }, session);
+      setTodasTiendas((prev) => prev.map((x) => (x.id === t.id ? { ...x, perfiles: { ...x.perfiles, plan: tieneAmatista ? "pokeball" : "ultraball" } } : x)));
+    } catch (e) { setError(e.message); } finally { setCambiandoAmatista(null); }
+  };
 
   const borrarTienda = async (t) => {
     if (!window.confirm(`¿Borrar la tienda "${t.nombre}"? Esto no se puede deshacer. Si tiene cartas o producto sellado, primero bórralos desde "Publicaciones".`)) return;
@@ -1865,6 +1904,38 @@ function AdminPanel({ session, onVerPerfil }) {
 
       {tabAdmin === "tiendas" && (
         <div>
+          <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Crear tienda</h2>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+            Da de alta una tienda nueva en el directorio con su nombre y dirección (la dirección se muestra sola en el mapa del perfil de la tienda, no requiere nada más). Opcionalmente puedes vincularla de una vez con una cuenta de tipo tienda.
+          </p>
+          {errorCrear && <div className="mb-4"><ErrorBox message={errorCrear} /></div>}
+          {okCrear && <p style={{ color: COLORS.azulPalido }} className="text-xs mb-3">{okCrear}</p>}
+          <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-8 grid gap-2">
+            <input placeholder="Nombre de la tienda" value={nuevaTienda.nombre}
+              onChange={(e) => setNuevaTienda({ ...nuevaTienda, nombre: e.target.value })}
+              style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+            <input placeholder="Dirección completa (calle, número, colonia, ciudad)" value={nuevaTienda.direccion}
+              onChange={(e) => setNuevaTienda({ ...nuevaTienda, direccion: e.target.value })}
+              style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+            <div className="grid sm:grid-cols-2 gap-2">
+              <input placeholder="Zona (ej. Centro, San Pedro)" value={nuevaTienda.zona}
+                onChange={(e) => setNuevaTienda({ ...nuevaTienda, zona: e.target.value })}
+                style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+              <input placeholder="Teléfono (opcional)" value={nuevaTienda.telefono}
+                onChange={(e) => setNuevaTienda({ ...nuevaTienda, telefono: e.target.value })}
+                style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            </div>
+            <select value={nuevaTienda.vincularCon} onChange={(e) => setNuevaTienda({ ...nuevaTienda, vincularCon: e.target.value })}
+              style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+              <option value="">Vincular con una cuenta ahora (opcional, puedes hacerlo después)</option>
+              {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+            <button onClick={crearTienda} disabled={creandoTienda || !nuevaTienda.nombre.trim() || !nuevaTienda.direccion.trim()}
+              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+              {creandoTienda ? "Creando..." : "Crear tienda"}
+            </button>
+          </div>
+
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Vincular tiendas</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-6">Vincula cuentas de tienda registradas con su tienda real en el directorio.</p>
 
@@ -1911,10 +1982,18 @@ function AdminPanel({ session, onVerPerfil }) {
                       <p className="font-medium text-sm">{t.nombre} {esDuplicada && <span style={{ color: "#C24444" }} className="text-xs font-semibold">· posible duplicado</span>}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs">{t.direccion}{t.zona ? ` · ${t.zona}` : ""}{t.perfil_id ? "" : " · sin cuenta vinculada"}</p>
                     </div>
-                    <button onClick={() => borrarTienda(t)} disabled={borrandoTienda === t.id}
-                      style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
-                      {borrandoTienda === t.id ? "Borrando..." : "Borrar tienda"}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {t.perfil_id && (
+                        <button onClick={() => toggleAmatista(t)} disabled={cambiandoAmatista === t.id}
+                          style={{ color: COLORS.violeta, border: `1px solid ${COLORS.violeta}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                          {cambiandoAmatista === t.id ? "..." : t.perfiles?.plan === "ultraball" ? "🟣 Quitar Amatista" : "🟣 Dar Amatista"}
+                        </button>
+                      )}
+                      <button onClick={() => borrarTienda(t)} disabled={borrandoTienda === t.id}
+                        style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                        {borrandoTienda === t.id ? "Borrando..." : "Borrar tienda"}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
