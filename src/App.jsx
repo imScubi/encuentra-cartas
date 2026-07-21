@@ -499,6 +499,44 @@ const conBoostPrimero = (lista) => {
   return [...destacados, ...resto];
 };
 
+// ---- Insignias por actividad (calculadas al vuelo, sin tabla nueva) ----
+function calcularInsignias({ perfil, wishlist = [], carpetas = [] }) {
+  const insignias = [];
+  if (carpetas.length >= 1) {
+    insignias.push({ emoji: "🗂️", label: "Organizado", color: COLORS.azulClaro });
+  }
+  if (wishlist.length >= 5) {
+    insignias.push({ emoji: "📋", label: "Coleccionista", color: COLORS.violeta });
+  }
+  if (perfil?.created_at) {
+    const dias = (Date.now() - new Date(perfil.created_at).getTime()) / (1000 * 60 * 60 * 24);
+    if (dias >= 180) insignias.push({ emoji: "🕰️", label: "Veterano", color: COLORS.gold });
+  }
+  return insignias;
+}
+
+function InsigniasActividad({ perfil, wishlist, carpetas }) {
+  const insignias = calcularInsignias({ perfil, wishlist, carpetas });
+  if (!insignias.length) return null;
+  return (
+    <div className="flex gap-2 flex-wrap">
+      {insignias.map((i) => (
+        <span key={i.label} title={i.label}
+          style={{ border: `1px solid ${i.color}`, color: i.color, boxShadow: `0 0 8px ${i.color}66` }}
+          className="inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap px-2 py-0.5 text-xs">
+          {i.emoji} {i.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function MiembroDesde({ perfil }) {
+  if (!perfil?.created_at) return null;
+  const fecha = new Date(perfil.created_at).toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+  return <p style={{ color: COLORS.muted }} className="text-xs">Miembro desde {fecha}</p>;
+}
+
 function BoostBadge({ item }) {
   if (!estaDestacado(item)) return null;
   return (
@@ -646,6 +684,88 @@ function DiamanteEmblema({ perfil }) {
     >
       💎 Diamante desde {fecha}
     </div>
+  );
+}
+
+// ---- Reportar publicaciones o perfiles sospechosos ----
+const MOTIVOS_REPORTE = [
+  "Precio o publicación sospechosa",
+  "Posible estafa",
+  "Contenido inapropiado",
+  "Cuenta falsa o suplantación",
+  "Otro",
+];
+
+function ReportarModal({ session, tipo, tablaObjetivo, objetivoId, objetivoPerfilId, objetivoNombre, onClose }) {
+  const [motivo, setMotivo] = useState(MOTIVOS_REPORTE[0]);
+  const [detalle, setDetalle] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState(null);
+  const [enviado, setEnviado] = useState(false);
+
+  const enviar = async () => {
+    setEnviando(true); setError(null);
+    try {
+      await sbWrite("POST", "reportes", {
+        reportante_perfil_id: session.user.id,
+        tipo,
+        tabla_objetivo: tablaObjetivo,
+        objetivo_id: objetivoId,
+        objetivo_perfil_id: objetivoPerfilId || null,
+        objetivo_nombre: objetivoNombre || null,
+        motivo,
+        detalle: detalle.trim() || null,
+      }, session);
+      setEnviado(true);
+    } catch (e) { setError(e.message); } finally { setEnviando(false); }
+  };
+
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66` }} className="w-full max-w-sm rounded-2xl p-6 relative">
+        <button onClick={onClose} style={{ color: COLORS.muted }} className="absolute top-4 right-4"><X size={18} /></button>
+        {enviado ? (
+          <>
+            <p className="font-semibold mb-2">🚩 Reporte enviado</p>
+            <p style={{ color: COLORS.muted }} className="text-sm">Gracias, el equipo lo va a revisar.</p>
+          </>
+        ) : (
+          <>
+            <p className="font-semibold mb-3">Reportar {objetivoNombre ? `"${objetivoNombre}"` : ""}</p>
+            {error && <div className="mb-3"><ErrorBox message={error} /></div>}
+            <div className="grid gap-2 mb-3">
+              {MOTIVOS_REPORTE.map((m) => (
+                <label key={m} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="radio" name="motivo-reporte" checked={motivo === m} onChange={() => setMotivo(m)} />
+                  {m}
+                </label>
+              ))}
+            </div>
+            <textarea value={detalle} onChange={(e) => setDetalle(e.target.value)} placeholder="Detalle (opcional)"
+              style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-3" rows={3} />
+            <button onClick={enviar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="w-full rounded-lg py-2 text-sm font-semibold">
+              {enviando ? "Enviando..." : "Enviar reporte"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReportarBoton({ session, tipo, tablaObjetivo, objetivoId, objetivoPerfilId, objetivoNombre }) {
+  const [abierto, setAbierto] = useState(false);
+  if (!session) return null;
+  return (
+    <>
+      <button onClick={() => setAbierto(true)} title="Reportar" style={{ color: COLORS.muted }} className="text-xs px-2 py-1 rounded-lg flex items-center gap-1 hover:brightness-125 whitespace-nowrap">
+        🚩 Reportar
+      </button>
+      {abierto && (
+        <ReportarModal session={session} tipo={tipo} tablaObjetivo={tablaObjetivo} objetivoId={objetivoId} objetivoPerfilId={objetivoPerfilId} objetivoNombre={objetivoNombre} onClose={() => setAbierto(false)} />
+      )}
+    </>
   );
 }
 
@@ -1756,6 +1876,29 @@ function AdminPanel({ session }) {
     } catch {} finally { setMarcandoError(null); }
   };
 
+  // ---- Reportes de publicaciones/perfiles ----
+  const [reportes, setReportes] = useState([]);
+  const [loadingReportes, setLoadingReportes] = useState(true);
+  const [resolviendoReporte, setResolviendoReporte] = useState(null);
+
+  const cargarReportes = () => {
+    setLoadingReportes(true);
+    sb(`reportes?select=*,reportante:reportante_perfil_id(nombre,email),objetivo_perfil:objetivo_perfil_id(nombre,email)&estado=eq.pendiente&order=created_at.desc&limit=50`, session)
+      .then(setReportes)
+      .catch(() => {})
+      .finally(() => setLoadingReportes(false));
+  };
+
+  useEffect(() => { cargarReportes(); }, []);
+
+  const resolverReporte = async (id, estado) => {
+    setResolviendoReporte(id);
+    try {
+      await sbWrite("PATCH", `reportes?id=eq.${id}`, { estado }, session);
+      setReportes((prev) => prev.filter((r) => r.id !== id));
+    } catch {} finally { setResolviendoReporte(null); }
+  };
+
   // ---- Todas las tiendas (para detectar duplicadas y borrar) ----
   const [todasTiendas, setTodasTiendas] = useState([]);
   const [loadingTodasTiendas, setLoadingTodasTiendas] = useState(true);
@@ -1825,6 +1968,7 @@ function AdminPanel({ session }) {
     { id: "tiendas", label: "Tiendas" },
     { id: "anuncios", label: "Anuncios" },
     { id: "publicaciones", label: "Publicaciones" },
+    { id: "reportes", label: `Reportes${reportes.length ? ` (${reportes.length})` : ""}` },
     { id: "errores", label: "Errores" },
   ];
 
@@ -2051,6 +2195,47 @@ function AdminPanel({ session }) {
                       ))}
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tabAdmin === "reportes" && (
+        <div>
+          <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🚩 Reportes</h2>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-4">Publicaciones o perfiles reportados por usuarios. Revisa y márcalos como resueltos o descartados.</p>
+          {loadingReportes ? <Loading label="Cargando reportes..." /> : reportes.length === 0 ? (
+            <p style={{ color: COLORS.muted }} className="text-sm">Sin reportes pendientes. 🎉</p>
+          ) : (
+            <div className="grid gap-3">
+              {reportes.map((r) => (
+                <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">
+                        {r.tipo === "perfil" ? "Perfil/tienda reportado: " : "Publicación reportada: "}
+                        {r.objetivo_nombre || r.objetivo_perfil?.nombre || r.objetivo_id}
+                      </p>
+                      <p style={{ color: COLORS.muted }} className="text-xs mt-1">Motivo: {r.motivo}</p>
+                      {r.detalle && <p style={{ color: COLORS.muted }} className="text-xs mt-1">Detalle: {r.detalle}</p>}
+                      <p style={{ color: COLORS.muted }} className="text-xs mt-1">
+                        Reportado por {r.reportante?.nombre || "alguien"} ({r.reportante?.email || "sin correo"}) · {new Date(r.created_at).toLocaleString("es-MX")}
+                      </p>
+                      <p style={{ color: COLORS.muted }} className="text-xs mt-1 break-all">Tabla: {r.tabla_objetivo} · ID: {r.objetivo_id}</p>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <button onClick={() => resolverReporte(r.id, "revisado")} disabled={resolviendoReporte === r.id}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                        {resolviendoReporte === r.id ? "..." : "Marcar revisado"}
+                      </button>
+                      <button onClick={() => resolverReporte(r.id, "descartado")} disabled={resolviendoReporte === r.id}
+                        style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                        Descartar
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -2988,18 +3173,25 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
               <VerificadoBadge perfil={perfil} />
             </div>
             {tienda?.zona && <p style={{ color: COLORS.muted }} className="text-sm">{tienda.zona}</p>}
+            <MiembroDesde perfil={perfil} />
           </div>
           {session && session.user.id !== perfilId && (
-            <button
-              onClick={() => onAbrirChat(perfilId, perfil.nombre, "Perfil", perfil.whatsapp, perfil.facebook, perfil.avatar_url)}
-              style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
-              className="ml-auto text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 whitespace-nowrap">
-              <MessageCircle size={12} /> Contactar
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={() => onAbrirChat(perfilId, perfil.nombre, "Perfil", perfil.whatsapp, perfil.facebook, perfil.avatar_url)}
+                style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 whitespace-nowrap">
+                <MessageCircle size={12} /> Contactar
+              </button>
+              <ReportarBoton session={session} tipo="perfil" tablaObjetivo="perfiles" objetivoId={perfilId} objetivoPerfilId={perfilId} objetivoNombre={perfil.nombre} />
+            </div>
           )}
         </div>
 
-        <div className="mt-3"><DiamanteEmblema perfil={perfil} /></div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <DiamanteEmblema perfil={perfil} />
+          <InsigniasActividad perfil={perfil} wishlist={wishlist} carpetas={carpetas} />
+        </div>
 
         {vis.favoritos !== false && favoritos.length > 0 && (
           <div className="mt-4">
@@ -3875,6 +4067,81 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
   );
 }
 
+// ---- Aviso de privacidad / Términos de uso ----
+// Contenido genérico de referencia, no es asesoría legal — antes de
+// publicar de verdad, vale la pena que un abogado lo revise y lo adapte
+// a tu caso (razón social, domicilio fiscal, etc.).
+function LegalView({ tipo, onVolver }) {
+  const hoy = new Date().toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" });
+  return (
+    <div>
+      <button onClick={onVolver} style={{ color: COLORS.muted }} className="flex items-center gap-1 text-sm mb-6"><ChevronLeft size={16} /> Volver</button>
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-6 grid gap-4 text-sm">
+        {tipo === "privacidad" ? (
+          <>
+            <h1 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">Aviso de Privacidad</h1>
+            <p style={{ color: COLORS.muted }}>Última actualización: {hoy}</p>
+            <p>Encuentra Cartas ("la plataforma") es responsable del tratamiento de tus datos personales conforme a este aviso.</p>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">¿Qué datos recabamos?</p>
+              <p>Nombre, correo electrónico, contraseña (cifrada), y de forma opcional: WhatsApp, enlaces a Instagram/Facebook, foto de perfil, ubicación de tu tienda (si tienes una) y tus Pokémon favoritos.</p>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">¿Para qué los usamos?</p>
+              <p>Para crear y mostrar tu perfil público, permitir que otros usuarios te contacten, procesar pagos de planes y Boost, enviarte notificaciones (correo y push) sobre tu Wishlist, tus pagos y anuncios de la plataforma, y para moderar contenido reportado.</p>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">¿Con quién los compartimos?</p>
+              <p>No vendemos tus datos. Usamos proveedores que procesan datos en nuestro nombre: Supabase (base de datos y autenticación), Mercado Pago (pagos), un proveedor de correo (avisos por email) y Google (notificaciones push y sprites de Pokémon). Tu nombre, foto, plan y lo que publiques son visibles públicamente para otros usuarios, según lo que elijas mostrar en "Editar perfil".</p>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">Cookies y almacenamiento local</p>
+              <p>Usamos el almacenamiento local de tu navegador para mantener tu sesión iniciada y recordar qué notificaciones ya viste. No usamos cookies de publicidad ni de rastreo de terceros.</p>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">Tus derechos (ARCO)</p>
+              <p>Puedes acceder, rectificar, cancelar u oponerte al uso de tus datos personales, o pedir que se elimine tu cuenta, escribiéndonos desde el chat de la app o al correo de contacto de la plataforma.</p>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">Cambios a este aviso</p>
+              <p>Podemos actualizar este aviso; si hay cambios importantes, lo anunciaremos dentro de la app.</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <h1 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">Términos de Uso</h1>
+            <p style={{ color: COLORS.muted }}>Última actualización: {hoy}</p>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">Qué es Encuentra Cartas</p>
+              <p>Es una plataforma que conecta a compradores y vendedores de cartas coleccionables y producto sellado. No somos dueños del inventario publicado ni parte de ninguna compraventa entre usuarios.</p>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">Responsabilidad sobre las transacciones</p>
+              <p>Las compras, ventas e intercambios ocurren directamente entre usuarios. Encuentra Cartas no garantiza la autenticidad, condición, precio ni la entrega de ninguna carta o producto, y no es responsable de disputas entre comprador y vendedor. Recomendamos verificar la reputación del vendedor y acordar los detalles antes de pagar.</p>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">Tu cuenta</p>
+              <p>Eres responsable de que la información de tu cuenta sea verdadera y de mantener segura tu contraseña. Debes ser mayor de edad, o usar la plataforma bajo supervisión de un adulto responsable.</p>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">Contenido prohibido</p>
+              <p>No se permite publicar productos falsificados, contenido ilegal, spam, ni suplantar la identidad de otra persona o tienda. Las publicaciones o cuentas reportadas se revisan y pueden ser eliminadas o suspendidas si incumplen estos términos.</p>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">Planes de pago</p>
+              <p>Los planes pagados se cobran de forma recurrente mensual a través de Mercado Pago. Puedes cancelar la renovación automática cuando quieras desde "Planes"; cancelar detiene el próximo cobro, no reembolsa el periodo ya pagado.</p>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">Sin garantías</p>
+              <p>La plataforma se ofrece "tal cual", sin garantías de disponibilidad continua o de que esté libre de errores.</p>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Calendar, plan: Shield, boost: Sparkles, error: AlertCircle };
 
 // Las notificaciones "globales" (perfil_id null, ej. Anuncios) no tienen
@@ -4276,6 +4543,8 @@ export default function EncuentraCartas() {
   const [selectedStore, setSelectedStore] = useState(null);
   const [selectedPerfilId, setSelectedPerfilId] = useState(null);
   const [vistaAntesDePerfil, setVistaAntesDePerfil] = useState("search");
+  const [vistaAntesLegal, setVistaAntesLegal] = useState("search");
+  const irALegal = (id) => { setVistaAntesLegal(view); setView(id); };
   const [storeInventory, setStoreInventory] = useState([]);
   const [storeSellado, setStoreSellado] = useState([]);
   const [loadingStoreDetail, setLoadingStoreDetail] = useState(false);
@@ -4290,7 +4559,7 @@ export default function EncuentraCartas() {
   // Carga inicial: lista de tiendas reales
   useEffect(() => {
     setLoadingTiendas(true);
-    sb("tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde)&order=nombre.asc")
+    sb("tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&order=nombre.asc")
       .then(setTiendas)
       .catch((e) => setErrorTiendas(e.message))
       .finally(() => setLoadingTiendas(false));
@@ -4396,7 +4665,7 @@ export default function EncuentraCartas() {
   };
 
   const verTiendaDesdePerfil = (tiendaId) => {
-    sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde)&id=eq.${tiendaId}`)
+    sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&id=eq.${tiendaId}`)
       .then((rows) => { if (rows[0]) openStore(rows[0]); });
   };
 
@@ -4956,8 +5225,14 @@ export default function EncuentraCartas() {
                     <PlanBadge perfil={selectedStore.perfiles} size="lg" />
                     <VerificadoBadge perfil={selectedStore.perfiles} />
                   </div>
+                  {session && session.user.id !== selectedStore.perfil_id && (
+                    <div className="ml-auto pb-1.5">
+                      <ReportarBoton session={session} tipo="perfil" tablaObjetivo="tiendas" objetivoId={selectedStore.id} objetivoPerfilId={selectedStore.perfil_id} objetivoNombre={selectedStore.nombre} />
+                    </div>
+                  )}
                 </div>
               <div className="mt-3"><DiamanteEmblema perfil={selectedStore.perfiles} /></div>
+              <MiembroDesde perfil={selectedStore.perfiles} />
               <p style={{ color: COLORS.muted }} className="mt-2 flex items-center gap-1 text-sm"><MapPin size={14} /> {selectedStore.direccion}</p>
               {selectedStore.telefono && <p style={{ color: COLORS.muted }} className="mt-1 flex items-center gap-1 text-sm"><Phone size={14} /> {selectedStore.telefono}</p>}
               {(selectedStore.perfiles?.instagram || selectedStore.perfiles?.google_maps_url) && (
@@ -5067,7 +5342,21 @@ export default function EncuentraCartas() {
             onVerTienda={verTiendaDesdePerfil}
           />
         )}
+
+        {(view === "privacidad" || view === "terminos") && (
+          <LegalView tipo={view === "privacidad" ? "privacidad" : "terminos"} onVolver={() => setView(vistaAntesLegal)} />
+        )}
       </main>
+
+      <footer style={{ position: "relative", zIndex: 1, borderTop: `1px solid ${COLORS.surface2}` }} className="px-4 sm:px-8 py-6 mt-10">
+        <div className="max-w-5xl mx-auto flex items-center justify-center gap-4 flex-wrap text-xs" style={{ color: COLORS.muted }}>
+          <button onClick={() => irALegal("privacidad")} className="hover:underline">Aviso de Privacidad</button>
+          <span>·</span>
+          <button onClick={() => irALegal("terminos")} className="hover:underline">Términos de Uso</button>
+          <span>·</span>
+          <span>© {new Date().getFullYear()} Encuentra Cartas</span>
+        </div>
+      </footer>
     </div>
   );
 }
