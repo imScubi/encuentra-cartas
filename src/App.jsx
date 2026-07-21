@@ -419,6 +419,7 @@ const FONTS = `
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulseGlow { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 `;
 
 // Tipos de cambio aproximados, solo para calcular un precio de referencia (no es una tasa en tiempo real)
@@ -453,20 +454,20 @@ const PLAN_INFO = {
   superball: {
     nombre: "Zafiro", emoji: "🔵", precio: 49, color: COLORS.azulClaro,
     resumen: "Insignia verificado + redes directas",
-    beneficios: ["Todo lo de Cuarzo", "Insignia de perfil verificado", "Enlace directo a Instagram y Google Maps", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente"],
-    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: true,
+    beneficios: ["Todo lo de Cuarzo", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)"],
+    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false,
   },
   ultraball: {
     nombre: "Amatista", emoji: "🟣", precio: 89, color: COLORS.violeta,
     resumen: "Todo Zafiro + Wishlist Premium",
-    beneficios: ["Todo lo de Zafiro", "Alertas de precio con notificación push"],
+    beneficios: ["Todo lo de Zafiro", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente"],
     limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true,
   },
   masterball: {
     nombre: "Diamante", emoji: "🟡", precio: 149, color: COLORS.azulPalido,
     resumen: "Todos los beneficios, inventario ilimitado",
-    beneficios: ["Todo lo de Amatista", "Publicaciones ilimitadas (una por una)"],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true,
+    beneficios: ["Todo lo de Amatista", "Publicaciones ilimitadas (una por una)", "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante"],
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true,
   },
   enteball: {
     nombre: "Aurora", emoji: "🔴", precio: 349, color: COLORS.gold,
@@ -611,6 +612,40 @@ function VerificadoBadge({ perfil }) {
     >
       ✓ Verificado
     </span>
+  );
+}
+
+// ---- Decoración exclusiva de Diamante: anillo holográfico giratorio detrás del avatar ----
+function HoloAvatar({ perfil, children, ringSize }) {
+  const esDiamante = planDe(perfil) === PLAN_INFO.masterball;
+  if (!esDiamante) return children;
+  return (
+    <div
+      style={{
+        padding: 3, borderRadius: "9999px", flexShrink: 0,
+        background: `conic-gradient(from 0deg, ${COLORS.azulPalido}, ${COLORS.violeta}, ${COLORS.azulClaro}, ${COLORS.gold}, ${COLORS.azulPalido})`,
+        animation: "spin 5s linear infinite",
+        width: ringSize, height: ringSize,
+      }}
+    >
+      <div style={{ background: COLORS.surface, borderRadius: "9999px", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ---- Emblema "Diamante desde <fecha>" ----
+function DiamanteEmblema({ perfil }) {
+  if (planDe(perfil) !== PLAN_INFO.masterball || !perfil?.diamante_desde) return null;
+  const fecha = new Date(perfil.diamante_desde).toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+  return (
+    <div
+      style={{ background: `${COLORS.azulPalido}14`, border: `1px solid ${COLORS.azulPalido}55`, color: COLORS.azulPalido }}
+      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap"
+    >
+      💎 Diamante desde {fecha}
+    </div>
   );
 }
 
@@ -1215,11 +1250,13 @@ function SealedPicker({ onSelect }) {
   );
 }
 
-function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated }) {
+function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda = false }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const info = planDe(perfil);
   const [instagram, setInstagram] = useState(perfil?.instagram || "");
   const [maps, setMaps] = useState(perfil?.google_maps_url || "");
+  const [whatsapp, setWhatsapp] = useState(perfil?.whatsapp || "");
+  const [facebook, setFacebook] = useState(perfil?.facebook || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [ok, setOk] = useState(false);
@@ -1227,7 +1264,9 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated }) {
   if (!info.redesExtra) {
     return (
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
-        <p style={{ color: COLORS.muted }} className="text-sm">🔒 Enlaces directos a Instagram y Google Maps disponibles desde Zafiro.</p>
+        <p style={{ color: COLORS.muted }} className="text-sm">
+          🔒 Enlaces directos a Instagram{esTienda ? " y Google Maps" : ", WhatsApp y Facebook"} disponibles desde Zafiro.
+        </p>
         <button onClick={onIrAPlanes} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">Ver planes</button>
       </div>
     );
@@ -1236,7 +1275,10 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated }) {
   const guardar = async () => {
     setSaving(true); setError(null); setOk(false);
     try {
-      await sbWrite("PATCH", `perfiles?id=eq.${session.user.id}`, { instagram: instagram || null, google_maps_url: maps || null }, session);
+      const cambios = esTienda
+        ? { instagram: instagram || null, google_maps_url: maps || null }
+        : { instagram: instagram || null, whatsapp: whatsapp || null, facebook: facebook || null };
+      await sbWrite("PATCH", `perfiles?id=eq.${session.user.id}`, cambios, session);
       setOk(true);
       onUpdated?.();
     } catch (e) { setError(e.message); } finally { setSaving(false); }
@@ -1248,7 +1290,14 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated }) {
       {error && <ErrorBox message={error} />}
       <div className="grid sm:grid-cols-2 gap-2">
         <input placeholder="Enlace de Instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-        <input placeholder="Enlace de Google Maps" value={maps} onChange={(e) => setMaps(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        {esTienda ? (
+          <input placeholder="Enlace de Google Maps" value={maps} onChange={(e) => setMaps(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        ) : (
+          <>
+            <input placeholder="WhatsApp (con código de país)" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <input placeholder="Enlace de Facebook" value={facebook} onChange={(e) => setFacebook(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          </>
+        )}
       </div>
       <button onClick={guardar} disabled={saving} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
         {saving ? "Guardando..." : "Guardar"}
@@ -1332,7 +1381,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         <CarpetasPanel session={session} perfil={perfil} contexto="mercado" onPublicado={cargar} />
       ) : (
         <div className="mb-6">
-          <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+          <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
             Sube fotos de tu álbum físico y deja que la IA identifique cada carta por ti, en vez de agregarlas una por una.
           </UpsellCard>
         </div>
@@ -1484,6 +1533,10 @@ function CambiarPlanAdmin({ session }) {
       };
       if (limpiarPreapproval) cambios.mp_preapproval_id = null;
       await sbWrite("PATCH", `perfiles?id=eq.${usuario.id}`, cambios, session);
+      if (planNuevo === "masterball") {
+        // Solo pone la fecha la primera vez que llega a Diamante (is.null evita pisarla si ya la tenía).
+        await sbWrite("PATCH", `perfiles?id=eq.${usuario.id}&diamante_desde=is.null`, { diamante_desde: new Date().toISOString() }, session);
+      }
       setUsuario({ ...usuario, ...cambios });
       setResultados(resultados.map((r) => (r.id === usuario.id ? { ...r, ...cambios } : r)));
       setOk(`Listo: el plan de ${usuario.nombre} ahora es ${PLAN_INFO[planNuevo].nombre}.`);
@@ -2136,7 +2189,7 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
 // Panel de "Carpetas": álbumes de fotos donde, al subir una foto de una
 // página, se le pide a la IA (Claude, con visión) que identifique cada
 // carta visible; el vendedor revisa lo detectado, le pone precio y
-// publica en bloque. Disponible desde Zafiro en adelante.
+// publica en bloque. Disponible desde Amatista en adelante.
 function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [carpetas, setCarpetas] = useState([]);
@@ -2490,7 +2543,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Administra tu inventario y producto sellado.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
-      <RedesSocialesEditor session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
+      <RedesSocialesEditor session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} esTienda />
 
       <p style={{ color: COLORS.muted }} className="text-xs mb-3">
         {totalActivos} / {planDe(perfil).limiteCartas === Infinity ? "∞" : planDe(perfil).limiteCartas} publicaciones usadas
@@ -2510,7 +2563,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         <CarpetasPanel session={session} perfil={perfil} contexto="tienda" tiendaId={tienda.id} onPublicado={cargar} />
       ) : (
         <div className="mb-6">
-          <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+          <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
             Sube fotos de tu álbum físico y deja que la IA identifique cada carta por ti, en vez de agregarlas una por una.
           </UpsellCard>
         </div>
@@ -2925,7 +2978,9 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
 
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-6 mb-6">
         <div className="flex items-center gap-3 flex-wrap">
-          <AvatarImg url={perfil.avatar_url} size={56} />
+          <HoloAvatar perfil={perfil} ringSize={62}>
+            <AvatarImg url={perfil.avatar_url} size={56} />
+          </HoloAvatar>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">{perfil.nombre}</h2>
@@ -2944,6 +2999,8 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
           )}
         </div>
 
+        <div className="mt-3"><DiamanteEmblema perfil={perfil} /></div>
+
         {vis.favoritos !== false && favoritos.length > 0 && (
           <div className="mt-4">
             <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-2">Pokémon favoritos</p>
@@ -2955,6 +3012,29 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {perfil.tipo === "individual" && (perfil.instagram || perfil.whatsapp || perfil.facebook) && (
+          <div className="flex gap-2 mt-4 flex-wrap">
+            {perfil.instagram && (
+              <a href={perfil.instagram} target="_blank" rel="noreferrer"
+                style={{ border: `1px solid ${COLORS.azulMedio}88`, color: COLORS.azulMedio }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                Instagram <ExternalLink size={12} />
+              </a>
+            )}
+            {perfil.whatsapp && (
+              <a href={`https://wa.me/${perfil.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
+                style={{ border: "1px solid #25D36688", color: "#25D366" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                WhatsApp <ExternalLink size={12} />
+              </a>
+            )}
+            {perfil.facebook && (
+              <a href={perfil.facebook} target="_blank" rel="noreferrer"
+                style={{ border: `1px solid ${COLORS.azulClaro}88`, color: COLORS.azulClaro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                Facebook <ExternalLink size={12} />
+              </a>
+            )}
           </div>
         )}
 
@@ -3734,10 +3814,14 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
           {info.redesExtra ? (
             <>
               <input placeholder="Enlace de Instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
-              <input placeholder="Enlace de Google Maps" value={googleMaps} onChange={(e) => setGoogleMaps(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
+              {perfil?.tipo === "tienda" && (
+                <input placeholder="Enlace de Google Maps" value={googleMaps} onChange={(e) => setGoogleMaps(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
+              )}
             </>
           ) : (
-            <p style={{ color: COLORS.muted }} className="text-xs">🔒 Enlaces de Instagram y Google Maps disponibles desde Zafiro.</p>
+            <p style={{ color: COLORS.muted }} className="text-xs">
+              🔒 Enlace de Instagram{perfil?.tipo === "tienda" ? " y Google Maps" : ""} disponible desde Zafiro.
+            </p>
           )}
 
           <div>
@@ -4162,7 +4246,7 @@ export default function EncuentraCartas() {
   // Carga inicial: lista de tiendas reales
   useEffect(() => {
     setLoadingTiendas(true);
-    sb("tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url)&order=nombre.asc")
+    sb("tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde)&order=nombre.asc")
       .then(setTiendas)
       .catch((e) => setErrorTiendas(e.message))
       .finally(() => setLoadingTiendas(false));
@@ -4268,7 +4352,7 @@ export default function EncuentraCartas() {
   };
 
   const verTiendaDesdePerfil = (tiendaId) => {
-    sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url)&id=eq.${tiendaId}`)
+    sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde)&id=eq.${tiendaId}`)
       .then((rows) => { if (rows[0]) openStore(rows[0]); });
   };
 
@@ -4816,9 +4900,11 @@ export default function EncuentraCartas() {
               </div>
               <div className="p-6 pt-0">
                 <div className="flex items-end gap-3 flex-wrap" style={{ marginTop: -34 }}>
-                  <div style={{ border: `4px solid ${COLORS.surface}`, borderRadius: "9999px", background: COLORS.surface, flexShrink: 0 }}>
-                    <AvatarImg url={selectedStore.perfiles?.avatar_url} size={72} />
-                  </div>
+                  <HoloAvatar perfil={selectedStore.perfiles} ringSize={78}>
+                    <div style={{ border: `4px solid ${COLORS.surface}`, borderRadius: "9999px", background: COLORS.surface, flexShrink: 0 }}>
+                      <AvatarImg url={selectedStore.perfiles?.avatar_url} size={72} />
+                    </div>
+                  </HoloAvatar>
                   <button onClick={() => verPerfil(selectedStore.perfil_id)} className="flex items-center gap-2 flex-wrap hover:underline pb-1" disabled={!selectedStore.perfil_id}>
                     <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold">{selectedStore.nombre}</h2>
                   </button>
@@ -4827,6 +4913,7 @@ export default function EncuentraCartas() {
                     <VerificadoBadge perfil={selectedStore.perfiles} />
                   </div>
                 </div>
+              <div className="mt-3"><DiamanteEmblema perfil={selectedStore.perfiles} /></div>
               <p style={{ color: COLORS.muted }} className="mt-2 flex items-center gap-1 text-sm"><MapPin size={14} /> {selectedStore.direccion}</p>
               {selectedStore.telefono && <p style={{ color: COLORS.muted }} className="mt-1 flex items-center gap-1 text-sm"><Phone size={14} /> {selectedStore.telefono}</p>}
               {(selectedStore.perfiles?.instagram || selectedStore.perfiles?.google_maps_url) && (
