@@ -601,6 +601,31 @@ mayúsculas ni requerir el nombre exacto completo), agrupa por vendedor,
 y ordena de quién te puede completar más cartas de tu lista a menos,
 mostrando el precio de cada una y si tiene suficiente cantidad.
 
+## 32. Comunidad: feed de fotos (pulls, aperturas, logros)
+
+Corre `supabase/migrations/028_comunidad.sql`.
+
+Nueva sección **"Comunidad"** (menú, visible sin sesión, requiere
+sesión para publicar/reaccionar): cualquiera con cuenta sube una foto
+(pull, apertura de sobre, logro, u "otro"), con un texto opcional. El
+feed es cronológico y público — se ve con o sin haber iniciado sesión.
+
+- Reacciones simples tipo "me gusta" (❤️), una por persona por
+  publicación — tabla `comunidad_likes`.
+- Cada quien puede borrar sus propias publicaciones; el admin puede
+  borrar cualquiera (moderación).
+- Reutiliza el botón "🚩 Reportar" que ya existía para perfiles/tiendas
+  (ahora también aplica a `publicaciones_comunidad`) — llega a la misma
+  pestaña "Reportes" del panel de Admin.
+- Las fotos se guardan en un bucket de Storage nuevo (`comunidad`),
+  mismo patrón de permisos que `carpetas`/`cartas`: lectura pública,
+  cada quien solo puede subir/borrar dentro de su propia carpeta
+  (`{tu-id}/...`).
+
+Con esto se completaron las 12 ideas originales de "confianza y
+comunidad" (se descartaron 3: estadísticas por tienda, historial de
+precios, páginas indexables por Google).
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
@@ -609,5 +634,5 @@ mostrando el precio de cada una y si tiene suficiente cantidad.
 - Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
 - Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
-- La última idea pendiente de la lista original de "confianza y comunidad" (1 de las 12, tras descartar 3 y ya construir 8): el feed de comunidad (fotos de pulls, aperturas de sobres, logros).
 - La búsqueda de "Armar mazo" hace match de nombre simple (contiene el texto) — si dos cartas distintas comparten parte del nombre (ej. "Pikachu" y "Pikachu VMAX"), puede haber falsos positivos leves; no ata el nombre a un ID exacto de la carta como sí hace el catálogo de TCGdex.
+- Deuda técnica pendiente: el sitio carga Tailwind desde su CDN en vez de compilarlo (Tailwind lo desaconseja en producción), y todo el frontend vive en un solo archivo `src/App.jsx` (más de 6,000 líneas) — ninguno de los dos bloquea nada hoy, pero valdría la pena atenderlos.
