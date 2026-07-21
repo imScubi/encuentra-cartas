@@ -1719,13 +1719,16 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const [loadingAnuncios, setLoadingAnuncios] = useState(true);
   const [procesando, setProcesando] = useState(null);
 
+  const [publicados, setPublicados] = useState([]);
+
   const cargarAnuncios = () => {
     setLoadingAnuncios(true);
     Promise.all([
       sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.pendiente&order=created_at.desc`, session),
       sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.programado&order=fecha_publicacion.asc`, session),
+      sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.publicado&order=fecha_publicacion.desc&limit=50`, session),
     ])
-      .then(([p, prog]) => { setPendientes(p); setProgramados(prog); })
+      .then(([p, prog, pub]) => { setPendientes(p); setProgramados(prog); setPublicados(pub); })
       .catch((e) => setErrorAnuncio(e.message))
       .finally(() => setLoadingAnuncios(false));
   };
@@ -1785,6 +1788,46 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
       await sbWrite("PATCH", `noticias?id=eq.${anuncio.id}`, { estado: "rechazado", aprobado_por: session.user.id }, session);
       cargarAnuncios();
     } catch (e) { setErrorAnuncio(e.message); } finally { setProcesando(null); }
+  };
+
+  // ---- Editar o borrar un anuncio ya publicado ----
+  const [editandoAnuncio, setEditandoAnuncio] = useState(null); // id
+  const [anuncioEdit, setAnuncioEdit] = useState({ titulo: "", contenido: "", imagen_url: "" });
+  const [nuevaImagenEdit, setNuevaImagenEdit] = useState(null);
+  const [nuevaImagenEditPreview, setNuevaImagenEditPreview] = useState(null);
+  const [guardandoAnuncio, setGuardandoAnuncio] = useState(null);
+  const [borrandoAnuncio, setBorrandoAnuncio] = useState(null);
+
+  const abrirEditorAnuncio = (n) => {
+    setEditandoAnuncio(n.id);
+    setAnuncioEdit({ titulo: n.titulo || "", contenido: n.contenido || "", imagen_url: n.imagen_url || "" });
+    setNuevaImagenEdit(null);
+    setNuevaImagenEditPreview(null);
+  };
+
+  const guardarAnuncioEditado = async (id) => {
+    if (!anuncioEdit.titulo.trim() || !anuncioEdit.contenido.trim()) return;
+    setGuardandoAnuncio(id);
+    try {
+      const imagen_url = nuevaImagenEdit ? await subirImagenAnuncio(nuevaImagenEdit, session) : anuncioEdit.imagen_url || null;
+      await sbWrite("PATCH", `noticias?id=eq.${id}`, {
+        titulo: anuncioEdit.titulo.trim(),
+        contenido: anuncioEdit.contenido.trim(),
+        imagen_url,
+      }, session);
+      setEditandoAnuncio(null);
+      cargarAnuncios();
+    } catch (e) { setErrorAnuncio(e.message); } finally { setGuardandoAnuncio(null); }
+  };
+
+  const borrarAnuncio = async (n) => {
+    if (!window.confirm(`¿Borrar el anuncio "${n.titulo}"? Esto no se puede deshacer.`)) return;
+    setBorrandoAnuncio(n.id);
+    try {
+      await sbWrite("DELETE", `noticias?id=eq.${n.id}`, {}, session);
+      if (editandoAnuncio === n.id) setEditandoAnuncio(null);
+      cargarAnuncios();
+    } catch (e) { setErrorAnuncio(e.message); } finally { setBorrandoAnuncio(null); }
   };
 
   // ---- Errores detectados ----
@@ -2327,8 +2370,8 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
           </div>
 
           <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Programados</h3>
-          {programados.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">No hay anuncios programados.</p>}
-          <div className="grid gap-3">
+          {programados.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm mb-8">No hay anuncios programados.</p>}
+          <div className="grid gap-3 mb-8">
             {programados.map((n) => (
               <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
                 <p style={{ color: COLORS.muted }} className="text-xs mb-1">
@@ -2337,6 +2380,69 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                 {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 140, objectFit: "cover" }} className="rounded-lg mb-2 w-full" />}
                 <p className="font-semibold">{n.titulo}</p>
                 <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
+              </div>
+            ))}
+          </div>
+
+          <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">Publicados</h3>
+          {publicados.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Todavía no hay anuncios publicados.</p>}
+          <div className="grid gap-3">
+            {publicados.map((n) => (
+              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+                {editandoAnuncio === n.id ? (
+                  <div className="grid gap-2">
+                    <input placeholder="Título del anuncio" value={anuncioEdit.titulo}
+                      onChange={(e) => setAnuncioEdit({ ...anuncioEdit, titulo: e.target.value })}
+                      style={inputStyleAnuncio} className="rounded-lg px-3 py-2 text-sm" />
+                    <textarea placeholder="Contenido del anuncio" rows={3} value={anuncioEdit.contenido}
+                      onChange={(e) => setAnuncioEdit({ ...anuncioEdit, contenido: e.target.value })}
+                      style={inputStyleAnuncio} className="rounded-lg px-3 py-2 text-sm" />
+                    <div className="flex items-center gap-3">
+                      {(nuevaImagenEditPreview || anuncioEdit.imagen_url) && (
+                        <img src={nuevaImagenEditPreview || anuncioEdit.imagen_url} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />
+                      )}
+                      <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer">
+                        Cambiar imagen
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          setNuevaImagenEdit(file);
+                          setNuevaImagenEditPreview(URL.createObjectURL(file));
+                        }} />
+                      </label>
+                      {(nuevaImagenEditPreview || anuncioEdit.imagen_url) && (
+                        <button type="button" onClick={() => { setNuevaImagenEdit(null); setNuevaImagenEditPreview(null); setAnuncioEdit({ ...anuncioEdit, imagen_url: "" }); }}
+                          style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => guardarAnuncioEditado(n.id)} disabled={guardandoAnuncio === n.id || !anuncioEdit.titulo.trim() || !anuncioEdit.contenido.trim()}
+                        style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                        {guardandoAnuncio === n.id ? "Guardando..." : "Guardar cambios"}
+                      </button>
+                      <button onClick={() => setEditandoAnuncio(null)} style={{ color: COLORS.muted }} className="text-xs px-3 py-1.5">Cancelar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ color: COLORS.muted }} className="text-xs mb-1">
+                      Publicado: {new Date(n.fecha_publicacion).toLocaleString("es-MX")}
+                    </p>
+                    {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 140, objectFit: "cover" }} className="rounded-lg mb-2 w-full" />}
+                    <p className="font-semibold">{n.titulo}</p>
+                    <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
+                    <div className="flex gap-2 mt-3">
+                      <button onClick={() => abrirEditorAnuncio(n)}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                        ✏️ Editar
+                      </button>
+                      <button onClick={() => borrarAnuncio(n)} disabled={borrandoAnuncio === n.id}
+                        style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                        {borrandoAnuncio === n.id ? "Borrando..." : "Borrar"}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>

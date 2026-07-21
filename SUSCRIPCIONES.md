@@ -902,6 +902,24 @@ las anteriores — copiar y pegar en Supabase → SQL Editor → Run.
 `mazo_cartas`, con RLS para que cada quien solo vea/edite sus propios
 mazos). Aplica igual que las anteriores.
 
+## 42. Admin: editar o borrar un anuncio ya publicado
+
+En el panel de Admin → "Anuncios", nueva sección **"Publicados"** (los
+últimos 50) debajo de "Pendientes" y "Programados". Cada uno tiene:
+
+- **✏️ Editar**: abre el mismo formulario de título/contenido/imagen
+  que al crear uno, precargado con lo que ya tenía. Guardar actualiza
+  el anuncio en su lugar (no crea uno nuevo ni cambia su fecha de
+  publicación).
+- **Borrar**: pide confirmación y lo elimina por completo. Antes no
+  existía ninguna forma de borrar un anuncio (ni pendiente, ni
+  programado, ni publicado) — solo aprobar/rechazar los propuestos por
+  tiendas.
+
+**Pendiente por aplicar**: migración `034_noticias_admin_borra.sql`
+(agrega la política de RLS que permite al admin borrar cualquier fila
+de `noticias` — antes solo podía crear y actualizar, nunca borrar).
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
