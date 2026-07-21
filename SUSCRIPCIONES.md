@@ -478,6 +478,39 @@ Corre `supabase/migrations/023_reportes.sql`.
   tiene esa columna (poco probable, pero puede pasar si se creó a mano
   sin ella), este dato simplemente no aparece, sin romper nada.
 
+## 28. Ventas confirmadas + reseñas de 1 a 5 estrellas
+
+Corre `supabase/migrations/024_ventas_resenas.sql`.
+
+Cómo funciona el flujo (para que una reseña cuente, primero tiene que
+haber una venta confirmada por ambas partes — evita reseñas falsas de
+gente que nunca compró/vendió nada):
+
+1. En "Mi tienda" o "Vender en el Mercado", cada publicación tiene un
+   botón **"✅ Vendida"**. El vendedor busca al comprador por su nombre
+   (buscador en vivo contra los perfiles registrados) y confirma — esto
+   borra la publicación y crea un registro de **venta pendiente**.
+2. El comprador recibe una notificación y ve la venta en **"Mis compras
+   y ventas"** (nuevo, en el menú), donde puede **confirmarla** o decir
+   "No fue así" (la rechaza).
+3. Solo cuando el comprador **confirma**, la venta cuenta para el
+   contador de "🛒 X ventas completadas" del vendedor, y ambos (vendedor
+   y comprador) pueden calificarse mutuamente con **1 a 5 estrellas** +
+   comentario opcional, desde esa misma pantalla.
+4. Las reseñas de un perfil se muestran en su perfil público con el
+   promedio, el número total, y las últimas 5 con comentario — **esta
+   sección no se puede ocultar** (no forma parte de `perfiles.visibilidad`
+   como el resto de las secciones del perfil). El detalle de tienda
+   también muestra el promedio/número de reseñas y el contador de
+   ventas, de forma resumida.
+
+Limitación a tener en cuenta: si el comprador rechaza una venta que sí
+ocurrió (por error o mala fe), la publicación ya se borró al marcarla
+como vendida — hoy no hay un "deshacer", el vendedor tendría que
+volver a publicarla a mano. Si esto causa problemas en la práctica,
+vale la pena agregar una opción de "restaurar publicación rechazada"
+más adelante.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
@@ -485,4 +518,5 @@ Corre `supabase/migrations/023_reportes.sql`.
 - Mapa de Google en el detalle del torneo (hoy solo muestra la dirección en texto).
 - Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
-- Las ideas restantes de la lista de "confianza y comunidad" (5 de las 12 originales, tras descartar estadísticas por tienda, historial de precios y páginas indexables por Google): reseñas de 1-5 estrellas (ligadas a marcar una venta como completada), contador de ventas completadas, sistema de recompensas, seguir tiendas/vendedores favoritos, modo "armar mazo" con matching de inventario entre tiendas, y feed de comunidad.
+- Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
+- Las ideas restantes de la lista de "confianza y comunidad" (4 de las 12 originales, tras descartar estadísticas por tienda/historial de precios/páginas indexables por Google, y ya construir reportes + insignias + legal + reseñas/ventas): sistema de recompensas, seguir tiendas/vendedores favoritos, modo "armar mazo" con matching de inventario entre tiendas, y feed de comunidad.

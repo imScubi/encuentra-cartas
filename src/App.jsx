@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
-  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar,
+  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star,
 } from "lucide-react";
 
 // ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
@@ -766,6 +766,178 @@ function ReportarBoton({ session, tipo, tablaObjetivo, objetivoId, objetivoPerfi
         <ReportarModal session={session} tipo={tipo} tablaObjetivo={tablaObjetivo} objetivoId={objetivoId} objetivoPerfilId={objetivoPerfilId} objetivoNombre={objetivoNombre} onClose={() => setAbierto(false)} />
       )}
     </>
+  );
+}
+
+// ---- Marcar una publicación como vendida (venta pendiente de confirmar por el comprador) ----
+function BuscadorComprador({ session, excluirId, onSelect }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [q, setQ] = useState("");
+  const [resultados, setResultados] = useState([]);
+  const [buscando, setBuscando] = useState(false);
+
+  useEffect(() => {
+    const texto = q.trim();
+    if (texto.length < 2) { setResultados([]); return; }
+    setBuscando(true);
+    const t = setTimeout(() => {
+      sb(`perfiles?select=id,nombre,avatar_url,tipo&nombre=ilike.*${encodeURIComponent(texto)}*&id=neq.${excluirId}&limit=8`, session)
+        .then(setResultados)
+        .catch(() => setResultados([]))
+        .finally(() => setBuscando(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  return (
+    <div>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Busca al comprador por su nombre..."
+        style={inputStyle} className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-2" />
+      {buscando && <p style={{ color: COLORS.muted }} className="text-xs">Buscando...</p>}
+      {!buscando && q.trim().length >= 2 && resultados.length === 0 && (
+        <p style={{ color: COLORS.muted }} className="text-xs">Nadie con ese nombre. Pídele que revise cómo está registrado.</p>
+      )}
+      <div className="grid gap-1">
+        {resultados.map((p) => (
+          <button key={p.id} onClick={() => onSelect(p)}
+            style={{ border: `1px solid ${COLORS.surface2}` }}
+            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:brightness-125">
+            <AvatarImg url={p.avatar_url} size={24} />
+            <p className="text-sm">{p.nombre}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, onClose, onVendida }) {
+  const [comprador, setComprador] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const confirmar = async () => {
+    setEnviando(true); setError(null);
+    try {
+      await sbWrite("POST", "ventas", {
+        vendedor_perfil_id: session.user.id,
+        comprador_perfil_id: comprador.id,
+        tabla_origen: tabla,
+        listing_id: itemId,
+        descripcion,
+        precio: precio || null,
+      }, session);
+      await sbWrite("DELETE", `${tabla}?id=eq.${itemId}`, {}, session);
+      onVendida?.();
+      onClose();
+    } catch (e) { setError(e.message); } finally { setEnviando(false); }
+  };
+
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66` }} className="w-full max-w-sm rounded-2xl p-6 relative">
+        <button onClick={onClose} style={{ color: COLORS.muted }} className="absolute top-4 right-4"><X size={18} /></button>
+        <p className="font-semibold mb-1">Marcar como vendida</p>
+        <p style={{ color: COLORS.muted }} className="text-sm mb-3">{descripcion}</p>
+        {error && <div className="mb-3"><ErrorBox message={error} /></div>}
+        {!comprador ? (
+          <BuscadorComprador session={session} excluirId={session.user.id} onSelect={setComprador} />
+        ) : (
+          <>
+            <div className="flex items-center gap-2 mb-4" style={{ border: `1px solid ${COLORS.surface2}` }}>
+              <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 flex-1">
+                <AvatarImg url={comprador.avatar_url} size={24} />
+                <p className="text-sm">Vendida a <span className="font-semibold">{comprador.nombre}</span></p>
+              </div>
+              <button onClick={() => setComprador(null)} style={{ color: COLORS.muted }} className="text-xs px-2">Cambiar</button>
+            </div>
+            <p style={{ color: COLORS.muted }} className="text-xs mb-3">
+              Le mandaremos un aviso a {comprador.nombre} para que confirme la compra. Cuando confirme, contará como venta completada y podrán calificarse mutuamente.
+            </p>
+            <button onClick={confirmar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="w-full rounded-lg py-2 text-sm font-semibold">
+              {enviando ? "Enviando..." : "Confirmar venta"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MarcarVendidaBoton({ session, tabla, itemId, descripcion, precio, onVendida }) {
+  const [abierto, setAbierto] = useState(false);
+  return (
+    <>
+      <button onClick={() => setAbierto(true)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+        ✅ Vendida
+      </button>
+      {abierto && (
+        <MarcarVendidaModal session={session} tabla={tabla} itemId={itemId} descripcion={descripcion} precio={precio} onClose={() => setAbierto(false)} onVendida={onVendida} />
+      )}
+    </>
+  );
+}
+
+// ---- Reseñas de 1 a 5 estrellas ----
+function EstrellasPicker({ value, onChange }) {
+  return (
+    <div className="flex gap-1">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button key={n} type="button" onClick={() => onChange(n)} style={{ color: n <= value ? COLORS.gold : COLORS.surface2 }}>
+          <Star size={26} fill={n <= value ? COLORS.gold : "none"} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function EstrellasDisplay({ valor, size = 14 }) {
+  const redondeado = Math.round(valor || 0);
+  return (
+    <div className="flex gap-0.5">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star key={n} size={size} color={COLORS.gold} fill={n <= redondeado ? COLORS.gold : "none"} />
+      ))}
+    </div>
+  );
+}
+
+function CalificarModal({ session, ventaId, objetivoPerfilId, objetivoNombre, onClose, onCalificado }) {
+  const [estrellas, setEstrellas] = useState(5);
+  const [comentario, setComentario] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const enviar = async () => {
+    setEnviando(true); setError(null);
+    try {
+      await sbWrite("POST", "resenas", {
+        venta_id: ventaId,
+        autor_perfil_id: session.user.id,
+        objetivo_perfil_id: objetivoPerfilId,
+        estrellas,
+        comentario: comentario.trim() || null,
+      }, session);
+      onCalificado?.();
+      onClose();
+    } catch (e) { setError(e.message); } finally { setEnviando(false); }
+  };
+
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66` }} className="w-full max-w-sm rounded-2xl p-6 relative">
+        <button onClick={onClose} style={{ color: COLORS.muted }} className="absolute top-4 right-4"><X size={18} /></button>
+        <p className="font-semibold mb-3">Calificar a {objetivoNombre || "esta persona"}</p>
+        {error && <div className="mb-3"><ErrorBox message={error} /></div>}
+        <div className="mb-3"><EstrellasPicker value={estrellas} onChange={setEstrellas} /></div>
+        <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Comentario (opcional)"
+          style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
+          className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-3" rows={3} />
+        <button onClick={enviar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="w-full rounded-lg py-2 text-sm font-semibold">
+          {enviando ? "Enviando..." : "Enviar calificación"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1598,6 +1770,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             {!item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
+            <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} onVendida={cargar} />
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
@@ -2821,6 +2994,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             {!item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />}
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />
             <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
+            <MarcarVendidaBoton session={session} tabla="inventario_tienda" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} onVendida={cargar} />
             <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
@@ -2884,6 +3058,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarSellado(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-16" />
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarSellado(item.id, "imagen_url", url); cargar(); }} />
             <BoostButton session={session} tabla="sellado_tienda" item={item} onBoosted={cargar} />
+            <MarcarVendidaBoton session={session} tabla="sellado_tienda" itemId={item.id} descripcion={item.producto} precio={item.precio} onVendida={cargar} />
             <button onClick={() => borrarSellado(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
@@ -3103,6 +3278,128 @@ const JUEGOS_TORNEO = {
   pokemon: "Pokémon", yugioh: "Yu-Gi-Oh!", lorcana: "Lorcana", magic: "Magic", onepiece: "One Piece", otro: "Otro",
 };
 
+// ---- Mis compras y ventas: confirmar/rechazar ventas pendientes y calificar tras confirmarse ----
+function ComprasVentasView({ session }) {
+  const [tab, setTab] = useState("compras");
+  const [compras, setCompras] = useState([]);
+  const [ventas, setVentas] = useState([]);
+  const [misResenas, setMisResenas] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [procesando, setProcesando] = useState(null);
+  const [calificando, setCalificando] = useState(null); // { ventaId, objetivoPerfilId, objetivoNombre }
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    Promise.all([
+      sb(`ventas?select=*,vendedor:vendedor_perfil_id(nombre,avatar_url)&comprador_perfil_id=eq.${session.user.id}&order=created_at.desc`, session),
+      sb(`ventas?select=*,comprador:comprador_perfil_id(nombre,avatar_url)&vendedor_perfil_id=eq.${session.user.id}&order=created_at.desc`, session),
+      sb(`resenas?select=venta_id&autor_perfil_id=eq.${session.user.id}`, session),
+    ])
+      .then(([c, v, r]) => { setCompras(c); setVentas(v); setMisResenas(new Set(r.map((x) => x.venta_id))); })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, [session.user.id]);
+
+  const resolver = async (id, estado) => {
+    setProcesando(id);
+    try {
+      await sbWrite("PATCH", `ventas?id=eq.${id}`, { estado, confirmada_at: estado === "confirmada" ? new Date().toISOString() : null }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setProcesando(null); }
+  };
+
+  const ESTADO_LABEL = { pendiente: "Por confirmar", confirmada: "Confirmada", rechazada: "Rechazada" };
+  const ESTADO_COLOR = { pendiente: COLORS.azulClaro, confirmada: COLORS.gold, rechazada: COLORS.muted };
+
+  if (loading) return <Loading label="Cargando tus compras y ventas..." />;
+
+  const lista = tab === "compras" ? compras : ventas;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Mis compras y ventas</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Cuando marcas o te marcan una publicación como vendida, aparece aquí hasta que la otra parte la confirme.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div className="flex gap-2 mb-6">
+        <button onClick={() => setTab("compras")}
+          style={{ background: tab === "compras" ? COLORS.surface2 : "transparent", border: `1px solid ${tab === "compras" ? COLORS.azulPalido : COLORS.surface2}`, color: tab === "compras" ? COLORS.azulPalido : COLORS.muted }}
+          className="px-3 py-1.5 rounded-full text-sm font-semibold">Compras</button>
+        <button onClick={() => setTab("ventas")}
+          style={{ background: tab === "ventas" ? COLORS.surface2 : "transparent", border: `1px solid ${tab === "ventas" ? COLORS.azulPalido : COLORS.surface2}`, color: tab === "ventas" ? COLORS.azulPalido : COLORS.muted }}
+          className="px-3 py-1.5 rounded-full text-sm font-semibold">Ventas</button>
+      </div>
+
+      {lista.length === 0 && (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
+          {tab === "compras" ? "Todavía no tienes compras registradas." : "Todavía no has marcado ninguna publicación como vendida."}
+        </p>
+      )}
+
+      <div className="grid gap-3">
+        {lista.map((v) => {
+          const otraParte = tab === "compras" ? v.vendedor : v.comprador;
+          const objetivoPerfilId = tab === "compras" ? v.vendedor_perfil_id : v.comprador_perfil_id;
+          const yaCalifique = misResenas.has(v.id);
+          return (
+            <div key={v.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3 min-w-0">
+                <AvatarImg url={otraParte?.avatar_url} size={36} />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{v.descripcion}</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs">
+                    {tab === "compras" ? "Vendedor" : "Comprador"}: {otraParte?.nombre || "—"} {v.precio ? `· $${Number(v.precio).toLocaleString("es-MX")}` : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span style={{ color: ESTADO_COLOR[v.estado], border: `1px solid ${ESTADO_COLOR[v.estado]}55` }} className="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap">
+                  {ESTADO_LABEL[v.estado]}
+                </span>
+                {tab === "compras" && v.estado === "pendiente" && (
+                  <>
+                    <button onClick={() => resolver(v.id, "confirmada")} disabled={procesando === v.id}
+                      style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap">
+                      {procesando === v.id ? "..." : "Confirmar compra"}
+                    </button>
+                    <button onClick={() => resolver(v.id, "rechazada")} disabled={procesando === v.id}
+                      style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">
+                      No fue así
+                    </button>
+                  </>
+                )}
+                {v.estado === "confirmada" && !yaCalifique && (
+                  <button onClick={() => setCalificando({ ventaId: v.id, objetivoPerfilId, objetivoNombre: otraParte?.nombre })}
+                    style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55` }} className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap">
+                    ⭐ Calificar
+                  </button>
+                )}
+                {v.estado === "confirmada" && yaCalifique && (
+                  <span style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">Ya calificaste</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {calificando && (
+        <CalificarModal
+          session={session}
+          ventaId={calificando.ventaId}
+          objetivoPerfilId={calificando.objetivoPerfilId}
+          objetivoNombre={calificando.objetivoNombre}
+          onClose={() => setCalificando(null)}
+          onCalificado={cargar}
+        />
+      )}
+    </div>
+  );
+}
+
 function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTienda }) {
   const [perfil, setPerfil] = useState(undefined); // undefined = cargando, null = no existe
   const [cartas, setCartas] = useState([]);
@@ -3110,12 +3407,14 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
   const [tienda, setTienda] = useState(null);
   const [wishlist, setWishlist] = useState([]);
   const [carpetas, setCarpetas] = useState([]);
+  const [resenas, setResenas] = useState([]);
+  const [ventasCompletadas, setVentasCompletadas] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     setLoading(true); setError(null);
-    setPerfil(undefined); setCartas([]); setSellado([]); setTienda(null); setWishlist([]); setCarpetas([]);
+    setPerfil(undefined); setCartas([]); setSellado([]); setTienda(null); setWishlist([]); setCarpetas([]); setResenas([]); setVentasCompletadas(0);
     sb(`perfiles?select=*&id=eq.${perfilId}`)
       .then(async (rows) => {
         const p = rows[0] || null;
@@ -3140,6 +3439,13 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
         if (vis.carpetas !== false) {
           tareas.push(sb(`carpetas?select=*,carpeta_fotos(id,imagen_url)&perfil_id=eq.${perfilId}&order=created_at.desc`).then(setCarpetas));
         }
+        // Las reseñas y el contador de ventas NUNCA se ocultan, así que van fuera del objeto `vis`.
+        tareas.push(
+          sb(`resenas?select=*,autor:autor_perfil_id(nombre,avatar_url)&objetivo_perfil_id=eq.${perfilId}&order=created_at.desc&limit=20`).then(setResenas)
+        );
+        tareas.push(
+          sb(`ventas?select=id&vendedor_perfil_id=eq.${perfilId}&estado=eq.confirmada`).then((filas) => setVentasCompletadas(filas.length))
+        );
         await Promise.all(tareas);
       })
       .catch((e) => setError(e.message))
@@ -3173,7 +3479,10 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
               <VerificadoBadge perfil={perfil} />
             </div>
             {tienda?.zona && <p style={{ color: COLORS.muted }} className="text-sm">{tienda.zona}</p>}
-            <MiembroDesde perfil={perfil} />
+            <div className="flex items-center gap-3 flex-wrap mt-0.5">
+              <MiembroDesde perfil={perfil} />
+              {ventasCompletadas > 0 && <p style={{ color: COLORS.muted }} className="text-xs">🛒 {ventasCompletadas} venta{ventasCompletadas === 1 ? "" : "s"} completada{ventasCompletadas === 1 ? "" : "s"}</p>}
+            </div>
           </div>
           {session && session.user.id !== perfilId && (
             <div className="ml-auto flex items-center gap-2">
@@ -3206,6 +3515,36 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
             </div>
           </div>
         )}
+
+        <div className="mt-4">
+          <div className="flex items-center gap-2 mb-2">
+            <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase">Reseñas</p>
+            {resenas.length > 0 && (
+              <>
+                <EstrellasDisplay valor={resenas.reduce((s, r) => s + r.estrellas, 0) / resenas.length} />
+                <p style={{ color: COLORS.muted }} className="text-xs">
+                  {(resenas.reduce((s, r) => s + r.estrellas, 0) / resenas.length).toFixed(1)} ({resenas.length} reseña{resenas.length === 1 ? "" : "s"})
+                </p>
+              </>
+            )}
+          </div>
+          {resenas.length === 0 ? (
+            <p style={{ color: COLORS.muted }} className="text-xs">Todavía no tiene reseñas.</p>
+          ) : (
+            <div className="grid gap-2">
+              {resenas.slice(0, 5).map((r) => (
+                <div key={r.id} style={{ background: `${COLORS.surface2}80` }} className="rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AvatarImg url={r.autor?.avatar_url} size={20} />
+                    <p className="text-xs font-medium">{r.autor?.nombre || "Usuario"}</p>
+                    <EstrellasDisplay valor={r.estrellas} size={12} />
+                  </div>
+                  {r.comentario && <p style={{ color: COLORS.muted }} className="text-xs">{r.comentario}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {perfil.tipo === "individual" && (perfil.instagram || perfil.whatsapp || perfil.facebook) && (
           <div className="flex gap-2 mt-4 flex-wrap">
@@ -4142,7 +4481,7 @@ function LegalView({ tipo, onVolver }) {
   );
 }
 
-const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Calendar, plan: Shield, boost: Sparkles, error: AlertCircle };
+const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Calendar, plan: Shield, boost: Sparkles, error: AlertCircle, venta: Star };
 
 // Las notificaciones "globales" (perfil_id null, ej. Anuncios) no tienen
 // dueño en la base de datos, así que no se pueden marcar "leida" ahí — se
@@ -4199,7 +4538,7 @@ function NotificationBell({ session, onNavigate }) {
     }
   };
 
-  const VISTA_POR_TIPO = { wishlist: "alertas", anuncio: "news", mensaje: "inbox" };
+  const VISTA_POR_TIPO = { wishlist: "alertas", anuncio: "news", mensaje: "inbox", venta: "comprasVentas" };
 
   // Marca como leídas todas las que están en pantalla — ver la lista ya
   // cuenta como "leído", así el numerito no depende de acertarle al click
@@ -4548,6 +4887,8 @@ export default function EncuentraCartas() {
   const [storeInventory, setStoreInventory] = useState([]);
   const [storeSellado, setStoreSellado] = useState([]);
   const [loadingStoreDetail, setLoadingStoreDetail] = useState(false);
+  const [storeResenas, setStoreResenas] = useState([]);
+  const [storeVentasCompletadas, setStoreVentasCompletadas] = useState(0);
 
   const [market, setMarket] = useState([]);
   const [loadingMarket, setLoadingMarket] = useState(false);
@@ -4649,12 +4990,17 @@ export default function EncuentraCartas() {
     setSelectedStore(store);
     setView("storeDetail");
     setLoadingStoreDetail(true);
+    setStoreResenas([]); setStoreVentasCompletadas(0);
     Promise.all([
       sb(`inventario_tienda?select=*&tienda_id=eq.${store.id}`),
       sb(`sellado_tienda?select=*&tienda_id=eq.${store.id}`),
     ])
       .then(([inv, sell]) => { setStoreInventory(conBoostPrimero(inv)); setStoreSellado(conBoostPrimero(sell)); })
       .finally(() => setLoadingStoreDetail(false));
+    if (store.perfil_id) {
+      sb(`resenas?select=*,autor:autor_perfil_id(nombre,avatar_url)&objetivo_perfil_id=eq.${store.perfil_id}&order=created_at.desc&limit=20`).then(setStoreResenas).catch(() => {});
+      sb(`ventas?select=id&vendedor_perfil_id=eq.${store.perfil_id}&estado=eq.confirmada`).then((filas) => setStoreVentasCompletadas(filas.length)).catch(() => {});
+    }
   };
 
   const verPerfil = (perfilId) => {
@@ -4681,6 +5027,7 @@ export default function EncuentraCartas() {
     { id: "news", label: "Anuncios y noticias", icon: Megaphone },
     { id: "torneos", label: "Torneos", icon: Calendar },
     ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
+    ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
     { id: "planes", label: "Planes", icon: Shield },
     ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
     ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
@@ -5232,7 +5579,18 @@ export default function EncuentraCartas() {
                   )}
                 </div>
               <div className="mt-3"><DiamanteEmblema perfil={selectedStore.perfiles} /></div>
-              <MiembroDesde perfil={selectedStore.perfiles} />
+              <div className="flex items-center gap-3 flex-wrap">
+                <MiembroDesde perfil={selectedStore.perfiles} />
+                {storeVentasCompletadas > 0 && <p style={{ color: COLORS.muted }} className="text-xs">🛒 {storeVentasCompletadas} venta{storeVentasCompletadas === 1 ? "" : "s"} completada{storeVentasCompletadas === 1 ? "" : "s"}</p>}
+                {storeResenas.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    <EstrellasDisplay valor={storeResenas.reduce((s, r) => s + r.estrellas, 0) / storeResenas.length} size={12} />
+                    <p style={{ color: COLORS.muted }} className="text-xs">
+                      {(storeResenas.reduce((s, r) => s + r.estrellas, 0) / storeResenas.length).toFixed(1)} ({storeResenas.length})
+                    </p>
+                  </div>
+                )}
+              </div>
               <p style={{ color: COLORS.muted }} className="mt-2 flex items-center gap-1 text-sm"><MapPin size={14} /> {selectedStore.direccion}</p>
               {selectedStore.telefono && <p style={{ color: COLORS.muted }} className="mt-1 flex items-center gap-1 text-sm"><Phone size={14} /> {selectedStore.telefono}</p>}
               {(selectedStore.perfiles?.instagram || selectedStore.perfiles?.google_maps_url) && (
@@ -5346,6 +5704,8 @@ export default function EncuentraCartas() {
         {(view === "privacidad" || view === "terminos") && (
           <LegalView tipo={view === "privacidad" ? "privacidad" : "terminos"} onVolver={() => setView(vistaAntesLegal)} />
         )}
+
+        {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
       </main>
 
       <footer style={{ position: "relative", zIndex: 1, borderTop: `1px solid ${COLORS.surface2}` }} className="px-4 sm:px-8 py-6 mt-10">
