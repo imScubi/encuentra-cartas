@@ -320,6 +320,25 @@ Mercado"), hay un botón **"📷 Sin foto" / "Cambiar foto"** — sube tu
 propia foto y se actualiza al instante, sin depender de que el catálogo
 la tenga.
 
+## 23. Respaldo automático de imagen (pokemontcg.io)
+
+No requiere ninguna migración nueva. Cuando el catálogo principal
+(TCGdex) no trae imagen para una carta — pasa seguido con cartas de
+arte especial o secretas, como "Hisuian Zoroark VSTAR" — la app ahora
+intenta automáticamente traer la foto de una segunda base de datos
+pública (pokemontcg.io), que suele tener mejor cobertura de esas
+variantes:
+
+- Al buscar y agregar una carta nueva (Mi tienda / Vender en el
+  Mercado), si TCGdex no trae foto, se intenta el respaldo solo, sin
+  que tengas que hacer nada.
+- En las cartas que ya publicaste y quedaron sin foto, ahora hay un
+  botón **"🔄 Buscar foto"** junto al de subir manual — lo intenta de
+  nuevo contra esa segunda base de datos por si ya está disponible ahí.
+- Si ninguna de las dos bases de datos tiene la imagen (pasa con
+  algunas cartas muy nuevas o promos raras), sigue disponible el botón
+  de subir tu propia foto ("📷 Sin foto").
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

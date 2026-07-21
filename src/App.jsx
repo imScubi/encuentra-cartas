@@ -258,6 +258,25 @@ async function subirImagenCarta(file, session) {
   return `${SUPABASE_URL}/storage/v1/object/public/cartas/${path}`;
 }
 
+// Respaldo cuando TCGdex no tiene la imagen (pasa seguido con arte especial / secretas).
+// pokemontcg.io tiene mejor cobertura de esas variantes.
+async function buscarImagenRespaldo(nombre, numero) {
+  if (!nombre) return null;
+  try {
+    const q = encodeURIComponent(`name:"${nombre}"`);
+    const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}&pageSize=20`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const cartas = data?.data || [];
+    if (!cartas.length) return null;
+    const num = numero ? String(numero).replace(/\/.*/, "") : null;
+    const elegida = (num && cartas.find((c) => c.number === num)) || cartas[0];
+    return elegida?.images?.large || elegida?.images?.small || null;
+  } catch {
+    return null;
+  }
+}
+
 function AvatarImg({ url, size = 36 }) {
   const [error, setError] = useState(false);
   return (
@@ -791,6 +810,29 @@ function SubirFotoManual({ session, onSubido, label }) {
   );
 }
 
+function ReintentarImagen({ nombre, onEncontrada }) {
+  const [buscando, setBuscando] = useState(false);
+  const [sinSuerte, setSinSuerte] = useState(false);
+
+  const intentar = async () => {
+    setBuscando(true); setSinSuerte(false);
+    const url = await buscarImagenRespaldo(nombre);
+    setBuscando(false);
+    if (url) onEncontrada(url); else setSinSuerte(true);
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button type="button" onClick={intentar} disabled={buscando}
+        style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }}
+        className="rounded-lg px-2 py-1.5 text-xs font-semibold whitespace-nowrap">
+        {buscando ? "Buscando..." : "🔄 Buscar foto"}
+      </button>
+      {sinSuerte && <span style={{ color: COLORS.muted }} className="text-xs">No se encontró</span>}
+    </span>
+  );
+}
+
 function CardPicker({ onSelect }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
@@ -829,20 +871,25 @@ function CardPicker({ onSelect }) {
         precioRefMxn = Math.round(full.pricing.cardmarket.trend * EUR_TO_MXN);
       }
 
+      let imagen = full.image ? `${full.image}/high.webp` : "";
+      if (!imagen) imagen = (await buscarImagenRespaldo(full.name, full.localId)) || "";
+
       onSelect({
         name: full.name,
         set_nombre: `${full.set?.name || ""} ${full.localId}${total ? "/" + total : ""}`,
         card_api_id: full.id,
-        imagen_url: full.image ? `${full.image}/high.webp` : "",
+        imagen_url: imagen,
         precio_ref_mxn: precioRefMxn,
       });
     } catch {
       // si falla el detalle, usamos lo que ya teníamos de la lista
+      let imagenFallback = c.image ? `${c.image}/high.webp` : "";
+      if (!imagenFallback) imagenFallback = (await buscarImagenRespaldo(c.name, c.localId)) || "";
       onSelect({
         name: c.name,
         set_nombre: `#${c.localId}`,
         card_api_id: c.id,
-        imagen_url: c.image ? `${c.image}/high.webp` : "",
+        imagen_url: imagenFallback,
         precio_ref_mxn: null,
       });
     } finally {
@@ -1280,6 +1327,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
             <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
+            {!item.imagen_url && <ReintentarImagen nombre={item.carta} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
@@ -2190,6 +2238,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
               style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarCarta(item.id, "cantidad", e.target.value)}
               style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
+            {!item.imagen_url && <ReintentarImagen nombre={item.carta} onEncontrada={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />}
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />
             <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
             <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
