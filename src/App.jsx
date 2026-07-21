@@ -233,11 +233,11 @@ async function subirImagenAnuncio(file, session) {
   return `${SUPABASE_URL}/storage/v1/object/public/anuncios/${path}`;
 }
 
-async function subirImagenCarta(file, session) {
+async function subirImagenABucket(bucket, file, session) {
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
   const path = `${session.user.id}/${Date.now()}.${ext}`;
   const subir = (s) =>
-    fetch(`${SUPABASE_URL}/storage/v1/object/cartas/${path}`, {
+    fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
       method: "POST",
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${s.access_token}`, "Content-Type": file.type || "image/jpeg" },
       body: file,
@@ -255,7 +255,11 @@ async function subirImagenCarta(file, session) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.message || "No se pudo subir la imagen");
   }
-  return `${SUPABASE_URL}/storage/v1/object/public/cartas/${path}`;
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
+}
+
+async function subirImagenCarta(file, session) {
+  return subirImagenABucket("cartas", file, session);
 }
 
 // Extrae el número exacto y el nombre del set desde un texto tipo
@@ -293,6 +297,32 @@ async function buscarImagenRespaldo(nombre, numero, setNombre) {
     const exacta = cartas.find((c) => String(c.number).toLowerCase() === String(numero).toLowerCase());
     if (!exacta) return null;
     return exacta.images?.large || exacta.images?.small || null;
+  } catch {
+    return null;
+  }
+}
+
+// Busca una carta por nombre (y opcionalmente número) en TCGdex, con el
+// mismo respaldo de imagen que usa CardPicker. Se usa para prellenar las
+// cartas que la IA detectó en una foto de carpeta.
+async function buscarCartaTCGdex(nombre, numeroHint) {
+  if (!nombre) return null;
+  try {
+    const res = await fetch(`https://api.tcgdex.net/v2/en/cards?name=${encodeURIComponent(nombre)}&pagination:itemsPerPage=10`);
+    const lista = await res.json();
+    if (!Array.isArray(lista) || !lista.length) return null;
+    const candidato = (numeroHint && lista.find((c) => c.localId === numeroHint)) || lista[0];
+    const detalleRes = await fetch(`https://api.tcgdex.net/v2/en/cards/${candidato.id}`);
+    const full = await detalleRes.json();
+    const total = full.set?.cardCount?.official || full.set?.cardCount?.total || "";
+    let imagen = full.image ? `${full.image}/high.webp` : "";
+    if (!imagen) imagen = (await buscarImagenRespaldo(full.name, full.localId, full.set?.name)) || "";
+    return {
+      name: full.name,
+      set_nombre: `${full.set?.name || ""} ${full.localId}${total ? "/" + total : ""}`,
+      card_api_id: full.id,
+      imagen_url: imagen,
+    };
   } catch {
     return null;
   }
@@ -396,31 +426,31 @@ const PLAN_INFO = {
     nombre: "Poké Ball", emoji: "⚪", precio: 0, color: COLORS.muted,
     resumen: "Básico y gratis",
     beneficios: ["Publica hasta 20 cartas/productos activos", "Aparece en búsquedas y en el directorio"],
-    limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, importadorMasivo: false, soloTienda: false,
+    limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false,
   },
   superball: {
     nombre: "Super Ball", emoji: "🔵", precio: 49, color: COLORS.azulClaro,
     resumen: "Insignia verificado + redes directas",
-    beneficios: ["Todo lo de Poké Ball", "Insignia de perfil verificado", "Enlace directo a Instagram y Google Maps"],
-    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false,
+    beneficios: ["Todo lo de Poké Ball", "Insignia de perfil verificado", "Enlace directo a Instagram y Google Maps", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente"],
+    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: true,
   },
   ultraball: {
     nombre: "Ultra Ball", emoji: "🟣", precio: 89, color: COLORS.azulMedio,
     resumen: "Todo Super Ball + Wishlist Premium",
     beneficios: ["Todo lo de Super Ball", "Alertas de precio con notificación push"],
-    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false,
+    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true,
   },
   masterball: {
     nombre: "Master Ball", emoji: "🟡", precio: 149, color: COLORS.azulPalido,
     resumen: "Todos los beneficios, inventario ilimitado",
     beneficios: ["Todo lo de Ultra Ball", "Publicaciones ilimitadas (una por una)"],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false,
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true,
   },
   enteball: {
     nombre: "Ente Ball", emoji: "🔴", precio: 349, color: COLORS.text,
     resumen: "Exclusivo tiendas: todo + importador masivo",
     beneficios: ["Todo lo de Master Ball", "Importador masivo de inventario (texto o Excel)", "Solo disponible para cuentas de tienda"],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: true, soloTienda: true,
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: true, soloTienda: true, carpetas: true,
   },
 };
 
@@ -1261,6 +1291,16 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
 
       <RedesSocialesEditor session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
 
+      {planDe(perfil).carpetas ? (
+        <CarpetasPanel session={session} perfil={perfil} contexto="mercado" onPublicado={cargar} />
+      ) : (
+        <div className="mb-6">
+          <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+            Sube fotos de tu álbum físico y deja que la IA identifique cada carta por ti, en vez de agregarlas una por una.
+          </UpsellCard>
+        </div>
+      )}
+
       <p style={{ color: COLORS.muted }} className="text-xs mb-3">
         {publicaciones.length} / {planDe(perfil).limiteCartas === Infinity ? "∞" : planDe(perfil).limiteCartas} publicaciones usadas
       </p>
@@ -2056,6 +2096,225 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
   );
 }
 
+// Panel de "Carpetas": álbumes de fotos donde, al subir una foto de una
+// página, se le pide a la IA (Claude, con visión) que identifique cada
+// carta visible; el vendedor revisa lo detectado, le pone precio y
+// publica en bloque. Disponible desde Super Ball en adelante.
+function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [carpetas, setCarpetas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [nombreNueva, setNombreNueva] = useState("");
+  const [creando, setCreando] = useState(false);
+  const [subiendoFotoPara, setSubiendoFotoPara] = useState(null);
+  const [revision, setRevision] = useState(null); // { carpetaId, filas: [...] }
+  const [publicando, setPublicando] = useState(false);
+  const [zonaMercado, setZonaMercado] = useState("");
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    const filtroTienda = contexto === "tienda" ? `eq.${tiendaId}` : "is.null";
+    sb(`carpetas?select=*,carpeta_fotos(id,imagen_url)&perfil_id=eq.${session.user.id}&tienda_id=${filtroTienda}&order=created_at.desc`, session)
+      .then(setCarpetas)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const crearCarpeta = async () => {
+    if (!nombreNueva.trim()) return;
+    setCreando(true); setError(null);
+    try {
+      await sbWrite("POST", "carpetas", {
+        perfil_id: session.user.id,
+        tienda_id: contexto === "tienda" ? tiendaId : null,
+        nombre: nombreNueva.trim(),
+      }, session);
+      setNombreNueva("");
+      cargar();
+    } catch (e) { setError(e.message); } finally { setCreando(false); }
+  };
+
+  const borrarCarpeta = async (id) => {
+    if (!window.confirm("¿Borrar esta carpeta y sus fotos? Las cartas ya publicadas no se borran, solo dejan de estar agrupadas.")) return;
+    try { await sbWrite("DELETE", `carpetas?id=eq.${id}`, {}, session); cargar(); } catch (e) { setError(e.message); }
+  };
+
+  const detectar = async (carpetaId, fotoUrl) => {
+    setError(null);
+    try {
+      const res = await fetch("/api/carpetas/detectar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ perfilId: session.user.id, imagenUrl: fotoUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo procesar la foto.");
+      const detectadas = data.cartas || [];
+      if (!detectadas.length) { setError("No se detectó ninguna carta en esa foto. Intenta con una foto más clara o de más cerca."); return; }
+      const filas = detectadas.map((c) => ({
+        nombre: c.nombre, set: c.set || "", numero: c.numero || "",
+        cargando: true, encontrada: null, incluir: true, precio: "", cantidad: "1", condicion: "NM",
+      }));
+      setRevision({ carpetaId, filas });
+      filas.forEach((fila, idx) => {
+        buscarCartaTCGdex(fila.nombre, fila.numero || null).then((encontrada) => {
+          setRevision((prev) => {
+            if (!prev || prev.carpetaId !== carpetaId) return prev;
+            const nuevasFilas = [...prev.filas];
+            if (nuevasFilas[idx]) nuevasFilas[idx] = { ...nuevasFilas[idx], cargando: false, encontrada };
+            return { ...prev, filas: nuevasFilas };
+          });
+        });
+      });
+    } catch (e) { setError(e.message); }
+  };
+
+  const subirFoto = async (carpetaId, file) => {
+    setSubiendoFotoPara(carpetaId); setError(null);
+    try {
+      const url = await subirImagenABucket("carpetas", file, session);
+      await sbWrite("POST", "carpeta_fotos", { carpeta_id: carpetaId, imagen_url: url }, session);
+      cargar();
+      await detectar(carpetaId, url);
+    } catch (e) { setError(e.message); } finally { setSubiendoFotoPara(null); }
+  };
+
+  const actualizarFila = (idx, cambios) => {
+    setRevision((prev) => {
+      const nuevasFilas = [...prev.filas];
+      nuevasFilas[idx] = { ...nuevasFilas[idx], ...cambios };
+      return { ...prev, filas: nuevasFilas };
+    });
+  };
+
+  const publicarRevision = async () => {
+    const validas = revision.filas.filter((f) => f.incluir && (f.encontrada?.name || f.nombre || f.nombreManual) && Number(f.precio) > 0);
+    if (!validas.length) { setError("Ponle un precio a al menos una carta para publicarla."); return; }
+    if (contexto === "mercado" && !zonaMercado.trim()) { setError("Escribe tu zona para publicar en el Mercado."); return; }
+    setPublicando(true); setError(null);
+    try {
+      const filas = validas.map((f) => ({
+        tcg: "pokemon",
+        carta: f.encontrada?.name || f.nombre || f.nombreManual,
+        set_nombre: f.encontrada?.set_nombre || f.set || null,
+        condicion: f.condicion,
+        precio: Number(f.precio),
+        cantidad: Number(f.cantidad) || 1,
+        card_api_id: f.encontrada?.card_api_id || null,
+        imagen_url: f.encontrada?.imagen_url || null,
+        carpeta_id: revision.carpetaId,
+        ...(contexto === "tienda"
+          ? { tienda_id: tiendaId, idioma: "EN" }
+          : { perfil_id: session.user.id, tipo: "carta", zona: zonaMercado.trim() }),
+      }));
+      await sbWrite("POST", contexto === "tienda" ? "inventario_tienda" : "mercado_listings", filas, session);
+      setRevision(null);
+      onPublicado?.();
+    } catch (e) { setError(e.message); } finally { setPublicando(false); }
+  };
+
+  if (loading) return <Loading label="Cargando tus carpetas..." />;
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-6 grid gap-3">
+      <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold uppercase">📁 Carpetas</p>
+      <p style={{ color: COLORS.muted }} className="text-xs -mt-2">
+        Organiza tu inventario en carpetas (álbumes). Sube una foto de una página y la IA intenta identificar cada carta —
+        tú revisas, le pones precio y publicas en bloque.
+      </p>
+      {error && <ErrorBox message={error} />}
+
+      <div className="flex gap-2">
+        <input placeholder="Nombre de la carpeta (ej. Álbum Charizards)" value={nombreNueva}
+          onChange={(e) => setNombreNueva(e.target.value)} onKeyDown={(e) => e.key === "Enter" && crearCarpeta()}
+          style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1" />
+        <button onClick={crearCarpeta} disabled={creando || !nombreNueva.trim()}
+          style={{ background: COLORS.azul, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+          {creando ? "Creando..." : "+ Nueva carpeta"}
+        </button>
+      </div>
+
+      {carpetas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no tienes carpetas.</p>}
+
+      <div className="grid gap-3">
+        {carpetas.map((c) => (
+          <div key={c.id} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-sm font-semibold">{c.nombre}</p>
+              <div className="flex items-center gap-2">
+                <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-2 py-1.5 text-xs font-semibold cursor-pointer whitespace-nowrap">
+                  {subiendoFotoPara === c.id ? "Procesando..." : "📷 Agregar foto"}
+                  <input type="file" accept="image/*" className="hidden" disabled={subiendoFotoPara === c.id}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) subirFoto(c.id, f); e.target.value = ""; }} />
+                </label>
+                <button onClick={() => borrarCarpeta(c.id)} style={{ color: "#C24444" }} className="text-xs">Borrar</button>
+              </div>
+            </div>
+            {c.carpeta_fotos?.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {c.carpeta_fotos.map((f) => (
+                  <img key={f.id} src={f.imagen_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {revision && (
+        <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.azulPalido}66` }} className="rounded-lg p-3 grid gap-3 mt-2">
+          <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold">
+            Revisa lo que detectamos ({revision.filas.length} carta{revision.filas.length === 1 ? "" : "s"})
+          </p>
+          {contexto === "mercado" && (
+            <input placeholder="Tu zona (ej. Centro, San Pedro)" value={zonaMercado} onChange={(e) => setZonaMercado(e.target.value)}
+              style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          )}
+          <div className="grid gap-2">
+            {revision.filas.map((f, idx) => (
+              <div key={idx} style={{ background: COLORS.surface, border: `1px solid ${f.nombre ? COLORS.surface2 : "#C24444"}`, opacity: f.incluir ? 1 : 0.5 }}
+                className="rounded-lg p-2 flex items-center gap-2 flex-wrap">
+                <input type="checkbox" checked={f.incluir} onChange={(e) => actualizarFila(idx, { incluir: e.target.checked })} />
+                {f.encontrada?.imagen_url && <img src={f.encontrada.imagen_url} alt="" style={{ width: 40, height: 56, objectFit: "contain" }} />}
+                <div className="flex-1 min-w-[140px]">
+                  {f.nombre ? (
+                    <>
+                      <p className="text-sm font-medium">{f.encontrada?.name || f.nombre}</p>
+                      <p style={{ color: COLORS.muted }} className="text-xs">
+                        {f.cargando ? "Buscando en el catálogo..." : f.encontrada?.set_nombre || f.set || "Sin imagen del catálogo — puedes subirla luego a mano"}
+                      </p>
+                    </>
+                  ) : (
+                    <p style={{ color: "#C24444" }} className="text-xs">No se pudo leer esta carta — descártala o pon el nombre a mano abajo.</p>
+                  )}
+                  {!f.nombre && (
+                    <input placeholder="Nombre de la carta (a mano)" value={f.nombreManual || ""} onChange={(e) => actualizarFila(idx, { nombreManual: e.target.value })}
+                      style={inputStyle} className="rounded px-2 py-1 text-xs w-full mt-1" />
+                  )}
+                </div>
+                <input type="number" placeholder="Precio" value={f.precio} onChange={(e) => actualizarFila(idx, { precio: e.target.value })}
+                  style={inputStyle} className="rounded px-2 py-1 text-sm w-20" />
+                <input type="number" placeholder="Cant." value={f.cantidad} onChange={(e) => actualizarFila(idx, { cantidad: e.target.value })}
+                  style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={publicarRevision} disabled={publicando}
+              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+              {publicando ? "Publicando..." : "Publicar cartas incluidas"}
+            </button>
+            <button onClick={() => setRevision(null)} style={{ color: COLORS.muted }} className="text-sm">Cancelar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
   const [inventario, setInventario] = useState([]);
@@ -2194,6 +2453,16 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
 
       {planDe(perfil).importadorMasivo && (
         <ImportadorMasivo session={session} tiendaId={tienda.id} onImportado={cargar} />
+      )}
+
+      {planDe(perfil).carpetas ? (
+        <CarpetasPanel session={session} perfil={perfil} contexto="tienda" tiendaId={tienda.id} onPublicado={cargar} />
+      ) : (
+        <div className="mb-6">
+          <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+            Sube fotos de tu álbum físico y deja que la IA identifique cada carta por ti, en vez de agregarlas una por una.
+          </UpsellCard>
+        </div>
       )}
 
       <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
