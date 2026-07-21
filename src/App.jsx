@@ -3587,6 +3587,163 @@ function RecompensasView({ session, perfil }) {
   );
 }
 
+// ---- Comunidad: feed simple de fotos (pulls, aperturas, logros) ----
+const TIPO_COMUNIDAD_LABEL = { pull: "🎉 Pull", apertura: "📦 Apertura", logro: "🏅 Logro", otro: "📸 Otro" };
+
+function ComunidadView({ session, onVerPerfil }) {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [misLikes, setMisLikes] = useState(new Set());
+
+  const [archivo, setArchivo] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [texto, setTexto] = useState("");
+  const [tipo, setTipo] = useState("otro");
+  const [publicando, setPublicando] = useState(false);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`publicaciones_comunidad?select=*,perfiles(nombre,avatar_url),comunidad_likes(perfil_id)&order=created_at.desc&limit=30`, session)
+      .then((filas) => {
+        setPosts(filas);
+        if (session) {
+          const mias = new Set();
+          filas.forEach((p) => { if (p.comunidad_likes?.some((l) => l.perfil_id === session.user.id)) mias.add(p.id); });
+          setMisLikes(mias);
+        }
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, [session?.user?.id]);
+
+  const elegirFoto = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setArchivo(file);
+    setPreview(URL.createObjectURL(file));
+  };
+
+  const publicar = async () => {
+    if (!archivo || !session) return;
+    setPublicando(true); setError(null);
+    try {
+      const imagen_url = await subirImagenABucket("comunidad", archivo, session);
+      await sbWrite("POST", "publicaciones_comunidad", { perfil_id: session.user.id, imagen_url, texto: texto.trim() || null, tipo }, session);
+      setArchivo(null); setPreview(null); setTexto(""); setTipo("otro");
+      cargar();
+    } catch (e) { setError(e.message); } finally { setPublicando(false); }
+  };
+
+  const alternarLike = async (postId) => {
+    if (!session) return;
+    const yaLike = misLikes.has(postId);
+    setMisLikes((prev) => { const s = new Set(prev); if (yaLike) s.delete(postId); else s.add(postId); return s; });
+    setPosts((prev) => prev.map((p) => {
+      if (p.id !== postId) return p;
+      const likes = p.comunidad_likes || [];
+      return { ...p, comunidad_likes: yaLike ? likes.filter((l) => l.perfil_id !== session.user.id) : [...likes, { perfil_id: session.user.id }] };
+    }));
+    try {
+      if (yaLike) await sbWrite("DELETE", `comunidad_likes?post_id=eq.${postId}&perfil_id=eq.${session.user.id}`, {}, session);
+      else await sbWrite("POST", "comunidad_likes", { post_id: postId, perfil_id: session.user.id }, session);
+    } catch {}
+  };
+
+  const borrar = async (postId) => {
+    if (!window.confirm("¿Borrar esta publicación?")) return;
+    try { await sbWrite("DELETE", `publicaciones_comunidad?id=eq.${postId}`, {}, session); cargar(); } catch (e) { setError(e.message); }
+  };
+
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+
+  if (loading) return <Loading label="Cargando el feed..." />;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">📸 Comunidad</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Comparte tus pulls, aperturas de sobres y logros — lo ve toda la comunidad.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {session ? (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-4 mb-6 grid gap-3">
+          {preview ? (
+            <div className="relative">
+              <img src={preview} alt="" style={{ maxHeight: 240, objectFit: "contain" }} className="rounded-lg mx-auto" />
+              <button onClick={() => { setArchivo(null); setPreview(null); }} style={{ color: COLORS.muted }} className="text-xs mt-2">Quitar foto</button>
+            </div>
+          ) : (
+            <label style={{ border: `1px dashed ${COLORS.surface2}`, color: COLORS.muted }} className="rounded-lg px-3 py-6 text-sm text-center cursor-pointer">
+              📷 Elegir foto
+              <input type="file" accept="image/*" className="hidden" onChange={elegirFoto} />
+            </label>
+          )}
+          <div className="flex gap-2 flex-wrap">
+            {Object.entries(TIPO_COMUNIDAD_LABEL).map(([key, label]) => (
+              <button key={key} onClick={() => setTipo(key)}
+                style={{ background: tipo === key ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === key ? COLORS.azulPalido : COLORS.surface2}`, color: tipo === key ? COLORS.azulPalido : COLORS.muted }}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold">
+                {label}
+              </button>
+            ))}
+          </div>
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Cuéntanos algo (opcional)"
+            style={inputStyle} className="w-full rounded-lg px-3 py-2 text-sm outline-none" rows={2} />
+          <button onClick={publicar} disabled={!archivo || publicando} style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: archivo ? 1 : 0.5 }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
+            {publicando ? "Publicando..." : "Publicar"}
+          </button>
+        </div>
+      ) : (
+        <p style={{ color: COLORS.muted }} className="text-sm mb-6">Inicia sesión para publicar en el feed.</p>
+      )}
+
+      {posts.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">Todavía no hay publicaciones. ¡Sé el primero!</p>
+      ) : (
+        <div className="grid gap-4 max-w-lg mx-auto">
+          {posts.map((p) => {
+            const likeCount = p.comunidad_likes?.length || 0;
+            const yaLike = misLikes.has(p.id);
+            return (
+              <div key={p.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl overflow-hidden">
+                <div className="flex items-center justify-between gap-2 p-3">
+                  <button onClick={() => onVerPerfil?.(p.perfil_id)} className="flex items-center gap-2 hover:brightness-125">
+                    <AvatarImg url={p.perfiles?.avatar_url} size={28} />
+                    <p className="text-sm font-semibold">{p.perfiles?.nombre || "Usuario"}</p>
+                  </button>
+                  <Badge color={COLORS.azulPalido}>{TIPO_COMUNIDAD_LABEL[p.tipo] || TIPO_COMUNIDAD_LABEL.otro}</Badge>
+                </div>
+                <img src={p.imagen_url} alt="" style={{ maxHeight: 420, objectFit: "contain", width: "100%", background: COLORS.surface2 }} />
+                <div className="p-3">
+                  {p.texto && <p className="text-sm mb-2">{p.texto}</p>}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => alternarLike(p.id)} disabled={!session} style={{ color: yaLike ? COLORS.gold : COLORS.muted }} className="text-xs flex items-center gap-1">
+                        {yaLike ? "❤️" : "🤍"} {likeCount}
+                      </button>
+                      {session && session.user.id !== p.perfil_id && (
+                        <ReportarBoton session={session} tipo="publicacion" tablaObjetivo="publicaciones_comunidad" objetivoId={p.id} objetivoPerfilId={p.perfil_id} objetivoNombre={p.texto || "Publicación de comunidad"} />
+                      )}
+                    </div>
+                    {session?.user?.id === p.perfil_id && (
+                      <button onClick={() => borrar(p.id)} style={{ color: COLORS.muted }} className="text-xs">Borrar</button>
+                    )}
+                  </div>
+                  <p style={{ color: COLORS.muted }} className="text-[10px] mt-2">
+                    {new Date(p.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- Armar mazo: encuentra qué tiendas/vendedores tienen las cartas que te faltan ----
 // Reglas oficiales del Pokémon TCG que validamos (sin bloquear la búsqueda,
 // solo avisamos): máximo 4 copias de una carta que no sea Energía Básica —
@@ -5627,6 +5784,7 @@ export default function EncuentraCartas() {
     { id: "news", label: "Anuncios y noticias", icon: Megaphone },
     { id: "torneos", label: "Torneos", icon: Calendar },
     { id: "armarMazo", label: "Armar mazo", icon: Layers },
+    { id: "comunidad", label: "Comunidad", icon: Newspaper },
     ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
     ...(session ? [{ id: "siguiendo", label: "Siguiendo", icon: User }] : []),
     ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
@@ -6313,6 +6471,7 @@ export default function EncuentraCartas() {
         )}
 
         {view === "armarMazo" && <ArmarMazoView session={session} onAbrirChat={abrirChat} onVerTienda={verTiendaDesdePerfil} />}
+        {view === "comunidad" && <ComunidadView session={session} onVerPerfil={verPerfil} />}
         {view === "siguiendo" && session && <SiguiendoView session={session} onVerPerfil={verPerfil} onVerTienda={verTiendaDesdePerfil} />}
         {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
         {view === "recompensas" && session && <RecompensasView session={session} perfil={perfil} />}
