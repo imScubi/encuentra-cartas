@@ -674,6 +674,30 @@ tenerlas en otro archivo.
 más de 70 componentes de pantallas), que se hará por separado para no
 arriesgar todo de un jalón.
 
+## 35. Admin: crear tiendas + dar/quitar Amatista
+
+Antes, las tiendas del directorio solo se podían dar de alta insertando
+la fila directamente en Supabase — la web solo permitía vincularlas con
+una cuenta o borrarlas, nunca crearlas. Ahora, en el panel de admin,
+pestaña "Tiendas":
+
+- **Crear tienda**: nombre, dirección, zona y teléfono. La dirección no
+  necesita nada más — el mapa del perfil de la tienda ya la muestra
+  sola (usa el texto de la dirección directo en Google Maps, sin llave
+  de API). Se puede vincular con una cuenta de una vez, o dejarlo para
+  después desde "Vincular tiendas" (como ya funcionaba).
+- **Dar/quitar Amatista**: en "Todas las tiendas", un botón junto a
+  cada tienda ya vinculada para ponerle o quitarle el plan Amatista a
+  su cuenta directamente, sin ir hasta la pestaña "Planes". (Esa
+  pestaña sigue sirviendo para cualquier otro plan o cuenta, y para
+  poner fecha de vencimiento si hace falta.)
+
+**Pendiente por aplicar**: migración `029_admin_crea_tiendas.sql`
+(agrega el permiso para que un admin pueda insertar en `tiendas` — antes
+solo existían los de borrar/actualizar). Cuando el conector de Supabase
+esté disponible la aplico yo directo; si no, cópiala y pégala en
+Supabase → SQL Editor → Run.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
@@ -684,3 +708,4 @@ arriesgar todo de un jalón.
 - Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
 - La búsqueda de "Armar mazo" hace match de nombre simple (contiene el texto) — si dos cartas distintas comparten parte del nombre (ej. "Pikachu" y "Pikachu VMAX"), puede haber falsos positivos leves; no ata el nombre a un ID exacto de la carta como sí hace el catálogo de TCGdex.
 - Deuda técnica pendiente: falta dividir el resto de `src/App.jsx` (los componentes de cada pantalla) en módulos más chicos — ver sección 34.
+- Permitir editar (no solo crear) nombre/dirección/zona/teléfono de una tienda ya existente desde el panel de admin — hoy solo se puede crear, vincular o borrar.
