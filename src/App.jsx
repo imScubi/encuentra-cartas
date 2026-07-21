@@ -17,7 +17,7 @@ import {
   parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex, buscarCartasVisual,
 } from "./lib/pokemonApi.js";
 import {
-  FONTS, USD_TO_MXN, EUR_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
+  FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
   PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
   BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero,
   MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, aplicarTema,
@@ -914,7 +914,6 @@ function CardPicker({ onSelect }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [loadingDetail, setLoadingDetail] = useState(null); // id de la carta cuyo detalle se está cargando
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -929,48 +928,15 @@ function CardPicker({ onSelect }) {
     return () => clearTimeout(t);
   }, [q]);
 
-  const seleccionar = async (c) => {
-    setLoadingDetail(c.id);
-    try {
-      const res = await fetch(`https://api.tcgdex.net/v2/en/cards/${c.id}`);
-      const full = await res.json();
-      const total = full.set?.cardCount?.official || full.set?.cardCount?.total || "";
-
-      // Buscamos un precio de referencia: primero TCGPlayer (USD), si no hay, Cardmarket (EUR)
-      let precioRefMxn = null;
-      const tp = full.pricing?.tcgplayer;
-      if (tp) {
-        const variante = tp.normal || tp.holofoil || tp["reverse-holofoil"] || tp.unlimited || tp["1st-edition"];
-        if (variante?.marketPrice) precioRefMxn = Math.round(variante.marketPrice * USD_TO_MXN);
-      }
-      if (!precioRefMxn && full.pricing?.cardmarket?.trend) {
-        precioRefMxn = Math.round(full.pricing.cardmarket.trend * EUR_TO_MXN);
-      }
-
-      let imagen = full.image ? `${full.image}/high.webp` : "";
-      if (!imagen) imagen = (await buscarImagenRespaldo(full.name, full.localId, full.set?.name)) || "";
-
-      onSelect({
-        name: full.name,
-        set_nombre: `${full.set?.name || ""} ${full.localId}${total ? "/" + total : ""}`,
-        card_api_id: full.id,
-        imagen_url: imagen,
-        precio_ref_mxn: precioRefMxn,
-      });
-    } catch {
-      // si falla el detalle, usamos lo que ya teníamos de la lista
-      let imagenFallback = c.image ? `${c.image}/high.webp` : "";
-      if (!imagenFallback) imagenFallback = (await buscarImagenRespaldo(c.name, c.localId, null)) || "";
-      onSelect({
-        name: c.name,
-        set_nombre: `#${c.localId}`,
-        card_api_id: c.id,
-        imagen_url: imagenFallback,
-        precio_ref_mxn: null,
-      });
-    } finally {
-      setQ(""); setResults([]); setOpen(false); setLoadingDetail(null);
-    }
+  const seleccionar = (c) => {
+    onSelect({
+      name: c.name,
+      set_nombre: `${c.setName} ${c.localId}${c.setTotal ? "/" + c.setTotal : ""}`.trim(),
+      card_api_id: c.id,
+      imagen_url: c.image || "",
+      precio_ref_mxn: c.precioRefMxn,
+    });
+    setQ(""); setResults([]); setOpen(false);
   };
 
   return (
@@ -980,7 +946,6 @@ function CardPicker({ onSelect }) {
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
-        disabled={!!loadingDetail}
         style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
         className="rounded-lg px-2 py-2 text-sm w-full"
       />
@@ -988,7 +953,6 @@ function CardPicker({ onSelect }) {
         <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66` }}
           className="absolute z-20 mt-1 w-full max-h-80 overflow-y-auto rounded-lg shadow-xl p-2">
           {loading && <p style={{ color: COLORS.muted }} className="text-xs p-2">Buscando en el catálogo oficial...</p>}
-          {loadingDetail && <p style={{ color: COLORS.muted }} className="text-xs p-2">Cargando datos exactos de la carta...</p>}
           {!loading && results.length === 0 && (
             <p style={{ color: COLORS.muted }} className="text-xs p-2">Sin resultados. Prueba con otro nombre, número o set.</p>
           )}
@@ -996,20 +960,17 @@ function CardPicker({ onSelect }) {
             {results.map((c) => (
               <button key={c.id} type="button"
                 onClick={() => seleccionar(c)}
-                disabled={!!loadingDetail}
                 className="flex flex-col items-center gap-1 rounded-lg p-1.5 text-center hover:brightness-125"
-                style={{
-                  background: loadingDetail === c.id ? COLORS.azul : "transparent",
-                  opacity: loadingDetail && loadingDetail !== c.id ? 0.4 : 1,
-                }}>
+                style={{ background: "transparent" }}>
                 <div style={{ background: COLORS.bg }} className="w-full aspect-[63/88] rounded-md overflow-hidden flex items-center justify-center">
                   {c.image ? (
-                    <img src={`${c.image}/high.webp`} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} loading="lazy" />
+                    <img src={c.image} alt={c.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} loading="lazy" />
                   ) : (
                     <Package size={20} color={COLORS.muted} />
                   )}
                 </div>
                 <p className="text-xs font-medium leading-tight line-clamp-2">{c.name}</p>
+                <p style={{ color: COLORS.muted }} className="text-[10px] leading-tight line-clamp-1">{c.setName}</p>
                 <p style={{ color: COLORS.muted }} className="text-[10px]">#{c.localId}</p>
               </button>
             ))}
