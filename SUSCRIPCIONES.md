@@ -972,6 +972,35 @@ Si alguna carta muy específica sigue sin imagen ni en pokemontcg.io,
 avisa con el nombre exacto y el número para revisarlo — puede ser una
 variante todavía no catalogada en ninguna de las dos APIs.
 
+## 44. Idioma de la carta: obligatorio al publicar
+
+Al publicar una carta suelta (no aplica a producto sellado) ahora hay
+que elegir su idioma — Inglés, Español o Japonés — antes de poder
+publicarla; solo se puede elegir uno. El idioma aparece como una
+etiqueta junto al nombre de la carta en todas las vistas que ve el
+comprador (Directorio/tienda, Mercado entre usuarios, buscador,
+perfil público), para que no haya dudas sobre en qué idioma está
+impresa.
+
+Cubre las tres formas de publicar una carta suelta:
+- **Vender en el Mercado** (`MyMarketPanel`) y **Mi tienda** (`MyStorePanel`,
+  "Cartas sueltas"): selector obligatorio en el formulario de cada
+  carta — el botón de publicar/agregar queda deshabilitado sin elegirlo.
+- **Carpetas** (fotos de álbum) e **Importador masivo** (Aurora, texto/CSV):
+  como publican varias cartas de golpe, el idioma se elige **una sola
+  vez por lote/revisión** (se asume que todas las cartas de esa
+  carpeta o de esa lista vienen del mismo idioma) en vez de por cada
+  fila — más simple y cubre el caso real de uso sin llenar la pantalla
+  de selectores repetidos.
+
+`inventario_tienda` ya tenía la columna `idioma` (el código siempre
+mandaba "EN" fijo, sin que el vendedor pudiera elegir); `mercado_listings`
+no la tenía.
+
+**Pendiente por aplicar**: migración `035_idioma_carta.sql` (agrega
+`idioma` a `mercado_listings` si no existía, con un `check` en ambas
+tablas para que solo acepte `EN`/`ES`/`JP`).
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

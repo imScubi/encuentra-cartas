@@ -21,6 +21,7 @@ import {
   PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
   BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero,
   MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, aplicarTema,
+  IDIOMA_OPCIONES, IDIOMA_LABEL,
 } from "./theme.js";
 
 function AvatarImg({ url, size = 36 }) {
@@ -648,6 +649,32 @@ function Badge({ children, color }) {
   );
 }
 
+// ---- Selector de idioma de la carta: obligatorio al publicar, para que
+// el comprador sepa en qué idioma está sin tener que preguntar ----
+function IdiomaSelector({ value, onChange }) {
+  return (
+    <div className="flex gap-2 flex-wrap">
+      {IDIOMA_OPCIONES.map((o) => (
+        <button key={o.key} type="button" onClick={() => onChange(o.key)}
+          style={{
+            background: value === o.key ? COLORS.surface2 : "transparent",
+            border: `1px solid ${value === o.key ? COLORS.violeta : COLORS.surface2}`,
+            color: value === o.key ? COLORS.violeta : COLORS.muted,
+          }}
+          className="rounded-lg px-3 py-2 text-sm font-semibold">
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Badge de idioma para mostrar en cualquier publicación que ya tenga el campo lleno.
+function IdiomaBadge({ idioma }) {
+  if (!idioma || !IDIOMA_LABEL[idioma]) return null;
+  return <Badge color={COLORS.violeta}>{IDIOMA_LABEL[idioma]}</Badge>;
+}
+
 function PrecioConOferta({ precio, precioAntes, size = "lg" }) {
   const enOferta = precioAntes && Number(precioAntes) > Number(precio);
   const pct = enOferta ? Math.round((1 - Number(precio) / Number(precioAntes)) * 100) : 0;
@@ -1239,7 +1266,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const [saving, setSaving] = useState(false);
   const [tipo, setTipo] = useState("carta"); // carta | sellado
 
-  const vacio = { tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null };
+  const vacio = { tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null };
   const [nueva, setNueva] = useState(vacio);
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
@@ -1257,7 +1284,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const alLimite = limiteAlcanzado(perfil, publicaciones.length);
 
   const agregar = async () => {
-    if (!nueva.carta || !nueva.precio || !nueva.zona) return;
+    if (!nueva.carta || !nueva.precio || !nueva.zona || (tipo === "carta" && !nueva.idioma)) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante para inventario ilimitado.`); return; }
     setSaving(true);
     try {
@@ -1268,6 +1295,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         carta: nueva.carta,
         set_nombre: nueva.set_nombre || null,
         condicion: tipo === "carta" ? nueva.condicion : null,
+        ...(tipo === "carta" ? { idioma: nueva.idioma } : {}),
         precio: Number(nueva.precio),
         precio_antes: nueva.precio_antes ? Number(nueva.precio_antes) : null,
         cantidad: Number(nueva.cantidad),
@@ -1358,6 +1386,10 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               </div>
             )}
             <input placeholder="Condición (ej. NM, LP)" value={nueva.condicion} onChange={(e) => setNueva({ ...nueva, condicion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <div>
+              <p style={{ color: COLORS.muted }} className="text-xs mb-1">Idioma de la carta (obligatorio)</p>
+              <IdiomaSelector value={nueva.idioma} onChange={(v) => setNueva({ ...nueva, idioma: v })} />
+            </div>
           </>
         ) : (
           <SealedPicker onSelect={(p) => setNueva({ ...nueva, carta: p.producto, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
@@ -1378,7 +1410,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nueva.precio_antes} onChange={(e) => setNueva({ ...nueva, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregar} disabled={saving || alLimite} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={agregar} disabled={saving || alLimite || (tipo === "carta" && !nueva.idioma)} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
           </button>
         </div>
@@ -1394,6 +1426,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
                 <Badge color={item.tipo === "sellado" ? COLORS.azulClaro : COLORS.azulPalido}>{item.tipo === "sellado" ? "Sellado" : "Carta"}</Badge>
+                {item.tipo !== "sellado" && <IdiomaBadge idioma={item.idioma} />}
                 <BoostBadge item={item} />
               </div>
               <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} {item.condicion ? `· ${item.condicion}` : ""} · {item.zona}</p>
@@ -2612,6 +2645,7 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState(null);
   const [error, setError] = useState(null);
+  const [idiomaLote, setIdiomaLote] = useState(""); // idioma de todas las cartas de este lote
 
   const filasDeTexto = () =>
     texto.split("\n").map((l) => l.trim()).filter(Boolean).map((linea) => {
@@ -2637,6 +2671,7 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
   const importar = async (filas) => {
     const validas = filas.filter((f) => f.carta && f.precio > 0);
     if (validas.length === 0) { setError("No encontramos filas válidas (revisa que tengan nombre y precio)."); return; }
+    if (!idiomaLote) { setError("Elige el idioma de estas cartas antes de importar."); return; }
     setImportando(true); setError(null); setResultado(null);
     try {
       await sbWrite("POST", "inventario_tienda", validas.map((f) => ({
@@ -2645,7 +2680,7 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
         carta: f.carta,
         set_nombre: f.set_nombre,
         condicion: f.condicion,
-        idioma: "EN",
+        idioma: idiomaLote,
         precio: f.precio,
         cantidad: f.cantidad,
       })), session);
@@ -2677,14 +2712,18 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
         value={texto} onChange={(e) => setTexto(e.target.value)} rows={4}
         style={inputStyle} className="rounded-lg px-3 py-2 text-sm font-mono"
       />
+      <div>
+        <p style={{ color: COLORS.muted }} className="text-xs mb-1">Idioma de estas cartas (obligatorio — se aplica a todo este lote)</p>
+        <IdiomaSelector value={idiomaLote} onChange={setIdiomaLote} />
+      </div>
       <div className="flex gap-2 flex-wrap items-center">
-        <button onClick={() => importar(filasDeTexto())} disabled={importando || !texto.trim()}
+        <button onClick={() => importar(filasDeTexto())} disabled={importando || !texto.trim() || !idiomaLote}
           style={{ background: COLORS.azul, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold">
           {importando ? "Importando..." : "Importar lista de texto"}
         </button>
-        <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer">
+        <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido, opacity: idiomaLote ? 1 : 0.5, pointerEvents: idiomaLote ? "auto" : "none" }} className="rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer">
           Subir CSV / Excel
-          <input type="file" accept=".csv,.xlsx,.xls" onChange={handleArchivo} className="hidden" disabled={importando} />
+          <input type="file" accept=".csv,.xlsx,.xls" onChange={handleArchivo} className="hidden" disabled={importando || !idiomaLote} />
         </label>
       </div>
       <p style={{ color: COLORS.muted }} className="text-xs">
@@ -2710,6 +2749,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   const [revision, setRevision] = useState(null); // { carpetaId, filas: [...] }
   const [publicando, setPublicando] = useState(false);
   const [zonaMercado, setZonaMercado] = useState("");
+  const [idiomaCarpeta, setIdiomaCarpeta] = useState(""); // idioma de todas las cartas de esta revisión
 
   const cargar = () => {
     setLoading(true); setError(null);
@@ -2841,6 +2881,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
     });
     if (!validas.length) { setError("Ponle un precio y una foto (del catálogo o subida a mano) a al menos una carta para publicarla."); return; }
     if (contexto === "mercado" && !zonaMercado.trim()) { setError("Escribe tu zona para publicar en el Mercado."); return; }
+    if (!idiomaCarpeta) { setError("Elige el idioma de estas cartas antes de publicar."); return; }
     setPublicando(true); setError(null);
     try {
       const filas = validas.map((f) => ({
@@ -2848,17 +2889,19 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
         carta: f.encontrada?.name || f.nombre || f.nombreManual,
         set_nombre: f.encontrada?.set_nombre || f.set || null,
         condicion: f.condicion,
+        idioma: idiomaCarpeta,
         precio: Number(f.precio),
         cantidad: Number(f.cantidad) || 1,
         card_api_id: f.encontrada?.card_api_id || null,
         imagen_url: f.imagenManual || f.encontrada?.imagen_url,
         carpeta_id: revision.carpetaId,
         ...(contexto === "tienda"
-          ? { tienda_id: tiendaId, idioma: "EN" }
+          ? { tienda_id: tiendaId }
           : { perfil_id: session.user.id, tipo: "carta", zona: zonaMercado.trim() }),
       }));
       await sbWrite("POST", contexto === "tienda" ? "inventario_tienda" : "mercado_listings", filas, session);
       setRevision(null);
+      setIdiomaCarpeta("");
       onPublicado?.();
     } catch (e) { setError(e.message); } finally { setPublicando(false); }
   };
@@ -2927,6 +2970,10 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
             <input placeholder="Tu zona (ej. Centro, San Pedro)" value={zonaMercado} onChange={(e) => setZonaMercado(e.target.value)}
               style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
           )}
+          <div>
+            <p style={{ color: COLORS.muted }} className="text-xs mb-1">Idioma de estas cartas (obligatorio — se aplica a todas las de esta revisión)</p>
+            <IdiomaSelector value={idiomaCarpeta} onChange={setIdiomaCarpeta} />
+          </div>
           <div className="grid gap-2">
             {revision.filas.map((f, idx) => {
               const imagen = f.imagenManual || f.encontrada?.imagen_url;
@@ -2978,11 +3025,11 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
             })}
           </div>
           <div className="flex gap-2">
-            <button onClick={publicarRevision} disabled={publicando}
+            <button onClick={publicarRevision} disabled={publicando || !idiomaCarpeta}
               style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">
               {publicando ? "Publicando..." : "Publicar cartas incluidas"}
             </button>
-            <button onClick={() => setRevision(null)} style={{ color: COLORS.muted }} className="text-sm">Cancelar</button>
+            <button onClick={() => { setRevision(null); setIdiomaCarpeta(""); }} style={{ color: COLORS.muted }} className="text-sm">Cancelar</button>
           </div>
         </div>
       )}
@@ -2997,7 +3044,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
   const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
@@ -3028,7 +3075,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const alLimite = limiteAlcanzado(perfil, totalActivos);
 
   const agregarCarta = async () => {
-    if (!nuevaCarta.carta || !nuevaCarta.precio) return;
+    if (!nuevaCarta.carta || !nuevaCarta.precio || !nuevaCarta.idioma) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.`); return; }
     setSavingCarta(true);
     try {
@@ -3042,7 +3089,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         imagen_url: nuevaCarta.imagen_url || null,
         precio_ref_mxn: nuevaCarta.precio_ref_mxn || null,
       }, session);
-      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "EN", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingCarta(false); }
   };
@@ -3182,7 +3229,11 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         <input placeholder="Condición" value={nuevaCarta.condicion} onChange={(e) => setNuevaCarta({ ...nuevaCarta, condicion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio" type="number" value={nuevaCarta.precio} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio antes (oferta, opcional)" type="number" value={nuevaCarta.precio_antes} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" title="Si lo llenas, se muestra como oferta con el % de descuento" />
-        <button onClick={agregarCarta} disabled={savingCarta || alLimite} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
+        <div className="sm:col-span-6">
+          <p style={{ color: COLORS.muted }} className="text-xs mb-1">Idioma de la carta (obligatorio)</p>
+          <IdiomaSelector value={nuevaCarta.idioma} onChange={(v) => setNuevaCarta({ ...nuevaCarta, idioma: v })} />
+        </div>
+        <button onClick={agregarCarta} disabled={savingCarta || alLimite || !nuevaCarta.idioma} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
           {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
       </div>
@@ -3194,6 +3245,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             <div className="flex-1 min-w-[140px]">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
+                <IdiomaBadge idioma={item.idioma} />
                 <BoostBadge item={item} />
               </div>
               <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion}</p>
@@ -4746,6 +4798,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
                     <div className="p-2">
                       <div className="flex items-center gap-1 flex-wrap mb-1">
                         {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
+                        {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                         <BoostBadge item={r} />
                       </div>
                       <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
@@ -6580,6 +6633,7 @@ export default function EncuentraCartas() {
                             <div className="p-2">
                               <div className="flex items-center gap-1 flex-wrap mb-1">
                                 <Badge color={r._esTienda ? COLORS.azulPalido : COLORS.azulClaro}>{r._esTienda ? "Tienda" : "Mercado"}</Badge>
+                                {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                                 <BoostBadge item={r} />
                               </div>
                               <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
@@ -6606,7 +6660,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><IdiomaBadge idioma={r.idioma} /><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <AvatarImg url={r.tiendas?.perfiles?.avatar_url} size={20} />
@@ -6633,7 +6687,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
                       <button onClick={() => verPerfil(r.perfil_id)} className="flex items-center gap-2 mt-2 hover:brightness-125">
@@ -6775,6 +6829,7 @@ export default function EncuentraCartas() {
                   <div className="p-3 flex flex-col flex-1 gap-1">
                     <div className="flex items-center gap-1 flex-wrap">
                       {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
+                      {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                       <PlanBadge perfil={r.perfiles} />
                       <BoostBadge item={r} />
                     </div>
@@ -7030,9 +7085,10 @@ export default function EncuentraCartas() {
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium">{item.carta}</p>
+                            <IdiomaBadge idioma={item.idioma} />
                             <BoostBadge item={item} />
                           </div>
-                          <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion} · {item.idioma}</p>
+                          <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion}</p>
                         </div>
                       </div>
                       <div className="text-right">

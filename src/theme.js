@@ -18,6 +18,15 @@ export const COLORS = {
   text: "#F4F6FB", muted: "#8291B5",
 };
 
+// ---- Idioma de la carta: obligatorio al publicar, para que el comprador
+// sepa en qué idioma está la carta sin tener que preguntar ----
+export const IDIOMA_OPCIONES = [
+  { key: "EN", label: "Inglés" },
+  { key: "ES", label: "Español" },
+  { key: "JP", label: "Japonés" },
+];
+export const IDIOMA_LABEL = { EN: "Inglés", ES: "Español", JP: "Japonés" };
+
 export const STORE_COLORS = [COLORS.azul, COLORS.azulClaro, COLORS.azulMedio, COLORS.azulPalido];
 export const colorFor = (i) => STORE_COLORS[i % STORE_COLORS.length];
 // De los tonos de la paleta, azul y azulMedio son oscuros: sobre ellos el texto debe ir blanco, no negro.
