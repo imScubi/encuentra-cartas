@@ -2533,7 +2533,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
       const detectadas = data.cartas || [];
       if (!detectadas.length) { setError("No se detectó ninguna carta en esa foto. Intenta con una foto más clara o de más cerca."); return; }
       const filas = detectadas.map((c) => ({
-        nombre: c.nombre, set: c.set || "", numero: c.numero || "",
+        nombre: c.nombre, set: c.set || "", numero: c.numero || "", confianza: c.confianza || null,
         cargando: true, encontrada: null, incluir: true, precio: "", cantidad: "1", condicion: "NM",
       }));
       setRevision({ carpetaId, filas });
@@ -2557,6 +2557,51 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
       await sbWrite("POST", "carpeta_fotos", { carpeta_id: carpetaId, imagen_url: url }, session);
       cargar();
       await detectar(carpetaId, url);
+    } catch (e) { setError(e.message); } finally { setSubiendoFotoPara(null); }
+  };
+
+  // Modo "una foto por carta": más lento de subir, pero mucho más preciso — cada
+  // carta se ve grande y de cerca, en vez de compartir una sola foto de la página
+  // completa entre varias cartas chiquitas. Los resultados de todas las fotos se
+  // acumulan en la misma pantalla de revisión.
+  const subirVariasFotos = async (carpetaId, files) => {
+    if (!files.length) return;
+    setSubiendoFotoPara(carpetaId); setError(null);
+    let filasAcumuladas = [];
+    setRevision({ carpetaId, filas: [] });
+    try {
+      for (const file of files) {
+        const url = await subirImagenABucket("carpetas", file, session);
+        await sbWrite("POST", "carpeta_fotos", { carpeta_id: carpetaId, imagen_url: url }, session);
+        const res = await fetch("/api/carpetas/detectar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ perfilId: session.user.id, imagenUrl: url }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "No se pudo procesar una de las fotos.");
+        const detectadas = data.cartas || [];
+        const offset = filasAcumuladas.length;
+        const nuevasFilas = detectadas.map((c) => ({
+          nombre: c.nombre, set: c.set || "", numero: c.numero || "", confianza: c.confianza || null,
+          cargando: true, encontrada: null, incluir: true, precio: "", cantidad: "1", condicion: "NM",
+        }));
+        filasAcumuladas = [...filasAcumuladas, ...nuevasFilas];
+        setRevision({ carpetaId, filas: filasAcumuladas });
+        nuevasFilas.forEach((fila, localIdx) => {
+          const idx = offset + localIdx;
+          buscarCartaTCGdex(fila.nombre, fila.numero || null).then((encontrada) => {
+            setRevision((prev) => {
+              if (!prev || prev.carpetaId !== carpetaId) return prev;
+              const nf = [...prev.filas];
+              if (nf[idx]) nf[idx] = { ...nf[idx], cargando: false, encontrada };
+              return { ...prev, filas: nf };
+            });
+          });
+        });
+      }
+      cargar();
+      if (!filasAcumuladas.length) setError("No se detectó ninguna carta en esas fotos. Intenta con fotos más claras o de más cerca.");
     } catch (e) { setError(e.message); } finally { setSubiendoFotoPara(null); }
   };
 
@@ -2603,8 +2648,9 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-6 grid gap-3">
       <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold uppercase">📁 Carpetas</p>
       <p style={{ color: COLORS.muted }} className="text-xs -mt-2">
-        Organiza tu inventario en carpetas (álbumes). Sube una foto de una página y la IA intenta identificar cada carta —
-        tú revisas, le pones precio y publicas en bloque.
+        Organiza tu inventario en carpetas (álbumes). Sube una foto de una página completa (rápido) o una foto por cada
+        carta (más lento, pero mucho más preciso) y la IA intenta identificar cada carta — tú revisas, le pones precio
+        y publicas en bloque.
       </p>
       {error && <ErrorBox message={error} />}
 
@@ -2625,11 +2671,17 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
           <div key={c.id} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3">
             <div className="flex items-center justify-between gap-2 mb-2">
               <p className="text-sm font-semibold">{c.nombre}</p>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-2 py-1.5 text-xs font-semibold cursor-pointer whitespace-nowrap">
-                  {subiendoFotoPara === c.id ? "Procesando..." : "📷 Agregar foto"}
+                  {subiendoFotoPara === c.id ? "Procesando..." : "📷 Foto de la página"}
                   <input type="file" accept="image/*" className="hidden" disabled={subiendoFotoPara === c.id}
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) subirFoto(c.id, f); e.target.value = ""; }} />
+                </label>
+                <label style={{ border: `1px solid ${COLORS.azulPalido}66`, color: COLORS.azulPalido }} className="rounded-lg px-2 py-1.5 text-xs font-semibold cursor-pointer whitespace-nowrap"
+                  title="Sube una foto de cada carta por separado — más lento, pero mucho más preciso que una foto de toda la página.">
+                  {subiendoFotoPara === c.id ? "Procesando..." : "📸 Foto por carta (más preciso)"}
+                  <input type="file" accept="image/*" multiple className="hidden" disabled={subiendoFotoPara === c.id}
+                    onChange={(e) => { const fs = Array.from(e.target.files || []); if (fs.length) subirVariasFotos(c.id, fs); e.target.value = ""; }} />
                 </label>
                 <button onClick={() => borrarCarpeta(c.id)} style={{ color: "#C24444" }} className="text-xs">Borrar</button>
               </div>
@@ -2666,7 +2718,17 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
                 <div className="flex-1 min-w-[140px]">
                   {f.nombre ? (
                     <>
-                      <p className="text-sm font-medium">{f.encontrada?.name || f.nombre}</p>
+                      <p className="text-sm font-medium flex items-center gap-1.5 flex-wrap">
+                        {f.encontrada?.name || f.nombre}
+                        {f.confianza === "baja" && (
+                          <span style={{ color: "#C24444", border: "1px solid #C2444455" }} title="La IA no está segura de esta lectura — revísala antes de publicar."
+                            className="text-[10px] font-semibold rounded px-1 py-0.5 whitespace-nowrap">⚠️ Revisar</span>
+                        )}
+                        {f.confianza === "media" && (
+                          <span style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55` }} title="La IA tuvo que inferir parte de esta carta — vale la pena confirmarla."
+                            className="text-[10px] font-semibold rounded px-1 py-0.5 whitespace-nowrap">confianza media</span>
+                        )}
+                      </p>
                       <p style={{ color: COLORS.muted }} className="text-xs">
                         {f.cargando ? "Buscando en el catálogo..." : f.encontrada?.set_nombre || f.set || ""}
                       </p>

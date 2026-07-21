@@ -101,22 +101,29 @@ export default async function handler(req, res) {
     const base64 = buffer.toString("base64");
 
     const prompt =
-      "Esta es una foto de una página de un álbum/carpeta que contiene cartas FÍSICAS DE PAPEL/CARTÓN reales del " +
-      "Pokémon Trading Card Game. Como son cartas físicas fotografiadas dentro de fundas de plástico, es IMPOSIBLE " +
-      "que alguna sea de 'Pokémon TCG Pocket' — ese es un videojuego para celular sin ninguna carta física impresa, " +
-      "así que nunca existe una tarjeta de Pocket dentro de un álbum real. Si el nombre de un set que ibas a poner " +
-      "coincide con uno de estos (todos son exclusivos del videojuego Pocket y NUNCA existen en papel): Genetic Apex, " +
-      "Mythical Island, Space-Time Smackdown, Triumphant Light, Shining Revelry, Celestial Guardians, " +
-      "Extradimensional Crisis, Eevee Grove, Wisdom of Sea and Sky — entonces te equivocaste de set: vuelve a mirar " +
-      "la carta y da el nombre del set físico real al que pertenece (por ejemplo, coincide el número/símbolo de set " +
-      "impreso con un set real de Scarlet & Violet, Sword & Shield, Crown Zenith, etc.). Si de verdad no puedes " +
-      "determinar el set físico real, deja el campo \"set\" vacío en vez de inventar uno de Pocket. " +
-      "Para cada carta que identifiques, da: el nombre exacto de la carta tal como aparece impreso, el nombre del set " +
-      "físico si lo puedes leer, y el número de carta/set exactamente como aparece impreso, incluyendo el total " +
-      "(ej. '054/198' o 'GG56/GG70'). " +
-      "Si no puedes leer o identificar una carta con confianza razonable, no la inventes: pon \"nombre\": null en esa posición. " +
+      "Esta foto es de un álbum/carpeta de coleccionista y contiene una o varias cartas FÍSICAS DE PAPEL/CARTÓN " +
+      "reales del Pokémon Trading Card Game (puede ser una página completa con varias cartas en fundas, o una sola " +
+      "carta fotografiada de cerca). Como son cartas físicas, es IMPOSIBLE que alguna sea de 'Pokémon TCG Pocket' — " +
+      "ese es un videojuego para celular sin ninguna carta física impresa, así que nunca existe una tarjeta de " +
+      "Pocket dentro de un álbum real. Si el nombre de un set que ibas a poner coincide con uno de estos (todos son " +
+      "exclusivos del videojuego Pocket y NUNCA existen en papel): Genetic Apex, Mythical Island, Space-Time " +
+      "Smackdown, Triumphant Light, Shining Revelry, Celestial Guardians, Extradimensional Crisis, Eevee Grove, " +
+      "Wisdom of Sea and Sky — entonces te equivocaste de set: vuelve a mirar la carta y da el nombre del set " +
+      "físico real al que pertenece, basándote en el símbolo de set impreso (por ejemplo, un set real de Scarlet & " +
+      "Violet, Sword & Shield, Sun & Moon, XY, Crown Zenith, etc.). Si de verdad no puedes determinar el set físico " +
+      "real, deja el campo \"set\" vacío en vez de inventar uno de Pocket o adivinar uno parecido. " +
+      "\n\n" +
+      "Para cada carta que identifiques, mira con mucho cuidado el texto impreso — no adivines por parecido — y da: " +
+      "el nombre exacto de la carta tal como aparece impreso (incluyendo sufijos como 'ex', 'V', 'VMAX', 'GX' si los " +
+      "tiene), el nombre del set físico si lo puedes leer con el símbolo de set, el número de carta/set exactamente " +
+      "como aparece impreso incluyendo el total (ej. '054/198' o 'GG56/GG70'), y tu propio nivel de confianza en esa " +
+      "lectura (\"alta\" si leíste el nombre y número con nitidez, \"media\" si tuviste que inferir parte por brillo/" +
+      "ángulo/borrosidad, \"baja\" si es una suposición poco segura). " +
+      "Si dos cartas se parecen (mismo Pokémon en distintas variantes/artes) y no puedes distinguir cuál es por el " +
+      "número de carta impreso, dilo con confianza \"baja\" en vez de adivinar cuál. " +
+      "Si no puedes leer o identificar una carta en lo absoluto, no la inventes: pon \"nombre\": null en esa posición. " +
       "Responde ÚNICAMENTE con un JSON array (sin texto antes ni después, sin markdown), con este formato exacto: " +
-      '[{"nombre": "...", "set": "...", "numero": "..."}, ...]';
+      '[{"nombre": "...", "set": "...", "numero": "...", "confianza": "alta|media|baja"}, ...]';
 
     const candidatos = await elegirModeloGemini(geminiKey, process.env.GEMINI_MODEL);
     let texto = null;

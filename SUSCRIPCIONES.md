@@ -799,6 +799,36 @@ para simular la llamada). Es la única pieza de todo lo que hice hoy que
 no verifiqué de punta a punta — si al usar el botón "Entrar como" te
 sale un error, dímelo con el mensaje exacto y lo reviso de inmediato.
 
+## 39. Carpetas: detección más precisa + modo "foto por carta"
+
+Se reportaron errores de identificación en Carpetas. Causa probable: una
+sola foto de una página completa obliga a la IA a leer varias cartas
+chiquitas a la vez (letra pequeña, brillo de las fundas), y el prompt no
+pedía ningún nivel de confianza, así que un error se veía igual de
+"seguro" que un acierto.
+
+- **Nuevo: "📸 Foto por carta"**, junto al botón de siempre ("📷 Foto de
+  la página"). Puedes seleccionar varias fotos a la vez (una por carta)
+  y los resultados de todas se juntan en la misma pantalla de revisión.
+  Cada carta fotografiada de cerca es mucho más fácil de leer para la
+  IA que una entre varias en una sola foto — más lento de subir, pero
+  bastante más preciso. El modo de página completa sigue igual, para
+  cuando prefieras ir rápido.
+- **Nivel de confianza por carta**: el prompt ahora le pide a Gemini que
+  diga qué tan segura está de cada lectura. En la pantalla de revisión,
+  las cartas con confianza "baja" se marcan con "⚠️ Revisar" y las de
+  confianza "media" con una etiqueta dorada — para que sepas cuáles vale
+  la pena checar a mano antes de publicar, en vez de confiar ciego en
+  todo lo que detecta.
+- **Prompt reforzado**: instrucciones más explícitas para no adivinar
+  entre cartas parecidas (mismo Pokémon, distinta variante/arte) y
+  basarse en el símbolo de set impreso en vez de suponer.
+
+No hay una lista exhaustiva de todos los sets reales del TCG incluida en
+el prompt (son más de 100 sets) — dársela a la IA como referencia fija
+podría ayudar más adelante, pero por ahora la mejora principal viene de
+la foto más clara y de la señal de confianza.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
