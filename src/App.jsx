@@ -3278,6 +3278,177 @@ const JUEGOS_TORNEO = {
   pokemon: "Pokémon", yugioh: "Yu-Gi-Oh!", lorcana: "Lorcana", magic: "Magic", onepiece: "One Piece", otro: "Otro",
 };
 
+// ---- Destellos ✨: recompensas por actividad real (ventas, reseñas, publicar, perfil completo) ----
+const NIVELES_DESTELLOS = [
+  { min: 0, nombre: "Novato", emoji: "🌱", color: COLORS.muted },
+  { min: 50, nombre: "Buscador", emoji: "🔍", color: COLORS.azulClaro },
+  { min: 200, nombre: "Cazador", emoji: "🎯", color: COLORS.violeta },
+  { min: 500, nombre: "Maestro Cazador", emoji: "🏹", color: COLORS.azulPalido },
+  { min: 1000, nombre: "Leyenda", emoji: "👑", color: COLORS.gold },
+];
+
+function nivelDestellos(total) {
+  let actual = NIVELES_DESTELLOS[0];
+  let siguiente = null;
+  for (let i = 0; i < NIVELES_DESTELLOS.length; i++) {
+    if (total >= NIVELES_DESTELLOS[i].min) actual = NIVELES_DESTELLOS[i];
+    else { siguiente = NIVELES_DESTELLOS[i]; break; }
+  }
+  return { actual, siguiente };
+}
+
+const MOTIVO_DESTELLOS_LABEL = {
+  venta_confirmada_vendedor: "Venta confirmada",
+  venta_confirmada_comprador: "Compra confirmada",
+  primera_venta: "🎉 Bono: tu primera venta",
+  primera_compra: "🎉 Bono: tu primera compra",
+  resena_dejada: "Dejaste una reseña",
+  resena_5_estrellas: "Te calificaron con 5 estrellas",
+  publicacion: "Publicaste algo nuevo",
+  perfil_completo: "🎉 Bono: completaste tu perfil",
+  canje_boost_3d: "Canjeado: Boost 3 días",
+  canje_boost_7d: "Canjeado: Boost 7 días",
+};
+
+// Insignia pública de nivel (se ve en el perfil, no se puede ocultar).
+function NivelBadge({ total, size = "sm" }) {
+  const { actual } = nivelDestellos(total);
+  return (
+    <span
+      title={`Nivel de Destellos: ${actual.nombre}`}
+      style={{ border: `1px solid ${actual.color}`, color: actual.color, boxShadow: `0 0 8px ${actual.color}66` }}
+      className={`inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap ${size === "lg" ? "px-3 py-1 text-sm" : "px-2 py-0.5 text-xs"}`}
+    >
+      {actual.emoji} {actual.nombre}
+    </span>
+  );
+}
+
+function RecompensasView({ session, perfil }) {
+  const [movimientos, setMovimientos] = useState([]);
+  const [publicaciones, setPublicaciones] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [canjeando, setCanjeando] = useState(null);
+  const [error, setError] = useState(null);
+  const [ok, setOk] = useState(null);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    const tareas = [sb(`destellos_movimientos?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session).then(setMovimientos)];
+    if (perfil?.tipo === "individual") {
+      tareas.push(sb(`mercado_listings?select=id,carta,producto,tipo,destacado_hasta&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
+        .then((filas) => setPublicaciones(filas.map((f) => ({ ...f, tabla: "mercado_listings", nombre: f.carta })))));
+    } else if (perfil?.tipo === "tienda") {
+      tareas.push(
+        sb(`tiendas?select=id&perfil_id=eq.${session.user.id}`, session).then(async (rows) => {
+          const tiendaId = rows[0]?.id;
+          if (!tiendaId) return;
+          const [inv, sell] = await Promise.all([
+            sb(`inventario_tienda?select=id,carta,destacado_hasta&tienda_id=eq.${tiendaId}`, session),
+            sb(`sellado_tienda?select=id,producto,destacado_hasta&tienda_id=eq.${tiendaId}`, session),
+          ]);
+          setPublicaciones([
+            ...inv.map((f) => ({ ...f, tabla: "inventario_tienda", nombre: f.carta })),
+            ...sell.map((f) => ({ ...f, tabla: "sellado_tienda", nombre: f.producto })),
+          ]);
+        })
+      );
+    }
+    Promise.all(tareas).catch((e) => setError(e.message)).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, [session.user.id, perfil?.tipo]);
+
+  const canjear = async (item, dias) => {
+    setCanjeando(`${item.id}-${dias}`); setError(null); setOk(null);
+    try {
+      const res = await fetch("/api/recompensas/canjear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ tabla: item.tabla, listingId: item.id, dias }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo canjear");
+      setOk(`Listo, "${item.nombre}" quedó destacada ${dias} días.`);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setCanjeando(null); }
+  };
+
+  if (loading) return <Loading label="Cargando tus Destellos..." />;
+
+  const total = movimientos.reduce((s, m) => s + m.cantidad, 0);
+  const { actual, siguiente } = nivelDestellos(total);
+  const progreso = siguiente ? Math.min(100, Math.round(((total - actual.min) / (siguiente.min - actual.min)) * 100)) : 100;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🏆 Recompensas</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Gana Destellos ✨ vendiendo, comprando, calificando y publicando — cánjialos por Boost gratis.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+      {ok && <p style={{ color: COLORS.azulPalido }} className="text-sm mb-4">{ok}</p>}
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-5 mb-6">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+          <div className="flex items-center gap-2">
+            <NivelBadge total={total} size="lg" />
+            <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">{total} ✨</p>
+          </div>
+          {siguiente && <p style={{ color: COLORS.muted }} className="text-xs">Faltan {siguiente.min - total} para {siguiente.emoji} {siguiente.nombre}</p>}
+        </div>
+        <div style={{ background: COLORS.surface2 }} className="rounded-full h-2 overflow-hidden">
+          <div style={{ width: `${progreso}%`, background: `linear-gradient(90deg, ${COLORS.azulClaro}, ${COLORS.gold})` }} className="h-full rounded-full transition-all" />
+        </div>
+      </div>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Canjear por Boost gratis</h3>
+      {publicaciones.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm mb-6">Publica algo para poder canjear un Boost gratis en ella.</p>
+      ) : (
+        <div className="grid gap-2 mb-6">
+          {publicaciones.map((item) => {
+            const yaDestacado = item.destacado_hasta && new Date(item.destacado_hasta) > new Date();
+            return (
+              <div key={`${item.tabla}-${item.id}`} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-sm font-medium truncate">{item.nombre}</p>
+                {yaDestacado ? (
+                  <p style={{ color: COLORS.azulPalido }} className="text-xs">🚀 Ya destacada</p>
+                ) : (
+                  <div className="flex gap-2">
+                    <button onClick={() => canjear(item, 3)} disabled={total < 150 || canjeando !== null}
+                      style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: total < 150 ? 0.4 : 1 }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+                      {canjeando === `${item.id}-3` ? "..." : "3 días · 150✨"}
+                    </button>
+                    <button onClick={() => canjear(item, 7)} disabled={total < 300 || canjeando !== null}
+                      style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: total < 300 ? 0.4 : 1 }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+                      {canjeando === `${item.id}-7` ? "..." : "7 días · 300✨"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Historial</h3>
+      {movimientos.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm">Todavía no tienes movimientos.</p>
+      ) : (
+        <div className="grid gap-1">
+          {movimientos.slice(0, 30).map((m) => (
+            <div key={m.id} className="flex items-center justify-between gap-2 text-sm py-1.5" style={{ borderBottom: `1px solid ${COLORS.surface2}` }}>
+              <p>{MOTIVO_DESTELLOS_LABEL[m.motivo] || m.motivo}</p>
+              <p style={{ color: m.cantidad >= 0 ? COLORS.azulPalido : COLORS.muted }} className="font-semibold whitespace-nowrap">
+                {m.cantidad >= 0 ? "+" : ""}{m.cantidad} ✨
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- Mis compras y ventas: confirmar/rechazar ventas pendientes y calificar tras confirmarse ----
 function ComprasVentasView({ session }) {
   const [tab, setTab] = useState("compras");
@@ -3409,12 +3580,13 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
   const [carpetas, setCarpetas] = useState([]);
   const [resenas, setResenas] = useState([]);
   const [ventasCompletadas, setVentasCompletadas] = useState(0);
+  const [totalDestellos, setTotalDestellos] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     setLoading(true); setError(null);
-    setPerfil(undefined); setCartas([]); setSellado([]); setTienda(null); setWishlist([]); setCarpetas([]); setResenas([]); setVentasCompletadas(0);
+    setPerfil(undefined); setCartas([]); setSellado([]); setTienda(null); setWishlist([]); setCarpetas([]); setResenas([]); setVentasCompletadas(0); setTotalDestellos(0);
     sb(`perfiles?select=*&id=eq.${perfilId}`)
       .then(async (rows) => {
         const p = rows[0] || null;
@@ -3445,6 +3617,9 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
         );
         tareas.push(
           sb(`ventas?select=id&vendedor_perfil_id=eq.${perfilId}&estado=eq.confirmada`).then((filas) => setVentasCompletadas(filas.length))
+        );
+        tareas.push(
+          sb(`destellos_movimientos?select=cantidad&perfil_id=eq.${perfilId}`).then((filas) => setTotalDestellos(filas.reduce((s, m) => s + m.cantidad, 0)))
         );
         await Promise.all(tareas);
       })
@@ -3477,6 +3652,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
               <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">{perfil.nombre}</h2>
               <PlanBadge perfil={perfil} />
               <VerificadoBadge perfil={perfil} />
+              <NivelBadge total={totalDestellos} />
             </div>
             {tienda?.zona && <p style={{ color: COLORS.muted }} className="text-sm">{tienda.zona}</p>}
             <div className="flex items-center gap-3 flex-wrap mt-0.5">
@@ -4889,6 +5065,7 @@ export default function EncuentraCartas() {
   const [loadingStoreDetail, setLoadingStoreDetail] = useState(false);
   const [storeResenas, setStoreResenas] = useState([]);
   const [storeVentasCompletadas, setStoreVentasCompletadas] = useState(0);
+  const [storeDestellos, setStoreDestellos] = useState(0);
 
   const [market, setMarket] = useState([]);
   const [loadingMarket, setLoadingMarket] = useState(false);
@@ -4990,7 +5167,7 @@ export default function EncuentraCartas() {
     setSelectedStore(store);
     setView("storeDetail");
     setLoadingStoreDetail(true);
-    setStoreResenas([]); setStoreVentasCompletadas(0);
+    setStoreResenas([]); setStoreVentasCompletadas(0); setStoreDestellos(0);
     Promise.all([
       sb(`inventario_tienda?select=*&tienda_id=eq.${store.id}`),
       sb(`sellado_tienda?select=*&tienda_id=eq.${store.id}`),
@@ -5000,6 +5177,7 @@ export default function EncuentraCartas() {
     if (store.perfil_id) {
       sb(`resenas?select=*,autor:autor_perfil_id(nombre,avatar_url)&objetivo_perfil_id=eq.${store.perfil_id}&order=created_at.desc&limit=20`).then(setStoreResenas).catch(() => {});
       sb(`ventas?select=id&vendedor_perfil_id=eq.${store.perfil_id}&estado=eq.confirmada`).then((filas) => setStoreVentasCompletadas(filas.length)).catch(() => {});
+      sb(`destellos_movimientos?select=cantidad&perfil_id=eq.${store.perfil_id}`).then((filas) => setStoreDestellos(filas.reduce((s, m) => s + m.cantidad, 0))).catch(() => {});
     }
   };
 
@@ -5028,6 +5206,7 @@ export default function EncuentraCartas() {
     { id: "torneos", label: "Torneos", icon: Calendar },
     ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
     ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
+    ...(session ? [{ id: "recompensas", label: "Recompensas", icon: Sparkles }] : []),
     { id: "planes", label: "Planes", icon: Shield },
     ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
     ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
@@ -5571,6 +5750,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-2 pb-1.5">
                     <PlanBadge perfil={selectedStore.perfiles} size="lg" />
                     <VerificadoBadge perfil={selectedStore.perfiles} />
+                    <NivelBadge total={storeDestellos} />
                   </div>
                   {session && session.user.id !== selectedStore.perfil_id && (
                     <div className="ml-auto pb-1.5">
@@ -5706,6 +5886,7 @@ export default function EncuentraCartas() {
         )}
 
         {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
+        {view === "recompensas" && session && <RecompensasView session={session} perfil={perfil} />}
       </main>
 
       <footer style={{ position: "relative", zIndex: 1, borderTop: `1px solid ${COLORS.surface2}` }} className="px-4 sm:px-8 py-6 mt-10">

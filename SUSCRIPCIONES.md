@@ -511,6 +511,46 @@ volver a publicarla a mano. Si esto causa problemas en la práctica,
 vale la pena agregar una opción de "restaurar publicación rechazada"
 más adelante.
 
+## 29. Sistema de recompensas: Destellos ✨
+
+Corre `supabase/migrations/025_destellos.sql`.
+
+Puntos ("Destellos ✨") separados por completo de los planes pagados —
+se ganan con actividad real, no se compran:
+
+| Acción | Destellos |
+|---|---|
+| Venta confirmada por el comprador (vendedor) | +20 |
+| Confirmar una compra (comprador) | +10 |
+| Tu primera venta o primera compra confirmada — una vez | +25 |
+| Dejar una reseña | +5 |
+| Recibir una reseña de 5 estrellas | +10 |
+| Publicar una carta/producto nuevo (tope: 10/día) | +2 |
+| Completar tu perfil (foto + Pokémon favorito + una red o WhatsApp) — una vez | +15 |
+
+Todo se otorga solo, con triggers en la base de datos (tabla
+`destellos_movimientos`, un histórico de movimientos) — nadie puede
+inventarse puntos desde el navegador, ni siquiera editando el código
+del sitio, porque el cliente no tiene permiso para insertar ahí
+directamente.
+
+**Niveles** (cosméticos, insignia pública en el perfil, no dan
+descuentos en los planes pagados): Novato → Buscador → Cazador →
+Maestro Cazador → Leyenda, según el total acumulado de Destellos.
+
+**Canje**: desde la nueva sección **"🏆 Recompensas"** (en el menú),
+puedes canjear Destellos por Boost gratis en una publicación tuya —
+150 ✨ = 3 días, 300 ✨ = 7 días. El canje lo procesa
+`api/recompensas/canjear.js` (requiere `SUPABASE_SERVICE_ROLE_KEY`,
+que ya tienes configurada) — verifica tu sesión de verdad y tu saldo
+antes de descontar, así no se puede canjear más de lo que tienes.
+
+Decisión de diseño importante: los Destellos **no** se pueden canjear
+por descuentos en los planes de pago (Zafiro, Amatista, etc.) — así el
+sistema de recompensas no le quita ingresos por suscripción a la
+plataforma, solo da beneficios que ya no cuestan nada extra (Boost e
+insignias).
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
@@ -519,4 +559,4 @@ más adelante.
 - Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
 - Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
-- Las ideas restantes de la lista de "confianza y comunidad" (4 de las 12 originales, tras descartar estadísticas por tienda/historial de precios/páginas indexables por Google, y ya construir reportes + insignias + legal + reseñas/ventas): sistema de recompensas, seguir tiendas/vendedores favoritos, modo "armar mazo" con matching de inventario entre tiendas, y feed de comunidad.
+- Las ideas restantes de la lista de "confianza y comunidad" (3 de las 12 originales, tras descartar estadísticas por tienda/historial de precios/páginas indexables por Google, y ya construir reportes + insignias + legal + reseñas/ventas + recompensas): seguir tiendas/vendedores favoritos, modo "armar mazo" con matching de inventario entre tiendas, y feed de comunidad.
