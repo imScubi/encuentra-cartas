@@ -354,7 +354,8 @@ También necesitas agregar una variable de entorno nueva en Vercel:
 
 | Variable | De dónde sale | Notas |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | https://console.anthropic.com → API Keys (crea tu propia cuenta si no tienes) | **Tiene costo de uso**: se cobra por cada foto que se procese (normalmente fracciones de centavo de dólar por foto, pero se acumula con el uso). Sin esta variable, "Carpetas" deja de detectar cartas automáticamente (el resto de la app sigue funcionando normal). |
+| `GEMINI_API_KEY` | https://aistudio.google.com/apikey (entra con tu cuenta de Google, "Create API key") | **Gratis** dentro de los límites de la capa gratuita de Gemini (un número generoso de fotos por minuto/día, sin tarjeta de crédito). Sin esta variable, "Carpetas" deja de detectar cartas automáticamente (el resto de la app sigue funcionando normal). |
+| `GEMINI_MODEL` (opcional) | — | Por si Google cambia el nombre del modelo más adelante. Si no la pones, usa `gemini-2.5-flash` por defecto. |
 
 Qué hace: en "Mi tienda" y "Vender en el Mercado" (desde el plan **Super
 Ball** en adelante), hay una sección **"📁 Carpetas"** donde puedes:
@@ -362,8 +363,8 @@ Ball** en adelante), hay una sección **"📁 Carpetas"** donde puedes:
 - Crear varias carpetas (álbumes) con su propio nombre.
 - Subir fotos de las páginas de tu álbum físico a cada carpeta — se
   guardan ahí para siempre, como una galería.
-- Cada foto que subes se manda a la IA (Claude, la misma tecnología
-  detrás de este asistente) para que identifique cada carta visible.
+- Cada foto que subes se manda a la IA con visión de Google (Gemini,
+  capa gratuita) para que identifique cada carta visible.
 - Te muestra una pantalla de revisión con lo que detectó (nombre, set e
   imagen si los encontró en el catálogo): puedes destildar las que no
   quieras publicar, corregir el nombre a mano si no se detectó bien,
