@@ -311,7 +311,10 @@ async function buscarCartaTCGdex(nombre, numeroHint) {
     const res = await fetch(`https://api.tcgdex.net/v2/en/cards?name=${encodeURIComponent(nombre)}&pagination:itemsPerPage=10`);
     const lista = await res.json();
     if (!Array.isArray(lista) || !lista.length) return null;
-    const candidato = (numeroHint && lista.find((c) => c.localId === numeroHint)) || lista[0];
+    // El número puede venir como "054/198" (con el total) — solo la primera parte
+    // es el localId real de TCGdex, si comparamos el texto completo nunca coincide.
+    const numeroLimpio = numeroHint ? String(numeroHint).split("/")[0].trim() : null;
+    const candidato = (numeroLimpio && lista.find((c) => c.localId === numeroLimpio)) || lista[0];
     const detalleRes = await fetch(`https://api.tcgdex.net/v2/en/cards/${candidato.id}`);
     const full = await detalleRes.json();
     const total = full.set?.cardCount?.official || full.set?.cardCount?.total || "";
