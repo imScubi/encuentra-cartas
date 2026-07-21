@@ -444,6 +444,38 @@ También se reemplazaron los 5 archivos `public/branding/rango-*.png` por
 íconos de gema (mismo nombre de archivo, sigue funcionando el mecanismo de
 `DISENO.md`).
 
+## 27. Confianza y comunidad: reportes, insignias, legal
+
+Primer lote (de una lista más grande de 12 ideas) de mejoras de confianza
+para el marketplace — el resto (reseñas con estrellas, contador de ventas,
+recompensas, seguir tiendas, historial de precios, feed de comunidad,
+armar mazo, páginas indexables por Google) queda pendiente para después.
+
+Corre `supabase/migrations/023_reportes.sql`.
+
+- **Botón "🚩 Reportar"** en el perfil público de cualquier usuario y en
+  el detalle de cada tienda (no aparece en tu propio perfil). Pide un
+  motivo de una lista corta + un detalle opcional, y requiere sesión
+  iniciada (así el reporte queda ligado a quién lo mandó). Se guarda en
+  la tabla `reportes`.
+- **Panel de Admin → pestaña "Reportes"**: lista los reportes pendientes
+  (quién reportó, a quién/qué, motivo, detalle) con botones para marcar
+  "revisado" o "descartado" — mismo patrón que la pestaña de Errores.
+- **Aviso de Privacidad** y **Términos de Uso**: dos páginas nuevas
+  (enlazadas desde un pie de página nuevo, visible en toda la app).
+  Contenido genérico de referencia — **no es asesoría legal**; antes de
+  confiar en ellos del todo, vale la pena que un abogado los revise y
+  los adapte a tu caso real (razón social, domicilio, etc.).
+- **Insignias por actividad**: "🗂️ Organizado" (tiene al menos 1
+  carpeta), "📋 Coleccionista" (5+ cosas en su Wishlist) y "🕰️ Veterano"
+  (cuenta con 6+ meses de antigüedad) — se calculan al vuelo con datos
+  que ya existían, sin tabla nueva, y se muestran en el perfil público.
+- **"Miembro desde `<mes y año>`"**: usa la columna `created_at` que
+  Supabase ya le pone por defecto a `perfiles` — se muestra en el
+  perfil público y en el detalle de tienda. Si tu tabla `perfiles` no
+  tiene esa columna (poco probable, pero puede pasar si se creó a mano
+  sin ella), este dato simplemente no aparece, sin romper nada.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
@@ -451,3 +483,4 @@ También se reemplazaron los 5 archivos `public/branding/rango-*.png` por
 - Mapa de Google en el detalle del torneo (hoy solo muestra la dirección en texto).
 - Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
+- Las 8 ideas restantes de la lista de "confianza y comunidad": reseñas de 1-5 estrellas (ligadas a marcar una venta como completada), contador de ventas completadas, sistema de recompensas, estadísticas de vistas/mensajes por tienda, historial de precios con gráfica, seguir tiendas/vendedores favoritos, modo "armar mazo" con matching de inventario entre tiendas, feed de comunidad, y páginas de tienda indexables por Google (esta última requiere agregar renderizado del lado del servidor, ya que hoy la app es 100% del lado del cliente).
