@@ -3877,11 +3877,26 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
 
 const TIPO_NOTIFICACION_ICONO = { wishlist: Sparkles, anuncio: Megaphone, mensaje: MessageCircle, torneo: Calendar, plan: Shield, boost: Sparkles, error: AlertCircle };
 
+// Las notificaciones "globales" (perfil_id null, ej. Anuncios) no tienen
+// dueño en la base de datos, así que no se pueden marcar "leida" ahí — se
+// guarda el set de IDs ya vistas en este navegador. Las personales sí usan
+// la columna `leida` de la base de datos (así se sincronizan entre
+// dispositivos), y además se reflejan aquí también.
+const NOTIS_LEIDAS_KEY = "ec_notis_leidas_v2";
+function leerNotisLeidas() {
+  try { return new Set(JSON.parse(localStorage.getItem(NOTIS_LEIDAS_KEY) || "[]")); } catch { return new Set(); }
+}
+function guardarNotisLeidas(set) {
+  try { localStorage.setItem(NOTIS_LEIDAS_KEY, JSON.stringify([...set])); } catch {}
+}
+
 function NotificationBell({ session, onNavigate }) {
   const [abierto, setAbierto] = useState(false);
   const [notis, setNotis] = useState([]);
   const [loading, setLoading] = useState(false);
-  const ultimaVezKey = "ec_ultima_vez_notis";
+  const [leidasLocal, setLeidasLocal] = useState(() => leerNotisLeidas());
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
 
   const cargar = () => {
     setLoading(true);
@@ -3896,38 +3911,65 @@ function NotificationBell({ session, onNavigate }) {
 
   useEffect(() => { cargar(); }, [session?.user?.id]);
 
-  const ultimaVez = Number(localStorage.getItem(ultimaVezKey) || 0);
-  const noLeidas = notis.filter((n) => (n.perfil_id ? !n.leida : new Date(n.created_at).getTime() > ultimaVez)).length;
+  const esNoLeida = (n) => (n.perfil_id ? !n.leida : !leidasLocal.has(n.id));
+  const noLeidas = notis.filter(esNoLeida).length;
+
+  // Calcula la posición fija a partir del botón real (en vez de depender de
+  // que algún ancestro tenga el ancho/posición "correcta"), para que el
+  // panel jamás quede cortado por el borde de la pantalla, en celular o web.
+  const posicionar = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setPos({ top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) });
+  };
 
   const abrir = () => {
-    setAbierto((v) => !v);
-    if (!abierto) cargar();
+    const vaAbrir = !abierto;
+    setAbierto(vaAbrir);
+    if (vaAbrir) {
+      cargar();
+      posicionar();
+    }
   };
 
   const VISTA_POR_TIPO = { wishlist: "alertas", anuncio: "news", mensaje: "inbox" };
 
-  const marcarLeida = async (n) => {
-    if (n.perfil_id && !n.leida && session) {
-      try { await sbWrite("PATCH", `notificaciones?id=eq.${n.id}`, { leida: true }, session); } catch {}
-      setNotis((prev) => prev.map((x) => (x.id === n.id ? { ...x, leida: true } : x)));
+  // Marca como leídas todas las que están en pantalla — ver la lista ya
+  // cuenta como "leído", así el numerito no depende de acertarle al click
+  // exacto en cada una ni se vuelve a poner tras recargar.
+  const marcarTodasLeidas = async (lista) => {
+    const globales = lista.filter((n) => !n.perfil_id && !leidasLocal.has(n.id));
+    if (globales.length) {
+      const nuevo = new Set(leidasLocal);
+      globales.forEach((n) => nuevo.add(n.id));
+      setLeidasLocal(nuevo);
+      guardarNotisLeidas(nuevo);
     }
+    const pendientes = lista.filter((n) => n.perfil_id && !n.leida);
+    if (pendientes.length) {
+      setNotis((prev) => prev.map((n) => (n.perfil_id && !n.leida ? { ...n, leida: true } : n)));
+      if (session) {
+        await Promise.allSettled(
+          pendientes.map((n) => sbWrite("PATCH", `notificaciones?id=eq.${n.id}`, { leida: true }, session).catch((e) => console.error("No se pudo marcar leída:", e)))
+        );
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (abierto && !loading && notis.length > 0) marcarTodasLeidas(notis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto, loading]);
+
+  const irA = (n) => {
     const vista = VISTA_POR_TIPO[n.tipo];
     if (vista) onNavigate?.(vista);
     setAbierto(false);
   };
 
-  const marcarTodasLeidas = async () => {
-    localStorage.setItem(ultimaVezKey, String(Date.now()));
-    const pendientes = notis.filter((n) => n.perfil_id && !n.leida);
-    setNotis((prev) => prev.map((n) => ({ ...n, leida: true })));
-    if (session) {
-      await Promise.allSettled(pendientes.map((n) => sbWrite("PATCH", `notificaciones?id=eq.${n.id}`, { leida: true }, session)));
-    }
-  };
-
   return (
     <>
-      <button onClick={abrir} style={{ color: COLORS.muted }} className="relative p-2 rounded-lg">
+      <button ref={btnRef} onClick={abrir} style={{ color: COLORS.muted }} className="relative p-2 rounded-lg">
         <Bell size={18} />
         {noLeidas > 0 && (
           <span style={{ background: COLORS.azulPalido, color: COLORS.bg }}
@@ -3937,29 +3979,31 @@ function NotificationBell({ session, onNavigate }) {
         )}
       </button>
 
-      {abierto && (
+      {abierto && pos && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setAbierto(false)} />
-          {/* Ancla a la <nav> (más ancha, con position:relative) en vez de a este botón,
-              para que no se salga de la pantalla en celular cuando la campanita no es
-              el último ícono de la barra. */}
+          {/* position:fixed calculado desde el botón real (no un ancestro) —
+              así nunca se sale de la pantalla, sea cual sea el ancho del
+              header o del dispositivo. */}
           <div
-            style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33` }}
-            className="absolute right-0 mt-2 w-80 max-w-[90vw] rounded-xl overflow-hidden z-40"
+            style={{
+              background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33`,
+              position: "fixed", top: pos.top, right: pos.right,
+            }}
+            className="w-80 max-w-[calc(100vw-1rem)] rounded-xl overflow-hidden z-40"
           >
             <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: `1px solid ${COLORS.bg}` }}>
               <p className="text-sm font-semibold">Notificaciones</p>
-              <button onClick={marcarTodasLeidas} style={{ color: COLORS.azulPalido }} className="text-xs">Marcar todo leído</button>
+              {noLeidas > 0 && <p style={{ color: COLORS.muted }} className="text-xs">Se marcan leídas al verlas</p>}
             </div>
-            <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+            <div style={{ maxHeight: "min(320px, 60vh)", overflowY: "auto" }}>
               {loading && <p style={{ color: COLORS.muted }} className="text-xs p-4 text-center">Cargando...</p>}
               {!loading && notis.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs p-4 text-center">Sin notificaciones todavía.</p>}
               {!loading && notis.map((n) => {
                 const Icon = TIPO_NOTIFICACION_ICONO[n.tipo] || Bell;
-                const noLeida = n.perfil_id ? !n.leida : new Date(n.created_at).getTime() > ultimaVez;
                 return (
-                  <button key={n.id} onClick={() => marcarLeida(n)}
-                    style={{ background: noLeida ? `${COLORS.azul}22` : "transparent", borderBottom: `1px solid ${COLORS.bg}` }}
+                  <button key={n.id} onClick={() => irA(n)}
+                    style={{ background: esNoLeida(n) ? `${COLORS.azul}22` : "transparent", borderBottom: `1px solid ${COLORS.bg}` }}
                     className="w-full text-left px-4 py-3 flex items-start gap-3 hover:brightness-125">
                     <Icon size={16} color={COLORS.azulPalido} className="mt-0.5 shrink-0" />
                     <div className="min-w-0">
