@@ -4,332 +4,22 @@ import {
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers,
 } from "lucide-react";
-
-// ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
-const SUPABASE_URL = "https://nulypgaaekexlbxbxdwq.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51bHlwZ2FhZWtleGxieGJ4ZHdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzOTk3OTcsImV4cCI6MjA5OTk3NTc5N30.9qxfcmUx5k1br1CH3DIFI2EplFJWYeRyg6HFeZNN7og";
-
-// El token de sesión de Supabase expira solo (~1 hora). Si una consulta falla
-// por eso, la renovamos con el refresh_token y reintentamos una sola vez.
-// onSesionRefrescada lo registra la app principal para enterarse del cambio
-// (y así no perder la renovación en el siguiente render).
-let onSesionRefrescada = null;
-let refrescandoPromesa = null;
-
-function pareceSesionExpirada(status, data) {
-  return status === 401 || /jwt expired|invalid jwt/i.test(JSON.stringify(data || {}));
-}
-
-async function refrescarSesion(session) {
-  if (!session?.refresh_token) throw new Error("Tu sesión expiró. Vuelve a iniciar sesión.");
-  if (!refrescandoPromesa) {
-    refrescandoPromesa = fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: session.refresh_token }),
-    })
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.msg || "Tu sesión expiró. Vuelve a iniciar sesión.");
-        const nueva = { access_token: data.access_token, refresh_token: data.refresh_token, user: data.user || session.user };
-        localStorage.setItem("ec_session", JSON.stringify(nueva));
-        onSesionRefrescada?.(nueva);
-        return nueva;
-      })
-      .finally(() => { refrescandoPromesa = null; });
-  }
-  return refrescandoPromesa;
-}
-
-// ---- Captura de errores: avisa al admin sin que nadie tenga que reportarlo a mano ----
-let uidActual = null; // lo actualiza EncuentraCartas cuando hay sesión, para poder incluirlo en el reporte
-
-function reportarError(mensaje, stack) {
-  if (!mensaje) return;
-  try {
-    fetch("/api/errores/reportar", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensaje: String(mensaje).slice(0, 500), stack, url: window.location.href, perfilId: uidActual }),
-    }).catch(() => {});
-  } catch {}
-}
-
-if (typeof window !== "undefined" && !window.__ecErroresListo) {
-  window.__ecErroresListo = true;
-  window.addEventListener("error", (e) => reportarError(e.message, e.error?.stack));
-  window.addEventListener("unhandledrejection", (e) => reportarError(e.reason?.message || String(e.reason), e.reason?.stack));
-}
-
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { error: null };
-  }
-  static getDerivedStateFromError(error) {
-    return { error };
-  }
-  componentDidCatch(error, info) {
-    reportarError(error.message, `${error.stack || ""}\n${info?.componentStack || ""}`);
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <div style={{ minHeight: "100vh", background: "#000", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div className="text-center max-w-sm">
-            <p className="text-lg font-semibold mb-2">Algo salió mal</p>
-            <p style={{ color: "#7A8BA8" }} className="text-sm mb-4">Ya avisamos al equipo. Intenta recargar la página.</p>
-            <button onClick={() => window.location.reload()} style={{ background: "#9EC0EE", color: "#000" }} className="rounded-lg px-4 py-2 text-sm font-semibold">
-              Recargar
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-async function sb(path, session) {
-  const pedir = (s) =>
-    fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${s?.access_token || SUPABASE_ANON_KEY}` },
-    });
-
-  let res = await pedir(session);
-  if (!res.ok && session) {
-    const data = await res.clone().json().catch(() => null);
-    if (pareceSesionExpirada(res.status, data)) {
-      const nueva = await refrescarSesion(session);
-      res = await pedir(nueva);
-    }
-  }
-  if (!res.ok) {
-    const data = await res.clone().json().catch(() => null);
-    throw new Error(`Error consultando la base de datos (${res.status}) en ${path}: ${data?.message || data?.hint || JSON.stringify(data) || "sin detalle"}`);
-  }
-  return res.json();
-}
-
-async function sbWrite(method, path, body, session) {
-  const pedir = (s) =>
-    fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-      method,
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${s?.access_token || SUPABASE_ANON_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify(body),
-    });
-
-  let res = await pedir(session);
-  let data = await res.clone().json().catch(() => null);
-  if (!res.ok && session && pareceSesionExpirada(res.status, data)) {
-    const nueva = await refrescarSesion(session);
-    res = await pedir(nueva);
-    data = await res.json().catch(() => null);
-  }
-  if (!res.ok) throw new Error(data?.message || `Error guardando (${res.status})`);
-  return data;
-}
-
-async function authSignUp(email, password, metadata) {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
-    method: "POST",
-    headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, data: metadata }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.msg || data?.error_description || "No se pudo crear la cuenta");
-  return data; // incluye access_token si la confirmación por correo está desactivada
-}
-
-async function authSignIn(email, password) {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.msg || data?.error_description || "Correo o contraseña incorrectos");
-  return data;
-}
-
-// ---- Foto de perfil: Pokémon (PokeAPI, pública) o foto propia (Supabase Storage) ----
-const POKEMON_MAX_ID = 1025;
-const pokemonSpriteUrl = (id) =>
-  `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
-const randomPokemonAvatar = () => pokemonSpriteUrl(1 + Math.floor(Math.random() * POKEMON_MAX_ID));
-
-let _pokemonListCache = null;
-async function obtenerListaPokemon() {
-  if (_pokemonListCache) return _pokemonListCache;
-  const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=2000");
-  const data = await res.json();
-  _pokemonListCache = (data.results || [])
-    .map((p) => {
-      const match = p.url.match(/\/pokemon\/(\d+)\/?$/);
-      return match ? { name: p.name, id: Number(match[1]) } : null;
-    })
-    .filter(Boolean);
-  return _pokemonListCache;
-}
-
-async function subirAvatar(file, session) {
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const path = `${session.user.id}/avatar.${ext}`;
-  const subir = (s) =>
-    fetch(`${SUPABASE_URL}/storage/v1/object/avatars/${path}`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${s.access_token}`,
-        "Content-Type": file.type || "image/jpeg",
-        "x-upsert": "true",
-      },
-      body: file,
-    });
-
-  let res = await subir(session);
-  if (!res.ok) {
-    const data = await res.clone().json().catch(() => null);
-    if (pareceSesionExpirada(res.status, data)) {
-      const nueva = await refrescarSesion(session);
-      res = await subir(nueva);
-    }
-  }
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || "No se pudo subir la foto");
-  }
-  return `${SUPABASE_URL}/storage/v1/object/public/avatars/${path}?t=${Date.now()}`;
-}
-
-async function subirImagenAnuncio(file, session) {
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const path = `${session.user.id}/${Date.now()}.${ext}`;
-  const subir = (s) =>
-    fetch(`${SUPABASE_URL}/storage/v1/object/anuncios/${path}`, {
-      method: "POST",
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${s.access_token}`, "Content-Type": file.type || "image/jpeg" },
-      body: file,
-    });
-
-  let res = await subir(session);
-  if (!res.ok) {
-    const data = await res.clone().json().catch(() => null);
-    if (pareceSesionExpirada(res.status, data)) {
-      const nueva = await refrescarSesion(session);
-      res = await subir(nueva);
-    }
-  }
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || "No se pudo subir la imagen");
-  }
-  return `${SUPABASE_URL}/storage/v1/object/public/anuncios/${path}`;
-}
-
-async function subirImagenABucket(bucket, file, session) {
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const path = `${session.user.id}/${Date.now()}.${ext}`;
-  const subir = (s) =>
-    fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
-      method: "POST",
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${s.access_token}`, "Content-Type": file.type || "image/jpeg" },
-      body: file,
-    });
-
-  let res = await subir(session);
-  if (!res.ok) {
-    const data = await res.clone().json().catch(() => null);
-    if (pareceSesionExpirada(res.status, data)) {
-      const nueva = await refrescarSesion(session);
-      res = await subir(nueva);
-    }
-  }
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || "No se pudo subir la imagen");
-  }
-  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
-}
-
-async function subirImagenCarta(file, session) {
-  return subirImagenABucket("cartas", file, session);
-}
-
-// Extrae el número exacto y el nombre del set desde un texto tipo
-// "Crown Zenith GG56/GG70" (formato que usa set_nombre en la app).
-function parseNumeroYSet(setNombre) {
-  if (!setNombre) return { set: null, numero: null };
-  const limpio = setNombre.trim();
-  const conSet = limpio.match(/^(.+?)\s+([A-Za-z]*\d+[A-Za-z]*)(?:\/[A-Za-z0-9]*)?$/);
-  if (conSet) return { set: conSet[1].trim(), numero: conSet[2] };
-  const soloNumero = limpio.match(/^([A-Za-z]*\d+[A-Za-z]*)(?:\/[A-Za-z0-9]*)?$/);
-  if (soloNumero) return { set: null, numero: soloNumero[1] };
-  return { set: limpio, numero: null };
-}
-
-// Respaldo cuando TCGdex no tiene la imagen (pasa seguido con arte especial / secretas).
-// pokemontcg.io tiene mejor cobertura de esas variantes. Exige nombre + número
-// exactos (y set si lo tenemos) para no traer la imagen de una versión distinta
-// de la misma carta — si no hay coincidencia exacta, no arriesga y devuelve null.
-async function buscarImagenRespaldo(nombre, numero, setNombre) {
-  if (!nombre || !numero) return null;
-  try {
-    const buscar = async (conSet) => {
-      let query = `name:"${nombre}" number:"${numero}"`;
-      if (conSet && setNombre) query += ` set.name:"${setNombre}"`;
-      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=20`);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return data?.data || [];
-    };
-
-    let cartas = await buscar(true);
-    if (!cartas.length) cartas = await buscar(false);
-    if (!cartas.length) return null;
-
-    const exacta = cartas.find((c) => String(c.number).toLowerCase() === String(numero).toLowerCase());
-    if (!exacta) return null;
-    return exacta.images?.large || exacta.images?.small || null;
-  } catch {
-    return null;
-  }
-}
-
-// Busca una carta por nombre (y opcionalmente número) en TCGdex, con el
-// mismo respaldo de imagen que usa CardPicker. Se usa para prellenar las
-// cartas que la IA detectó en una foto de carpeta.
-async function buscarCartaTCGdex(nombre, numeroHint) {
-  if (!nombre) return null;
-  try {
-    const res = await fetch(`https://api.tcgdex.net/v2/en/cards?name=${encodeURIComponent(nombre)}&pagination:itemsPerPage=10`);
-    const lista = await res.json();
-    if (!Array.isArray(lista) || !lista.length) return null;
-    // El número puede venir como "054/198" (con el total) — solo la primera parte
-    // es el localId real de TCGdex, si comparamos el texto completo nunca coincide.
-    const numeroLimpio = numeroHint ? String(numeroHint).split("/")[0].trim() : null;
-    const candidato = (numeroLimpio && lista.find((c) => c.localId === numeroLimpio)) || lista[0];
-    const detalleRes = await fetch(`https://api.tcgdex.net/v2/en/cards/${candidato.id}`);
-    const full = await detalleRes.json();
-    const total = full.set?.cardCount?.official || full.set?.cardCount?.total || "";
-    let imagen = full.image ? `${full.image}/high.webp` : "";
-    if (!imagen) imagen = (await buscarImagenRespaldo(full.name, full.localId, full.set?.name)) || "";
-    return {
-      name: full.name,
-      set_nombre: `${full.set?.name || ""} ${full.localId}${total ? "/" + total : ""}`,
-      card_api_id: full.id,
-      imagen_url: imagen,
-    };
-  } catch {
-    return null;
-  }
-}
+import {
+  VAPID_PUBLIC_KEY,
+  setOnSesionRefrescada,
+  sb, sbWrite, authSignUp, authSignIn,
+  subirAvatar, subirImagenAnuncio, subirImagenABucket, subirImagenCarta,
+} from "./lib/supabase.js";
+import { setUidActual } from "./lib/errorReporting.jsx";
+import {
+  pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
+  parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex,
+} from "./lib/pokemonApi.js";
+import {
+  FONTS, USD_TO_MXN, EUR_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
+  PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
+  BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero,
+} from "./theme.js";
 
 function AvatarImg({ url, size = 36 }) {
   const [error, setError] = useState(false);
@@ -412,92 +102,6 @@ function PokemonFavSprite({ name, size = 40 }) {
   if (!id) return <div style={{ width: size, height: size, background: COLORS.surface2 }} className="rounded-full" />;
   return <img src={pokemonSpriteUrl(id)} alt={name} style={{ width: size, height: size, objectFit: "contain" }} loading="lazy" />;
 }
-
-const FONTS = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Rajdhani:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
-@keyframes drift { 0% { transform: translate(0,0); } 50% { transform: translate(-2%,3%); } 100% { transform: translate(0,0); } }
-@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-@keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes pulseGlow { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
-@keyframes spin { to { transform: rotate(360deg); } }
-`;
-
-// Tipos de cambio aproximados, solo para calcular un precio de referencia (no es una tasa en tiempo real)
-const USD_TO_MXN = 18.5;
-const EUR_TO_MXN = 20;
-
-const COLORS = {
-  bg: "#050810", surface: "#0A1330", surface2: "#101A36",
-  azul: "#0B2A66", azulClaro: "#4F7FD1", azulMedio: "#1B4A9E",
-  azulPalido: "#9EC0EE", gold: "#FFD34D", violeta: "#8B5CF6",
-  text: "#F4F6FB", muted: "#8291B5",
-};
-
-const STORE_COLORS = [COLORS.azul, COLORS.azulClaro, COLORS.azulMedio, COLORS.azulPalido];
-const colorFor = (i) => STORE_COLORS[i % STORE_COLORS.length];
-// De los tonos de la paleta, azul y azulMedio son oscuros: sobre ellos el texto debe ir blanco, no negro.
-const textoSobre = (fondo) => (fondo === COLORS.azul || fondo === COLORS.azulMedio ? COLORS.text : COLORS.bg);
-
-// ---- Llave pública VAPID para notificaciones push (la privada vive solo en el servidor) ----
-const VAPID_PUBLIC_KEY = "BLPUA-CAQihRVApIBjAaOg6Sb83z1j2uLTL-irKRiZ0JW6XlpJ2u9S4pFCqbC15VBOsL4MmlCHUe-_LsychJOs0";
-
-// ---- Rangos / planes de suscripción ----
-const PLAN_ORDER = ["pokeball", "superball", "ultraball", "masterball", "enteball"];
-
-const PLAN_INFO = {
-  pokeball: {
-    nombre: "Cuarzo", emoji: "⚪", precio: 0, color: COLORS.muted,
-    resumen: "Básico y gratis",
-    beneficios: ["Publica hasta 20 cartas/productos activos", "Aparece en búsquedas y en el directorio"],
-    limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false,
-  },
-  superball: {
-    nombre: "Zafiro", emoji: "🔵", precio: 49, color: COLORS.azulClaro,
-    resumen: "Insignia verificado + redes directas",
-    beneficios: ["Todo lo de Cuarzo", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)"],
-    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false,
-  },
-  ultraball: {
-    nombre: "Amatista", emoji: "🟣", precio: 89, color: COLORS.violeta,
-    resumen: "Todo Zafiro + Wishlist Premium",
-    beneficios: ["Todo lo de Zafiro", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente"],
-    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true,
-  },
-  masterball: {
-    nombre: "Diamante", emoji: "🟡", precio: 149, color: COLORS.azulPalido,
-    resumen: "Todos los beneficios, inventario ilimitado",
-    beneficios: ["Todo lo de Amatista", "Publicaciones ilimitadas (una por una)", "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante"],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true,
-  },
-  enteball: {
-    nombre: "Aurora", emoji: "🔴", precio: 349, color: COLORS.gold,
-    resumen: "Exclusivo tiendas: todo + importador masivo",
-    beneficios: ["Todo lo de Diamante", "Importador masivo de inventario (texto o Excel)", "Solo disponible para cuentas de tienda"],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: true, soloTienda: true, carpetas: true, holo: true,
-  },
-};
-
-const planDe = (perfil) => {
-  if (!perfil) return PLAN_INFO.pokeball;
-  // Si venció la suscripción, tratamos al perfil como Cuarzo hasta que pague de nuevo.
-  if (perfil.plan_vence && new Date(perfil.plan_vence) < new Date()) return PLAN_INFO.pokeball;
-  return PLAN_INFO[perfil.plan] || PLAN_INFO.pokeball;
-};
-const limiteAlcanzado = (perfil, total) => total >= planDe(perfil).limiteCartas;
-
-// ---- Boost: destacar una publicación por unos días ----
-const BOOST_PRECIOS = { 3: 15, 7: 29 };
-const estaDestacado = (item) => !!(item?.destacado_hasta && new Date(item.destacado_hasta) > new Date());
-const esCartaFavorita = (nombre, favoritos) => {
-  if (!nombre || !favoritos?.length) return false;
-  const texto = nombre.toLowerCase();
-  return favoritos.some((f) => f && texto.includes(f.toLowerCase()));
-};
-const conBoostPrimero = (lista) => {
-  const destacados = lista.filter(estaDestacado);
-  const resto = lista.filter((x) => !estaDestacado(x));
-  return [...destacados, ...resto];
-};
 
 // ---- Insignias por actividad (calculadas al vuelo, sin tabla nueva) ----
 function calcularInsignias({ perfil, wishlist = [], carpetas = [] }) {
@@ -5438,8 +5042,6 @@ function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil
   );
 }
 
-export { ErrorBoundary };
-
 // ---- Fondo animado global: gradiente + panal de heptágonos con parallax y brillo al tacto ----
 function heptagonPath(cx, cy, r) {
   const pts = [];
@@ -5553,13 +5155,13 @@ export default function EncuentraCartas() {
 
   // Cuando sb()/sbWrite() renuevan la sesión sola (el token expiró), nos enteramos aquí.
   useEffect(() => {
-    onSesionRefrescada = (nueva) => setSession(nueva);
-    return () => { onSesionRefrescada = null; };
+    setOnSesionRefrescada((nueva) => setSession(nueva));
+    return () => { setOnSesionRefrescada(null); };
   }, []);
 
   // Para poder incluir quién estaba conectado si algo truena (reportarError).
   useEffect(() => {
-    uidActual = session?.user?.id || null;
+    setUidActual(session?.user?.id || null);
   }, [session]);
 
   const abrirChat = (otherId, otherNombre, contexto, otherWhatsapp, otherFacebook, otherAvatar) => {
