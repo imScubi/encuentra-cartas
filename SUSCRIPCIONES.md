@@ -1057,6 +1057,40 @@ la ventana. Verificado visualmente en 320px, 375px y escritorio (1280px)
 — el panel siempre queda completo, con márgenes, sin cortarse por
 ningún lado.
 
+## 47. Tutorial de bienvenida animado (onboarding)
+
+Modal de 5 pasos que aparece la primera vez que alguien abre la web
+(con o sin cuenta) y guía por lo esencial con animaciones cortas en vez
+de capturas estáticas:
+
+1. **Bienvenida** — logo con "pop" de escala.
+2. **Búsqueda** — un campo de búsqueda de mentira "escribe" un ejemplo
+   letra por letra, con 3 cartas flotando debajo.
+3. **Gemas de confianza** — las 5 gemas de plan (Cuarzo→Aurora, mismos
+   íconos `RankIcon` que ya usa el resto de la web) aparecen en cascada,
+   de menor a mayor, con más brillo cada vez.
+4. **Chat directo** — dos burbujas de conversación aparecen en secuencia.
+5. **Rango de participación** — el ícono de nivel "Leyenda" (mismo
+   `NivelIcon` del sistema de Destellos) con anillos dorados pulsando,
+   simulando una subida de nivel.
+
+Se guarda en `localStorage` (`ec_onboarding_seen`) para no volver a
+aparecer solo una vez visto — igual que otras preferencias de esta app
+(tema, notificaciones leídas, etc.), sin necesidad de tocar Supabase.
+Se puede volver a ver en cualquier momento con el botón **"Ver
+tutorial"** en el menú lateral (☰), disponible con o sin sesión
+iniciada.
+
+Construido igual que el resto del rediseño visual (sección 27-32):
+`style={{...}}` con el objeto `COLORS` compartido, sin dependencias
+nuevas. El panel se monta con `createPortal` a `document.body` (mismo
+patrón que la campanita de notificaciones, sección 46) para que nunca
+quede recortado por ningún contenedor. Las animaciones (`floatCard1-3`,
+`ringPulse`, `typeBlink`, `chatIn1-2`, `badgePop`, `gemPop`) se agregaron
+a la hoja de estilos global en `theme.js`, junto con una regla
+`prefers-reduced-motion` que apaga las animaciones en bucle para quien
+tenga esa preferencia activada en su sistema.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
