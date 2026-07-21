@@ -698,6 +698,54 @@ solo existían los de borrar/actualizar). Cuando el conector de Supabase
 esté disponible la aplico yo directo; si no, cópiala y pégala en
 Supabase → SQL Editor → Run.
 
+## 36. Apariencia: modo día/noche, temas por tipo de Pokémon y perfil personalizable
+
+Nueva sección "Apariencia" (menú lateral, cuenta con sesión iniciada):
+
+- **Modo día/noche** (Zafiro, Amatista, Diamante y Aurora): cambia fondo,
+  texto y superficies de toda la web. Se guarda solo en el dispositivo
+  (localStorage), no en la cuenta — si entras desde otro celular u otra
+  computadora, hay que elegirlo de nuevo ahí.
+- **Color según tipo de Pokémon** (Amatista, Diamante y Aurora): los 18
+  tipos oficiales, cada uno con su propia paleta. Cambia el acento
+  principal de botones y bordes de toda la web; el dorado de Aurora y el
+  morado de Amatista (que ya tienen su propio significado en las
+  insignias de plan) no cambian con el tipo elegido. También se guarda
+  solo en el dispositivo.
+- **Cómo funciona por dentro**: en vez de tocar los más de 700 lugares
+  del código que ya usan los colores, `aplicarTema()` (en `src/theme.js`)
+  cambia los valores del mismo objeto de colores compartido, y la app
+  fuerza un refresco general para que se note en todos lados. Es un
+  truco deliberadamente simple para no arriesgar una reescritura enorme
+  sin pruebas automatizadas — el costo es que cambiar el tema reinicia
+  el estado de lo que esté abierto en pantalla (por ejemplo, un texto a
+  medio escribir en un formulario abierto se perdería), algo que no debería
+  notarse en el uso normal ya que cambiar de tema es una acción deliberada,
+  no algo que pasa a medio flujo.
+
+Y en "Editar perfil", nuevo desde Zafiro en adelante:
+
+- **Biografía** (hasta 280 caracteres), visible en el perfil público.
+- **Color de acento propio**: el borde de tu tarjeta de perfil y los
+  títulos de sus secciones usan tu color en vez del azul por defecto,
+  para cualquiera que visite tu perfil (sin importar el tema que tenga
+  activado esa persona).
+- **Orden de tus secciones**: "En venta", "Wishlist" y "Carpetas" se
+  pueden reordenar con flechas. (Las reseñas, redes sociales y Pokémon
+  favoritos no se reordenan — viven dentro de la tarjeta superior, que
+  es fija.)
+- **Botón "Ver mi perfil público"**: para revisar cómo te ven los demás
+  sin salir del modal de edición.
+
+**Pendiente por aplicar**: migración `030_personalizacion_perfil.sql`
+(agrega `bio`, `color_acento` y `orden_secciones` a `perfiles`). Aplica
+igual que la anterior.
+
+**Alcance**: esto vive en la vista de "Perfil público" (la que se abre
+al ver el perfil de cualquier cuenta, individual o tienda). La página
+de detalle de una tienda dentro del Mercado es una vista aparte y no
+lleva estos cambios — se podría extender después si hace falta.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
@@ -709,3 +757,4 @@ Supabase → SQL Editor → Run.
 - La búsqueda de "Armar mazo" hace match de nombre simple (contiene el texto) — si dos cartas distintas comparten parte del nombre (ej. "Pikachu" y "Pikachu VMAX"), puede haber falsos positivos leves; no ata el nombre a un ID exacto de la carta como sí hace el catálogo de TCGdex.
 - Deuda técnica pendiente: falta dividir el resto de `src/App.jsx` (los componentes de cada pantalla) en módulos más chicos — ver sección 34.
 - Permitir editar (no solo crear) nombre/dirección/zona/teléfono de una tienda ya existente desde el panel de admin — hoy solo se puede crear, vincular o borrar.
+- Extender el color de acento y la biografía a la página de detalle de tienda del Mercado (hoy solo aplica en "Perfil público").

@@ -36,13 +36,20 @@ export const PLAN_INFO = {
   superball: {
     nombre: "Zafiro", emoji: "🔵", precio: 49, color: COLORS.azulClaro,
     resumen: "Insignia verificado + redes directas",
-    beneficios: ["Todo lo de Cuarzo", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)"],
+    beneficios: [
+      "Todo lo de Cuarzo", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)",
+      "Personaliza tu perfil público: biografía, color de acento y el orden de tus secciones",
+      "Modo día/noche",
+    ],
     limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false,
   },
   ultraball: {
     nombre: "Amatista", emoji: "🟣", precio: 89, color: COLORS.violeta,
     resumen: "Todo Zafiro + Wishlist Premium",
-    beneficios: ["Todo lo de Zafiro", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente"],
+    beneficios: [
+      "Todo lo de Zafiro", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente",
+      "Cambia los colores de la página según tipos de Pokémon (agua, fuego, psíquico, etc.)",
+    ],
     limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true,
   },
   masterball: {
@@ -80,3 +87,83 @@ export const conBoostPrimero = (lista) => {
   const resto = lista.filter((x) => !estaDestacado(x));
   return [...destacados, ...resto];
 };
+
+// ---- Apariencia: modo día/noche (Zafiro+) y temas por tipo de Pokémon (Amatista+) ----
+//
+// COLORS es un objeto compartido: en vez de hacer que cada uno de los ~700 usos
+// existentes lea el color desde un contexto de React, aplicarTema() MUTA las
+// propiedades de este mismo objeto (y el array STORE_COLORS). Como todos los
+// componentes leen `COLORS.xxx` directo en cada render (no lo guardan en estado),
+// con forzar un remount del árbol (ver `temaVersion` en el componente raíz) el
+// cambio se refleja en todos lados sin tocar ningún componente existente.
+//
+// El modo controla fondo/texto; el tipo controla solo la familia "azul" (el
+// acento principal de botones/bordes). gold y violeta se quedan fijos siempre,
+// porque ya tienen un significado propio (Aurora y Amatista, respectivamente).
+
+export const MODOS_COLOR = {
+  noche: { bg: "#050810", surface: "#0A1330", surface2: "#101A36", text: "#F4F6FB", muted: "#8291B5" },
+  dia: { bg: "#F3F6FC", surface: "#FFFFFF", surface2: "#E6EBF7", text: "#0B1220", muted: "#5B6B85" },
+};
+
+export const TIPOS_POKEMON_INFO = {
+  default: { nombre: "Predeterminado", emoji: "⚡" },
+  normal: { nombre: "Normal", emoji: "⭐" },
+  fuego: { nombre: "Fuego", emoji: "🔥" },
+  agua: { nombre: "Agua", emoji: "💧" },
+  planta: { nombre: "Planta", emoji: "🌿" },
+  electrico: { nombre: "Eléctrico", emoji: "⚡" },
+  hielo: { nombre: "Hielo", emoji: "❄️" },
+  lucha: { nombre: "Lucha", emoji: "🥊" },
+  veneno: { nombre: "Veneno", emoji: "☠️" },
+  tierra: { nombre: "Tierra", emoji: "🏜️" },
+  volador: { nombre: "Volador", emoji: "🕊️" },
+  psiquico: { nombre: "Psíquico", emoji: "🔮" },
+  bicho: { nombre: "Bicho", emoji: "🐛" },
+  roca: { nombre: "Roca", emoji: "🪨" },
+  fantasma: { nombre: "Fantasma", emoji: "👻" },
+  dragon: { nombre: "Dragón", emoji: "🐉" },
+  siniestro: { nombre: "Siniestro", emoji: "🌑" },
+  acero: { nombre: "Acero", emoji: "⚙️" },
+  hada: { nombre: "Hada", emoji: "✨" },
+};
+
+export const TIPOS_POKEMON_COLOR = {
+  default: { azul: "#0B2A66", azulClaro: "#4F7FD1", azulMedio: "#1B4A9E", azulPalido: "#9EC0EE" },
+  normal: { azul: "#6B6153", azulClaro: "#A79C87", azulMedio: "#8A7F6B", azulPalido: "#C9BFA9" },
+  fuego: { azul: "#7A2000", azulClaro: "#FF7A3C", azulMedio: "#C1440E", azulPalido: "#FFB07A" },
+  agua: { azul: "#08376B", azulClaro: "#4FA8D1", azulMedio: "#1470A8", azulPalido: "#8FD3EF" },
+  planta: { azul: "#0E4429", azulClaro: "#4CAF6D", azulMedio: "#1E7A45", azulPalido: "#9BE3B4" },
+  electrico: { azul: "#7A6A00", azulClaro: "#F5D742", azulMedio: "#C7A600", azulPalido: "#FCEB8C" },
+  hielo: { azul: "#0B5B66", azulClaro: "#7FE0EC", azulMedio: "#1590A1", azulPalido: "#C6F5FA" },
+  lucha: { azul: "#5C1A1A", azulClaro: "#C1544B", azulMedio: "#8B2E28", azulPalido: "#E2948D" },
+  veneno: { azul: "#4A1466", azulClaro: "#A855C9", azulMedio: "#7229A0", azulPalido: "#D9A9EC" },
+  tierra: { azul: "#5C4420", azulClaro: "#C9A15C", azulMedio: "#8C6B2E", azulPalido: "#E6CE9C" },
+  volador: { azul: "#2E3F70", azulClaro: "#9AA9E0", azulMedio: "#4C60A3", azulPalido: "#C9D3F5" },
+  psiquico: { azul: "#7A1054", azulClaro: "#F06BB0", azulMedio: "#B02A82", azulPalido: "#F9B3D9" },
+  bicho: { azul: "#4E5C0E", azulClaro: "#AACB3E", azulMedio: "#7C921E", azulPalido: "#D6E896" },
+  roca: { azul: "#544A2E", azulClaro: "#B9A876", azulMedio: "#877349", azulPalido: "#E0D3AC" },
+  fantasma: { azul: "#2E1A4A", azulClaro: "#7C5FA8", azulMedio: "#4C3373", azulPalido: "#B8A3D9" },
+  dragon: { azul: "#1E1A6E", azulClaro: "#6C63C4", azulMedio: "#38309E", azulPalido: "#ABA4E8" },
+  siniestro: { azul: "#1C1C24", azulClaro: "#6B5B7A", azulMedio: "#33333E", azulPalido: "#8A8A9E" },
+  acero: { azul: "#3A4652", azulClaro: "#9FB2C2", azulMedio: "#5E7284", azulPalido: "#CBDAE3" },
+  hada: { azul: "#7A2F52", azulClaro: "#F2A0C4", azulMedio: "#B85686", azulPalido: "#F9CEE1" },
+};
+
+export const TEMA_MODO_KEY = "ec_tema_modo";
+export const TEMA_TIPO_KEY = "ec_tema_tipo";
+
+export function aplicarTema(modo, tipo) {
+  const m = MODOS_COLOR[modo] || MODOS_COLOR.noche;
+  const t = TIPOS_POKEMON_COLOR[tipo] || TIPOS_POKEMON_COLOR.default;
+  Object.assign(COLORS, m, t);
+  STORE_COLORS.splice(0, STORE_COLORS.length, COLORS.azul, COLORS.azulClaro, COLORS.azulMedio, COLORS.azulPalido);
+}
+
+// Se aplica una sola vez, al cargar el módulo (antes de que React pinte nada),
+// para no mostrar un parpadeo con los colores por defecto y luego cambiar.
+if (typeof window !== "undefined") {
+  const modoGuardado = localStorage.getItem(TEMA_MODO_KEY);
+  const tipoGuardado = localStorage.getItem(TEMA_TIPO_KEY);
+  if (modoGuardado || tipoGuardado) aplicarTema(modoGuardado || "noche", tipoGuardado || "default");
+}

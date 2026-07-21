@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
-  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers,
+  MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
+  ArrowUp, ArrowDown,
 } from "lucide-react";
 import {
   VAPID_PUBLIC_KEY,
@@ -19,6 +20,7 @@ import {
   FONTS, USD_TO_MXN, EUR_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
   PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
   BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero,
+  MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, aplicarTema,
 } from "./theme.js";
 
 function AvatarImg({ url, size = 36 }) {
@@ -3703,6 +3705,80 @@ function SiguiendoView({ session, onVerPerfil, onVerTienda }) {
 }
 
 // ---- Mis compras y ventas: confirmar/rechazar ventas pendientes y calificar tras confirmarse ----
+function AparienciaView({ perfil, onCambio, onIrAPlanes }) {
+  const info = planDe(perfil);
+  const [modo, setModo] = useState(() => localStorage.getItem(TEMA_MODO_KEY) || "noche");
+  const [tipo, setTipo] = useState(() => localStorage.getItem(TEMA_TIPO_KEY) || "default");
+
+  if (!info.redesExtra) {
+    return (
+      <div>
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">🎨 Apariencia</h2>
+        <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+          Elige entre modo día y modo noche, y desde Amatista también puedes cambiar los colores de la página según tipos de Pokémon.
+        </UpsellCard>
+      </div>
+    );
+  }
+
+  const cambiarModo = (nuevo) => {
+    setModo(nuevo);
+    localStorage.setItem(TEMA_MODO_KEY, nuevo);
+    aplicarTema(nuevo, tipo);
+    onCambio();
+  };
+
+  const cambiarTipo = (nuevo) => {
+    setTipo(nuevo);
+    localStorage.setItem(TEMA_TIPO_KEY, nuevo);
+    aplicarTema(modo, nuevo);
+    onCambio();
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🎨 Apariencia</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Personaliza los colores de la página. Se guarda en este dispositivo.</p>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Modo día / noche</h3>
+      <div className="flex gap-2 mb-8">
+        {Object.entries(MODOS_COLOR).map(([key]) => (
+          <button key={key} onClick={() => cambiarModo(key)}
+            style={{
+              background: modo === key ? COLORS.surface2 : "transparent",
+              border: `1px solid ${modo === key ? COLORS.azulPalido : COLORS.surface2}`,
+              color: modo === key ? COLORS.azulPalido : COLORS.muted,
+            }}
+            className="rounded-lg px-4 py-2 text-sm font-semibold">
+            {key === "noche" ? "🌙 Noche" : "☀️ Día"}
+          </button>
+        ))}
+      </div>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Color según tipo de Pokémon</h3>
+      {!info.wishlistPremium ? (
+        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
+          Los temas por tipo de Pokémon (agua, fuego, psíquico, etc.) son exclusivos de Amatista en adelante.
+        </UpsellCard>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+          {Object.entries(TIPOS_POKEMON_INFO).map(([key, t]) => (
+            <button key={key} onClick={() => cambiarTipo(key)}
+              style={{
+                background: tipo === key ? COLORS.surface2 : "transparent",
+                border: `1px solid ${tipo === key ? COLORS.azulPalido : COLORS.surface2}`,
+                color: tipo === key ? COLORS.azulPalido : COLORS.muted,
+              }}
+              className="rounded-lg px-2 py-2 text-xs font-semibold flex flex-col items-center gap-1">
+              <span className="text-lg">{t.emoji}</span> {t.nombre}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ComprasVentasView({ session }) {
   const [tab, setTab] = useState("compras");
   const [compras, setCompras] = useState([]);
@@ -3894,12 +3970,13 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
 
   const vis = perfil.visibilidad || {};
   const favoritos = perfil.pokemon_favoritos || [];
+  const acento = perfil.color_acento || COLORS.azulPalido;
 
   return (
     <div>
       <button onClick={onVolver} style={{ color: COLORS.muted }} className="flex items-center gap-1 text-sm mb-6"><ChevronLeft size={16} /> Volver</button>
 
-      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-6 mb-6">
+      <div style={{ background: COLORS.surface, border: `1px solid ${perfil.color_acento || COLORS.surface2}` }} className="rounded-2xl p-6 mb-6">
         <div className="flex items-center gap-3 flex-wrap">
           <HoloAvatar perfil={perfil} ringSize={62}>
             <AvatarImg url={perfil.avatar_url} size={56} />
@@ -3938,9 +4015,11 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
           <InsigniasActividad perfil={perfil} wishlist={wishlist} carpetas={carpetas} />
         </div>
 
+        {perfil.bio && <p className="mt-3 text-sm" style={{ color: COLORS.text }}>{perfil.bio}</p>}
+
         {vis.favoritos !== false && favoritos.length > 0 && (
           <div className="mt-4">
-            <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-2">Pokémon favoritos</p>
+            <p style={{ color: acento }} className="text-xs font-semibold uppercase mb-2">Pokémon favoritos</p>
             <div className="flex gap-4">
               {favoritos.map((f) => (
                 <div key={f} className="flex flex-col items-center gap-1">
@@ -3954,7 +4033,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
 
         <div className="mt-4">
           <div className="flex items-center gap-2 mb-2">
-            <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase">Reseñas</p>
+            <p style={{ color: acento }} className="text-xs font-semibold uppercase">Reseñas</p>
             {resenas.length > 0 && (
               <>
                 <EstrellasDisplay valor={resenas.reduce((s, r) => s + r.estrellas, 0) / resenas.length} />
@@ -4014,65 +4093,71 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
 
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
-      {perfil.tipo === "individual" && vis.publicaciones !== false && (cartas.length > 0 || sellado.length > 0) && (
-        <div className="mb-8">
-          <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">En venta</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {[...cartas, ...sellado].map((r) => (
-              <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-xl overflow-hidden flex flex-col">
-                <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
-                  {r.imagen_url ? <img src={r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
-                </div>
-                <div className="p-2">
-                  <div className="flex items-center gap-1 flex-wrap mb-1">
-                    {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
-                    <BoostBadge item={r} />
+      {(() => {
+        const bloques = {
+          publicaciones: perfil.tipo === "individual" && vis.publicaciones !== false && (cartas.length > 0 || sellado.length > 0) && (
+            <div key="publicaciones" className="mb-8">
+              <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">En venta</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {[...cartas, ...sellado].map((r) => (
+                  <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-xl overflow-hidden flex flex-col">
+                    <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
+                      {r.imagen_url ? <img src={r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
+                    </div>
+                    <div className="p-2">
+                      <div className="flex items-center gap-1 flex-wrap mb-1">
+                        {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
+                        <BoostBadge item={r} />
+                      </div>
+                      <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
+                      <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="sm" />
+                    </div>
                   </div>
-                  <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
-                  <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="sm" />
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {vis.wishlist !== false && wishlist.length > 0 && (
-        <div className="mb-8">
-          <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Wishlist</h3>
-          <div className="grid gap-2">
-            {wishlist.map((a) => (
-              <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3">
-                {a.imagen_url && <img src={a.imagen_url} alt={a.carta} style={{ width: 40, height: 56, objectFit: "contain" }} />}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{a.carta}</p>
-                  {a.precio_max && <p style={{ color: COLORS.muted }} className="text-xs">Hasta ${Number(a.precio_max).toLocaleString("es-MX")}</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {vis.carpetas !== false && carpetas.length > 0 && (
-        <div>
-          <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">📁 Carpetas</h3>
-          <div className="grid gap-3">
-            {carpetas.map((c) => (
-              <div key={c.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3">
-                <p className="text-sm font-semibold mb-2">{c.nombre}</p>
-                {c.carpeta_fotos?.length > 0 ? (
-                  <div className="flex gap-2 flex-wrap">
-                    {c.carpeta_fotos.map((f) => <img key={f.id} src={f.imagen_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />)}
+            </div>
+          ),
+          wishlist: vis.wishlist !== false && wishlist.length > 0 && (
+            <div key="wishlist" className="mb-8">
+              <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">Wishlist</h3>
+              <div className="grid gap-2">
+                {wishlist.map((a) => (
+                  <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3">
+                    {a.imagen_url && <img src={a.imagen_url} alt={a.carta} style={{ width: 40, height: 56, objectFit: "contain" }} />}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{a.carta}</p>
+                      {a.precio_max && <p style={{ color: COLORS.muted }} className="text-xs">Hasta ${Number(a.precio_max).toLocaleString("es-MX")}</p>}
+                    </div>
                   </div>
-                ) : (
-                  <p style={{ color: COLORS.muted }} className="text-xs">Sin fotos todavía.</p>
-                )}
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            </div>
+          ),
+          carpetas: vis.carpetas !== false && carpetas.length > 0 && (
+            <div key="carpetas">
+              <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">📁 Carpetas</h3>
+              <div className="grid gap-3">
+                {carpetas.map((c) => (
+                  <div key={c.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3">
+                    <p className="text-sm font-semibold mb-2">{c.nombre}</p>
+                    {c.carpeta_fotos?.length > 0 ? (
+                      <div className="flex gap-2 flex-wrap">
+                        {c.carpeta_fotos.map((f) => <img key={f.id} src={f.imagen_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />)}
+                      </div>
+                    ) : (
+                      <p style={{ color: COLORS.muted }} className="text-xs">Sin fotos todavía.</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ),
+        };
+        const orden = Array.isArray(perfil.orden_secciones) && perfil.orden_secciones.length === 3
+          ? perfil.orden_secciones
+          : SECCIONES_PERFIL_ORDEN_DEFAULT;
+        return orden.map((key) => bloques[key] || null);
+      })()}
     </div>
   );
 }
@@ -4668,7 +4753,14 @@ function MisPagosPanel({ session }) {
   );
 }
 
-function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
+const SECCIONES_PERFIL_LABEL = {
+  publicaciones: "Mis cartas y producto sellado en venta",
+  wishlist: "Mi Wishlist",
+  carpetas: "Mis carpetas",
+};
+const SECCIONES_PERFIL_ORDEN_DEFAULT = ["publicaciones", "wishlist", "carpetas"];
+
+function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const info = planDe(perfil);
   const [nombre, setNombre] = useState(perfil?.nombre || "");
@@ -4691,8 +4783,25 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
     favoritos: perfil?.visibilidad?.favoritos !== false,
     carpetas: perfil?.visibilidad?.carpetas !== false,
   });
+  const [bio, setBio] = useState(perfil?.bio || "");
+  const [colorAcento, setColorAcento] = useState(perfil?.color_acento || "");
+  const [orden, setOrden] = useState(() => {
+    const guardado = perfil?.orden_secciones;
+    if (Array.isArray(guardado) && guardado.length === SECCIONES_PERFIL_ORDEN_DEFAULT.length) return guardado;
+    return SECCIONES_PERFIL_ORDEN_DEFAULT;
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  const moverSeccion = (i, dir) => {
+    setOrden((prev) => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  };
 
   const elegirArchivo = (e) => {
     const file = e.target.files?.[0];
@@ -4731,6 +4840,7 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
         whatsapp: whatsapp || null,
         facebook: facebook || null,
         ...(info.redesExtra ? { instagram: instagram || null, google_maps_url: googleMaps || null } : {}),
+        ...(info.redesExtra ? { bio: bio.trim() || null, color_acento: colorAcento || null, orden_secciones: orden } : {}),
         avatar_url,
         pokemon_favoritos: favoritos.filter(Boolean),
         visibilidad: vis,
@@ -4832,6 +4942,53 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado }) {
               </label>
             ))}
           </div>
+
+          {info.redesExtra ? (
+            <>
+              <div>
+                <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-1">Biografía</p>
+                <textarea placeholder="Cuéntale a los demás algo sobre ti o tu tienda..." rows={3} maxLength={280}
+                  value={bio} onChange={(e) => setBio(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full outline-none" />
+                <p style={{ color: COLORS.muted }} className="text-xs mt-0.5">{bio.length}/280</p>
+              </div>
+
+              <div>
+                <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-1">Color de acento de tu perfil</p>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={colorAcento || "#9EC0EE"} onChange={(e) => setColorAcento(e.target.value)}
+                    className="rounded-lg h-9 w-14 cursor-pointer" style={{ background: "transparent", border: `1px solid ${COLORS.surface2}` }} />
+                  {colorAcento && (
+                    <button type="button" onClick={() => setColorAcento("")} style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-1">Orden de tus secciones</p>
+                <div className="grid gap-1">
+                  {orden.map((key, i) => (
+                    <div key={key} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-1.5 flex items-center justify-between gap-2">
+                      <p className="text-sm">{SECCIONES_PERFIL_LABEL[key]}</p>
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => moverSeccion(i, -1)} disabled={i === 0} style={{ color: COLORS.muted, opacity: i === 0 ? 0.3 : 1 }}><ArrowUp size={14} /></button>
+                        <button type="button" onClick={() => moverSeccion(i, 1)} disabled={i === orden.length - 1} style={{ color: COLORS.muted, opacity: i === orden.length - 1 ? 0.3 : 1 }}><ArrowDown size={14} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {onVerMiPerfil && (
+                <button type="button" onClick={onVerMiPerfil} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg py-2 text-sm font-semibold">
+                  Ver mi perfil público
+                </button>
+              )}
+            </>
+          ) : (
+            <p style={{ color: COLORS.muted }} className="text-xs">
+              🔒 Biografía, color de acento y orden de secciones disponibles desde Zafiro.
+            </p>
+          )}
 
           <button onClick={guardar} disabled={saving || !nombre.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: saving ? 0.6 : 1 }} className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
             {saving && <Loader2 size={16} className="animate-spin" />} Guardar cambios
@@ -5230,6 +5387,7 @@ export default function EncuentraCartas() {
   const [showEditarPerfil, setShowEditarPerfil] = useState(false);
   const [logoError, setLogoError] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
+  const [, setTemaVersion] = useState(0);
   const [chatContext, setChatContext] = useState(null);
 
   // Cuando sb()/sbWrite() renuevan la sesión sola (el token expiró), nos enteramos aquí.
@@ -5470,6 +5628,7 @@ export default function EncuentraCartas() {
     ...(session ? [{ id: "siguiendo", label: "Siguiendo", icon: User }] : []),
     ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
     ...(session ? [{ id: "recompensas", label: "Recompensas", icon: Sparkles }] : []),
+    ...(session ? [{ id: "apariencia", label: "Apariencia", icon: Palette }] : []),
     { id: "planes", label: "Planes", icon: Shield },
     ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
     ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
@@ -5555,6 +5714,7 @@ export default function EncuentraCartas() {
           perfil={perfil}
           onClose={() => setShowEditarPerfil(false)}
           onGuardado={() => cargarOCrearPerfil(session)}
+          onVerMiPerfil={() => { setShowEditarPerfil(false); verPerfil(session.user.id); }}
         />
       )}
       {chatContext && session && (
@@ -6156,6 +6316,9 @@ export default function EncuentraCartas() {
         {view === "siguiendo" && session && <SiguiendoView session={session} onVerPerfil={verPerfil} onVerTienda={verTiendaDesdePerfil} />}
         {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
         {view === "recompensas" && session && <RecompensasView session={session} perfil={perfil} />}
+        {view === "apariencia" && session && (
+          <AparienciaView perfil={perfil} onCambio={() => setTemaVersion((v) => v + 1)} onIrAPlanes={() => setView("planes")} />
+        )}
       </main>
 
       <footer style={{ position: "relative", zIndex: 1, borderTop: `1px solid ${COLORS.surface2}` }} className="px-4 sm:px-8 py-6 mt-10">
