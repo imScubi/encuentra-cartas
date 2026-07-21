@@ -8,6 +8,22 @@
 // no se rompe cuando Google retira o renombra un modelo.
 const PLANES_CON_CARPETAS = ["superball", "ultraball", "masterball", "enteball"];
 
+// Nombres de sets que solo existen en Pokémon TCG Pocket (el juego para
+// celular) — ninguno de estos es un set real del TCG físico, así que si
+// la IA devuelve uno de estos, es una carta de Pocket mal etiquetada (o
+// una confusión) y hay que descartarla sin importar qué diga "juego".
+const SETS_SOLO_POCKET = [
+  "genetic apex", "mythical island", "space-time smackdown", "triumphant light",
+  "shining revelry", "celestial guardians", "extradimensional crisis",
+  "eevee grove", "wisdom of sea and sky", "promo-a",
+];
+
+function esDePocket(carta) {
+  const texto = `${carta.set || ""} ${carta.nombre || ""}`.toLowerCase();
+  if (/pocket/.test(texto)) return true;
+  return SETS_SOLO_POCKET.some((set) => texto.includes(set));
+}
+
 async function elegirModeloGemini(apiKey, preferido) {
   const candidatos = [];
   if (preferido) candidatos.push(preferido);
@@ -85,14 +101,20 @@ export default async function handler(req, res) {
     const base64 = buffer.toString("base64");
 
     const prompt =
-      "Esta es una foto de una página de un álbum/carpeta de cartas físicas del Pokémon Trading Card Game (el juego de " +
-      "cartas de papel/cartón, no el videojuego). Identifica solo cartas del TCG físico real. " +
-      "IMPORTANTE: excluye por completo cualquier carta de 'Pokémon TCG Pocket' (el juego para celular, con su propio " +
-      "arte y numeración de sets distinta) — si ves una carta de TCG Pocket, no la incluyas en el resultado, ni siquiera como nula. " +
-      "Para cada carta física real que identifiques, da: el nombre exacto de la carta tal como aparece impreso, el nombre " +
-      "del set del TCG físico si lo puedes leer, y el número de carta/set exactamente como aparece impreso, incluyendo el " +
-      "total (ej. '054/198' o 'GG56/GG70'). " +
-      "Si no puedes leer o identificar una carta física con confianza razonable, no la inventes: pon \"nombre\": null en esa posición. " +
+      "Esta es una foto de una página de un álbum/carpeta que contiene cartas FÍSICAS DE PAPEL/CARTÓN reales del " +
+      "Pokémon Trading Card Game. Como son cartas físicas fotografiadas dentro de fundas de plástico, es IMPOSIBLE " +
+      "que alguna sea de 'Pokémon TCG Pocket' — ese es un videojuego para celular sin ninguna carta física impresa, " +
+      "así que nunca existe una tarjeta de Pocket dentro de un álbum real. Si el nombre de un set que ibas a poner " +
+      "coincide con uno de estos (todos son exclusivos del videojuego Pocket y NUNCA existen en papel): Genetic Apex, " +
+      "Mythical Island, Space-Time Smackdown, Triumphant Light, Shining Revelry, Celestial Guardians, " +
+      "Extradimensional Crisis, Eevee Grove, Wisdom of Sea and Sky — entonces te equivocaste de set: vuelve a mirar " +
+      "la carta y da el nombre del set físico real al que pertenece (por ejemplo, coincide el número/símbolo de set " +
+      "impreso con un set real de Scarlet & Violet, Sword & Shield, Crown Zenith, etc.). Si de verdad no puedes " +
+      "determinar el set físico real, deja el campo \"set\" vacío en vez de inventar uno de Pocket. " +
+      "Para cada carta que identifiques, da: el nombre exacto de la carta tal como aparece impreso, el nombre del set " +
+      "físico si lo puedes leer, y el número de carta/set exactamente como aparece impreso, incluyendo el total " +
+      "(ej. '054/198' o 'GG56/GG70'). " +
+      "Si no puedes leer o identificar una carta con confianza razonable, no la inventes: pon \"nombre\": null en esa posición. " +
       "Responde ÚNICAMENTE con un JSON array (sin texto antes ni después, sin markdown), con este formato exacto: " +
       '[{"nombre": "...", "set": "...", "numero": "..."}, ...]';
 
@@ -119,7 +141,7 @@ export default async function handler(req, res) {
     } catch {
       detectadas = [];
     }
-    detectadas = (Array.isArray(detectadas) ? detectadas : []).filter((c) => c?.nombre);
+    detectadas = (Array.isArray(detectadas) ? detectadas : []).filter((c) => c?.nombre && !esDePocket(c));
 
     res.status(200).json({ cartas: detectadas });
   } catch (e) {
