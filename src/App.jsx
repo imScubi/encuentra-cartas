@@ -4032,6 +4032,7 @@ export default function EncuentraCartas() {
 
   const [selectedStore, setSelectedStore] = useState(null);
   const [selectedPerfilId, setSelectedPerfilId] = useState(null);
+  const [vistaAntesDePerfil, setVistaAntesDePerfil] = useState("search");
   const [storeInventory, setStoreInventory] = useState([]);
   const [storeSellado, setStoreSellado] = useState([]);
   const [loadingStoreDetail, setLoadingStoreDetail] = useState(false);
@@ -4146,6 +4147,7 @@ export default function EncuentraCartas() {
 
   const verPerfil = (perfilId) => {
     if (!perfilId) return;
+    setVistaAntesDePerfil(view);
     setSelectedPerfilId(perfilId);
     setView("perfilPublico");
   };
@@ -4474,22 +4476,22 @@ export default function EncuentraCartas() {
             {errorTiendas && <ErrorBox message={errorTiendas} />}
             <div className="grid sm:grid-cols-2 gap-4">
               {tiendas.map((store, i) => (
-                <button key={store.id} onClick={() => openStore(store)}
+                <div key={store.id} onClick={() => openStore(store)}
                   style={{ background: COLORS.surface, border: `1px solid ${colorFor(i)}66` }}
-                  className="text-left rounded-xl p-5 hover:brightness-110">
+                  className="text-left rounded-xl p-5 hover:brightness-110 cursor-pointer">
                   <div className="flex items-start justify-between gap-2 flex-wrap">
-                    <span className="flex items-center gap-2 flex-wrap">
+                    <button onClick={(e) => { e.stopPropagation(); verPerfil(store.perfil_id); }} className="flex items-center gap-2 flex-wrap hover:underline">
                       <AvatarImg url={store.perfiles?.avatar_url} size={28} />
                       <p className="font-semibold text-lg">{store.nombre}</p>
                       <PlanBadge perfil={store.perfiles} />
                       <VerificadoBadge perfil={store.perfiles} />
-                    </span>
+                    </button>
                     {store.zona && <Badge color={colorFor(i)}>{store.zona}</Badge>}
                   </div>
                   <p style={{ color: COLORS.muted }} className="text-sm mt-2 flex items-start gap-1">
                     <MapPin size={14} className="mt-0.5 shrink-0" /> {store.direccion}
                   </p>
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -4684,8 +4686,10 @@ export default function EncuentraCartas() {
             </button>
             <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-6 mb-6">
               <div className="flex items-center gap-2 flex-wrap">
-                <AvatarImg url={selectedStore.perfiles?.avatar_url} size={48} />
-                <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-2xl font-bold">{selectedStore.nombre}</h2>
+                <button onClick={() => verPerfil(selectedStore.perfil_id)} className="flex items-center gap-2 flex-wrap hover:underline" disabled={!selectedStore.perfil_id}>
+                  <AvatarImg url={selectedStore.perfiles?.avatar_url} size={48} />
+                  <h2 style={{ fontFamily: "'Cinzel', serif" }} className="text-2xl font-bold">{selectedStore.nombre}</h2>
+                </button>
                 <PlanBadge perfil={selectedStore.perfiles} size="lg" />
                 <VerificadoBadge perfil={selectedStore.perfiles} />
               </div>
@@ -4792,7 +4796,7 @@ export default function EncuentraCartas() {
           <PerfilPublicoView
             perfilId={selectedPerfilId}
             session={session}
-            onVolver={() => setView("market")}
+            onVolver={() => setView(vistaAntesDePerfil)}
             onAbrirChat={abrirChat}
             onVerTienda={verTiendaDesdePerfil}
           />
