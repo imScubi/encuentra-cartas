@@ -3579,6 +3579,150 @@ function nivelDestellos(total) {
   return { actual, siguiente };
 }
 
+// ---- Tutorial de bienvenida (onboarding): 5 pasos animados, se guarda en
+// localStorage para no volver a mostrarse solo; se puede relanzar desde el menú. ----
+const ONBOARDING_SEEN_KEY = "ec_onboarding_seen";
+const ONBOARDING_STEPS = [
+  { title: "Bienvenido a Encuentra Cartas", body: "Descubre, compra y vende cartas coleccionables con tiendas y coleccionistas de todo México. Te mostramos lo esencial en unos segundos." },
+  { title: "Busca cualquier carta al instante", body: "Escribe un nombre, número o set y encuentra justo lo que buscas entre tiendas y el Mercado entre usuarios." },
+  { title: "Gemas que indican confianza", body: "Cada tienda tiene una gema —de Cuarzo a Aurora— según su trayectoria y calidad en la plataforma." },
+  { title: "Chatea directo con el vendedor", body: "Pregunta, negocia y cierra el trato sin salir de la conversación." },
+  { title: "Gana tu propio rango de participación", body: "Con cada compra, venta o reseña ganas Destellos ✨ y subes de Novato a Leyenda." },
+];
+
+function OnboardingTutorial({ onClose }) {
+  const [step, setStep] = useState(0);
+  const typedRef = useRef(null);
+
+  useEffect(() => {
+    if (step !== 1) return;
+    const el = typedRef.current;
+    if (!el) return;
+    const texto = "Charizard ex";
+    let i = 0;
+    el.textContent = "";
+    const id = setInterval(() => {
+      i++;
+      el.textContent = texto.slice(0, i);
+      if (i >= texto.length) clearInterval(id);
+    }, 90);
+    return () => clearInterval(id);
+  }, [step]);
+
+  const finalizar = () => {
+    try { localStorage.setItem(ONBOARDING_SEEN_KEY, "1"); } catch {}
+    onClose();
+  };
+  const ir = (i) => setStep(Math.max(0, Math.min(ONBOARDING_STEPS.length - 1, i)));
+  const siguiente = () => (step >= ONBOARDING_STEPS.length - 1 ? finalizar() : ir(step + 1));
+  const actual = ONBOARDING_STEPS[step];
+
+  return createPortal(
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-[95] flex items-center justify-center p-4">
+      <div
+        style={{ background: "rgba(10,19,48,0.92)", border: `1px solid ${COLORS.azulMedio}44`, boxShadow: "0 30px 80px rgba(0,0,0,0.5)", backdropFilter: "blur(18px)" }}
+        className="w-full max-w-md rounded-[28px] relative"
+      >
+        <button onClick={finalizar} style={{ color: COLORS.muted }} className="absolute top-5 right-5 z-10 text-sm font-semibold">
+          Omitir
+        </button>
+
+        <div className="flex flex-col px-8 sm:px-10 pt-14 pb-8" style={{ minHeight: 460 }}>
+          <div className="flex-1 flex flex-col items-center text-center justify-start">
+            <div className="flex items-center justify-center" style={{ height: 110 }}>
+              {step === 0 && (
+                <img src="/branding/logo-icon.png" alt="" style={{ width: 80, height: 80, animation: "badgePop .5s ease both" }} />
+              )}
+              {step === 1 && (
+                <div className="w-full" style={{ maxWidth: 320 }}>
+                  <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, borderRadius: 16 }}
+                    className="flex items-center gap-2 px-4 py-3 text-sm">
+                    <Search size={16} color={COLORS.azulPalido} />
+                    <span ref={typedRef} />
+                    <span style={{ display: "inline-block", width: 2, height: 15, background: COLORS.azulPalido, animation: "typeBlink 1s step-end infinite" }} />
+                  </div>
+                  <div className="flex items-end justify-center gap-3 mt-5">
+                    {[
+                      { a: "floatCard1", g: `linear-gradient(135deg, ${COLORS.azulClaro}, ${COLORS.azulMedio})` },
+                      { a: "floatCard2", g: `linear-gradient(135deg, ${COLORS.violeta}, #5B2FBF)` },
+                      { a: "floatCard3", g: `linear-gradient(135deg, ${COLORS.gold}, #C98F00)` },
+                    ].map((c, i) => (
+                      <div key={i} style={{ width: 42, height: 58, borderRadius: 8, background: c.g, border: "1px solid rgba(255,255,255,0.25)", boxShadow: "0 6px 16px rgba(0,0,0,.35)", animation: `${c.a} 3.2s ease-in-out ${i * 0.15}s infinite` }}
+                        className="flex items-center justify-center">
+                        <Sparkles size={14} color="#fff" style={{ opacity: 0.85 }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {step === 2 && (
+                <div className="flex items-end justify-center gap-3" style={{ height: 90 }}>
+                  {PLAN_ORDER.map((key, i) => {
+                    const info = PLAN_INFO[key];
+                    const size = 30 + i * 8;
+                    return (
+                      <div key={key} style={{ animation: `gemPop .5s ease ${i * 0.12}s both`, filter: i > 0 ? `drop-shadow(0 0 ${8 + i * 2}px ${info.color}77)` : "none" }}>
+                        <RankIcon plan={key} emoji={info.emoji} size={size} />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {step === 3 && (
+                <div className="w-full flex flex-col gap-2.5" style={{ maxWidth: 300 }}>
+                  <div style={{ alignSelf: "flex-start", background: `${COLORS.azulClaro}33`, borderRadius: "14px 14px 14px 4px", padding: "10px 14px", fontSize: 14, animation: "chatIn1 .4s ease both", textAlign: "left" }}>
+                    ¿Sigue disponible la Charizard ex?
+                  </div>
+                  <div style={{ alignSelf: "flex-end", background: `linear-gradient(135deg, ${COLORS.azulClaro}, ${COLORS.azulMedio})`, color: "#fff", borderRadius: "14px 14px 4px 14px", padding: "10px 14px", fontSize: 14, animation: "chatIn2 .75s ease both", textAlign: "left" }}>
+                    ¡Sí! Te la aparto 🙌
+                  </div>
+                </div>
+              )}
+              {step === 4 && (
+                <div className="relative flex items-center justify-center" style={{ height: 100, width: 100 }}>
+                  <div className="absolute inset-0 rounded-full" style={{ border: `2px solid ${COLORS.gold}`, animation: "ringPulse 1.8s ease-out infinite" }} />
+                  <div className="absolute inset-0 rounded-full" style={{ border: `2px solid ${COLORS.gold}`, animation: "ringPulse 1.8s ease-out .6s infinite" }} />
+                  <div style={{ width: 70, height: 70, borderRadius: 18, background: `linear-gradient(135deg, ${COLORS.azulPalido}, ${COLORS.azulClaro})`, boxShadow: `0 0 26px ${COLORS.gold}55`, animation: "badgePop .5s ease both" }}
+                    className="flex items-center justify-center">
+                    <NivelIcon slug="leyenda" emoji="👑" size={38} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <h2 key={`t${step}`} style={{ fontFamily: "'Space Grotesk', sans-serif", animation: "fadeUp .45s ease both" }} className="text-xl font-bold mt-6 mb-2">
+              {actual.title}
+            </h2>
+            <p key={`b${step}`} style={{ color: COLORS.muted, animation: "fadeUp .45s ease .05s both", maxWidth: 340 }} className="text-sm leading-relaxed mx-auto">
+              {actual.body}
+            </p>
+          </div>
+
+          <div className="flex items-center justify-center gap-2 my-6">
+            {ONBOARDING_STEPS.map((_, i) => (
+              <div key={i} onClick={() => ir(i)} style={{ width: i === step ? 22 : 8, height: 8, borderRadius: 4, cursor: "pointer", transition: "all .25s ease", background: i === step ? COLORS.azulClaro : `${COLORS.muted}55` }} />
+            ))}
+          </div>
+
+          <div className="flex gap-3">
+            {step > 0 && (
+              <button onClick={() => ir(step - 1)} style={{ background: "rgba(255,255,255,0.06)", color: COLORS.text, border: `1px solid ${COLORS.muted}44` }}
+                className="rounded-xl px-5 py-3 text-sm font-semibold flex-shrink-0">
+                Atrás
+              </button>
+            )}
+            <button onClick={siguiente} style={{ background: `linear-gradient(135deg, ${COLORS.azulClaro}, ${COLORS.azulMedio})`, color: "#fff", boxShadow: `0 8px 24px ${COLORS.azulMedio}66` }}
+              className="flex-1 rounded-xl py-3 text-sm font-bold">
+              {step === ONBOARDING_STEPS.length - 1 ? "Empezar a explorar" : "Siguiente"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 const MOTIVO_DESTELLOS_LABEL = {
   venta_confirmada_vendedor: "Venta confirmada",
   venta_confirmada_comprador: "Compra confirmada",
@@ -5965,7 +6109,7 @@ function NotificationBell({ session, onNavigate }) {
   );
 }
 
-function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil, onLogout, onLogin, onClose }) {
+function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil, onVerTutorial, onLogout, onLogin, onClose }) {
   const renglon = (id, label, Icon, onClick) => (
     <button
       key={id}
@@ -5999,6 +6143,12 @@ function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil
 
         <div className="py-2">
           {secundarios.map((item) => renglon(item.id, item.label, item.icon, () => onNavigate(item.id)))}
+        </div>
+
+        <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="py-2">
+          <button onClick={onVerTutorial} style={{ color: COLORS.text }} className="flex items-center gap-3 w-full text-left px-4 py-3 text-sm font-medium hover:brightness-125">
+            <Sparkles size={18} /> Ver tutorial
+          </button>
         </div>
 
         <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="py-2">
@@ -6166,6 +6316,7 @@ export default function EncuentraCartas() {
   const [showEditarPerfil, setShowEditarPerfil] = useState(false);
   const [logoError, setLogoError] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [, setTemaVersion] = useState(0);
   const [chatContext, setChatContext] = useState(null);
   const [adminStash, setAdminStash] = useState(() => {
@@ -6207,6 +6358,14 @@ export default function EncuentraCartas() {
       setSession(s);
       cargarOCrearPerfil(s);
     }
+  }, []);
+
+  // Tutorial de bienvenida: se muestra una sola vez, la primera vez que alguien
+  // abre la web (con o sin cuenta); se puede volver a ver desde el menú lateral.
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(ONBOARDING_SEEN_KEY)) setShowOnboarding(true);
+    } catch {}
   }, []);
 
   // Trae el perfil de la persona; si no existe (primer inicio de sesión tras confirmar su correo),
@@ -6548,11 +6707,14 @@ export default function EncuentraCartas() {
           view={view}
           onNavigate={(id) => { setView(id); setShowDrawer(false); }}
           onEditarPerfil={() => { setShowEditarPerfil(true); setShowDrawer(false); }}
+          onVerTutorial={() => { setShowOnboarding(true); setShowDrawer(false); }}
           onLogout={() => { handleLogout(); setShowDrawer(false); }}
           onLogin={() => { setShowAccountModal(true); setShowDrawer(false); }}
           onClose={() => setShowDrawer(false)}
         />
       )}
+
+      {showOnboarding && <OnboardingTutorial onClose={() => setShowOnboarding(false)} />}
 
       {showAccountModal && <AccountModal onClose={() => setShowAccountModal(false)} onAuthed={handleAuthed} />}
       {showEditarPerfil && session && (

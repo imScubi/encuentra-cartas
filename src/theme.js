@@ -5,6 +5,18 @@ export const FONTS = `
 @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulseGlow { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes floatCard1 { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-10px) rotate(-1deg); } }
+@keyframes floatCard2 { 0%, 100% { transform: translateY(0) rotate(1deg); } 50% { transform: translateY(-12px) rotate(3deg); } }
+@keyframes floatCard3 { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-9px) rotate(0deg); } }
+@keyframes ringPulse { 0% { transform: scale(0.9); opacity: .9; } 100% { transform: scale(1.9); opacity: 0; } }
+@keyframes typeBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes chatIn1 { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes chatIn2 { 0%, 35% { opacity: 0; transform: translateY(8px) scale(.96); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes badgePop { 0% { transform: scale(0); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
+@keyframes gemPop { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
+}
 `;
 
 // Tipos de cambio aproximados, solo para calcular un precio de referencia (no es una tasa en tiempo real)
