@@ -1962,9 +1962,9 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const cargarAnuncios = () => {
     setLoadingAnuncios(true);
     Promise.all([
-      sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.pendiente&order=created_at.desc`, session),
-      sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.programado&order=fecha_publicacion.asc`, session),
-      sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.publicado&order=fecha_publicacion.desc&limit=50`, session),
+      sb(`noticias?select=*,tiendas(nombre,perfiles!perfil_id(avatar_url))&estado=eq.pendiente&order=created_at.desc`, session),
+      sb(`noticias?select=*,tiendas(nombre,perfiles!perfil_id(avatar_url))&estado=eq.programado&order=fecha_publicacion.asc`, session),
+      sb(`noticias?select=*,tiendas(nombre,perfiles!perfil_id(avatar_url))&estado=eq.publicado&order=fecha_publicacion.desc&limit=50`, session),
     ])
       .then(([p, prog, pub]) => { setPendientes(p); setProgramados(prog); setPublicados(pub); })
       .catch((e) => setErrorAnuncio(e.message))
@@ -2160,7 +2160,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
 
   const cargarTodasTiendas = () => {
     setLoadingTodasTiendas(true);
-    sb(`tiendas?select=*,perfiles(plan)&order=nombre.asc`, session)
+    sb(`tiendas?select=*,perfiles!perfil_id(plan)&order=nombre.asc`, session)
       .then(setTodasTiendas)
       .catch((e) => setError(e.message))
       .finally(() => setLoadingTodasTiendas(false));
@@ -4359,7 +4359,7 @@ function ArmarMazoView({ session, onAbrirChat, onVerTienda }) {
     try {
       const [mercado, inventario] = await Promise.all([
         sb(`mercado_listings?select=*,perfiles(nombre,avatar_url)&order=precio.asc`),
-        sb(`inventario_tienda?select=*,tiendas(id,nombre,perfil_id,perfiles(avatar_url))&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(id,nombre,perfil_id,perfiles!perfil_id(avatar_url))&order=precio.asc`),
       ]);
 
       const vendedores = {}; // key -> { tipo, nombre, avatar, perfilId, tiendaId, coincidencias: Map(carta -> mejor item) }
@@ -4743,7 +4743,7 @@ function SiguiendoView({ session, onVerPerfil, onVerTienda }) {
         }
         let tiendaIds = [];
         if (tiendas.length) {
-          const filasT = await sb(`tiendas?select=id,nombre,perfil_id,perfiles(avatar_url)&perfil_id=in.(${tiendas.join(",")})`);
+          const filasT = await sb(`tiendas?select=id,nombre,perfil_id,perfiles!perfil_id(avatar_url)&perfil_id=in.(${tiendas.join(",")})`);
           tiendaIds = filasT;
         }
         const idsSoloTiendas = tiendaIds.map((t) => t.id);
@@ -5322,7 +5322,7 @@ async function cargarDetalleListing(tabla, id) {
     };
   }
   if (tabla === "inventario_tienda") {
-    const rows = await sb(`inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
+    const rows = await sb(`inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
     const r = rows[0];
     if (!r) return null;
     return {
@@ -5336,7 +5336,7 @@ async function cargarDetalleListing(tabla, id) {
     };
   }
   if (tabla === "sellado_tienda") {
-    const rows = await sb(`sellado_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
+    const rows = await sb(`sellado_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
     const r = rows[0];
     if (!r) return null;
     return {
@@ -5558,7 +5558,7 @@ function TorneosView({ session, onRequireLogin }) {
     setLoading(true); setError(null);
     const ahora = new Date().toISOString();
     Promise.all([
-      sb(`torneos?select=*,tiendas(nombre,direccion,lat,lng,perfiles(avatar_url))&fecha=gte.${ahora}&order=fecha.asc`, session),
+      sb(`torneos?select=*,tiendas(nombre,direccion,lat,lng,perfiles!perfil_id(avatar_url))&fecha=gte.${ahora}&order=fecha.asc`, session),
       sb(`torneo_interes?select=torneo_id`, session),
       session ? sb(`torneo_interes?select=torneo_id&perfil_id=eq.${session.user.id}`, session) : Promise.resolve([]),
     ])
@@ -7050,7 +7050,7 @@ export default function EncuentraCartas() {
   // Carga inicial: lista de tiendas reales
   useEffect(() => {
     setLoadingTiendas(true);
-    sb("tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&order=nombre.asc")
+    sb("tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&order=nombre.asc")
       .then(setTiendas)
       .catch((e) => setErrorTiendas(e.message))
       .finally(() => setLoadingTiendas(false));
@@ -7068,9 +7068,9 @@ export default function EncuentraCartas() {
     setSearchError(null);
     const t = setTimeout(() => {
       Promise.all([
-        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&${filtroCartaSet}&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&${filtroCartaSet}&order=precio.asc`),
         sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&${filtroCartaSet}&order=precio.asc`),
-        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&producto=ilike.*${q}*&order=precio.asc`),
+        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&producto=ilike.*${q}*&order=precio.asc`),
       ])
         .then(([inv, merc, sel]) => setSearchResults({ tiendas: conBoostPrimero(inv), mercado: conBoostPrimero(merc), sellado: conBoostPrimero(sel) }))
         .catch((e) => { setSearchResults({ tiendas: [], mercado: [], sellado: [] }); setSearchError(e.message); })
@@ -7088,11 +7088,11 @@ export default function EncuentraCartas() {
     }
     if ((view === "news" || necesitaVitrina) && news.length === 0) {
       setLoadingNews(true);
-      sb("noticias?select=*,tiendas(nombre,perfiles(avatar_url))&publicado=eq.true&order=fecha_publicacion.desc").then(setNews).finally(() => setLoadingNews(false));
+      sb("noticias?select=*,tiendas(nombre,perfiles!perfil_id(avatar_url))&publicado=eq.true&order=fecha_publicacion.desc").then(setNews).finally(() => setLoadingNews(false));
     }
     if (necesitaVitrina && inicioTienda.length === 0) {
       setLoadingInicio(true);
-      sb("inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles(plan,plan_vence,avatar_url))&order=created_at.desc&limit=10")
+      sb("inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&order=created_at.desc&limit=10")
         .then((rows) => setInicioTienda(conBoostPrimero(rows)))
         .finally(() => setLoadingInicio(false));
     }
@@ -7259,14 +7259,14 @@ export default function EncuentraCartas() {
         .then((rows) => { if (rows[0]) verPerfil(rows[0].id); })
         .catch(() => {});
     } else if (tiendaSlug) {
-      sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
+      sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
         .then((rows) => { if (rows[0]) openStore(rows[0]); })
         .catch(() => {});
     }
   }, []);
 
   const verTiendaDesdePerfil = (tiendaId) => {
-    sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&id=eq.${tiendaId}`)
+    sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&id=eq.${tiendaId}`)
       .then((rows) => { if (rows[0]) openStore(rows[0]); });
   };
 
