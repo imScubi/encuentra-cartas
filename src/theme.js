@@ -68,6 +68,33 @@ export function normalizarCondicion(texto) {
   return "NM";
 }
 
+// ---- Gradeo de la carta: opcional al publicar. Si el vendedor marca que la
+// carta está gradeada, elige la empresa que la gradeó y su calificación ----
+export const GRADEADORAS_OPCIONES = [
+  { key: "PSA", label: "PSA" },
+  { key: "CGC", label: "CGC" },
+  { key: "BGS", label: "BGS" },
+  { key: "TAG", label: "TAG" },
+  { key: "VALUE_UP", label: "Value UP" },
+  { key: "OTRO", label: "Otro" },
+];
+export const GRADEADORAS_LABEL = Object.fromEntries(GRADEADORAS_OPCIONES.map((o) => [o.key, o.label]));
+
+// Calificación 1 a 10 para cualquier empresa...
+const CALIFICACIONES_NORMALES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+// ...excepto BGS, que en el 10 se divide en tres niveles distintos.
+const CALIFICACIONES_BGS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10 Gem Mint", "10 Pristine", "10 Black Label"];
+export function calificacionesDeEmpresa(empresa) {
+  return empresa === "BGS" ? CALIFICACIONES_BGS : CALIFICACIONES_NORMALES;
+}
+
+// Texto corto para mostrar en publicaciones (ej. "PSA 9", "BGS 10 Black Label", "GradeCo (otro) 8").
+export function textoGradeo({ grado_empresa, grado_empresa_otro, grado_calificacion }) {
+  if (!grado_empresa || !grado_calificacion) return null;
+  const empresa = grado_empresa === "OTRO" ? (grado_empresa_otro || "Otro") : GRADEADORAS_LABEL[grado_empresa] || grado_empresa;
+  return `${empresa} ${grado_calificacion}`;
+}
+
 export const STORE_COLORS = [COLORS.azul, COLORS.azulClaro, COLORS.azulMedio, COLORS.azulPalido];
 export const colorFor = (i) => STORE_COLORS[i % STORE_COLORS.length];
 // De los tonos de la paleta, azul y azulMedio son oscuros: sobre ellos el texto debe ir blanco, no negro.
