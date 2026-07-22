@@ -4,7 +4,7 @@ import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
-  ArrowUp, ArrowDown, Navigation, Image as ImageIcon, Trash2, ChevronDown, ChevronUp, Tag,
+  ArrowUp, ArrowDown, Navigation, Image as ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check,
 } from "lucide-react";
 import {
   VAPID_PUBLIC_KEY,
@@ -654,6 +654,33 @@ function Badge({ children, color }) {
 
 // ---- Selector de idioma de la carta: obligatorio al publicar, para que
 // el comprador sepa en qué idioma está sin tener que preguntar ----
+// Botón para copiar el link propio (?u=slug para perfiles, ?tienda=slug para
+// tiendas) — así cada quien puede compartir su propia URL en vez de la
+// genérica de la app (Google Business Profile, redes, tarjetas, etc.).
+function CopiarLinkBoton({ param, slug }) {
+  const [copiado, setCopiado] = useState(false);
+  if (!slug) return null;
+  const copiar = async () => {
+    const url = `${window.location.origin}/?${param}=${encodeURIComponent(slug)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.prompt("Copia tu link:", url);
+      return;
+    }
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2000);
+  };
+  return (
+    <button type="button" onClick={copiar}
+      style={{ border: `1px solid ${copiado ? COLORS.azulClaro : COLORS.surface2}`, color: copiado ? COLORS.azulClaro : COLORS.muted }}
+      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap">
+      {copiado ? <Check size={13} /> : <Copy size={13} />}
+      {copiado ? "¡Copiado!" : "Copiar link"}
+    </button>
+  );
+}
+
 function IdiomaSelector({ value, onChange }) {
   return (
     <div className="flex gap-2 flex-wrap">
@@ -1788,7 +1815,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
     if (!nuevaTienda.nombre.trim() || !nuevaTienda.direccion.trim()) return;
     setCreandoTienda(true); setErrorCrear(null); setOkCrear(null);
     try {
-      await sbWrite("POST", "tiendas", {
+      await crearConSlugUnico("tiendas", {
         nombre: nuevaTienda.nombre.trim(),
         direccion: nuevaTienda.direccion.trim(),
         zona: nuevaTienda.zona.trim() || null,
@@ -1796,7 +1823,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
         perfil_id: nuevaTienda.vincularCon || null,
         lat: nuevaTienda.lat ? Number(nuevaTienda.lat) : null,
         lng: nuevaTienda.lng ? Number(nuevaTienda.lng) : null,
-      }, session);
+      }, nuevaTienda.nombre.trim(), session, "tienda");
       setOkCrear(`Tienda "${nuevaTienda.nombre.trim()}" creada.`);
       setNuevaTienda(tiendaVacia);
       cargar();
@@ -4933,7 +4960,7 @@ function ComprasVentasView({ session }) {
   );
 }
 
-function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTienda, onAbrirDetalle }) {
+function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTienda, onAbrirDetalle, onSlugResuelto }) {
   const [perfil, setPerfil] = useState(undefined); // undefined = cargando, null = no existe
   const [cartas, setCartas] = useState([]);
   const [sellado, setSellado] = useState([]);
@@ -4954,6 +4981,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
       .then(async (rows) => {
         const p = rows[0] || null;
         setPerfil(p);
+        onSlugResuelto?.(p?.slug || null);
         if (!p) return;
         const vis = p.visibilidad || {};
         const tareas = [];
@@ -5021,6 +5049,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
               <VerificadoBadge perfil={perfil} />
               <NivelBadge total={totalDestellos} />
               <VendedorBadge ventasCompletadas={ventasCompletadas} resenas={resenas} />
+              <CopiarLinkBoton param="u" slug={perfil.slug} />
             </div>
             {tienda?.zona && <p style={{ color: COLORS.muted }} className="text-sm">{tienda.zona}</p>}
             <div className="flex items-center gap-3 flex-wrap mt-0.5">
@@ -6730,6 +6759,35 @@ async function buscarCoordenadasPorDireccion(direccion) {
   return { lat: Number(data[0].lat), lng: Number(data[0].lon) };
 }
 
+// ---- Slugs (link propio de cada perfil/tienda, ej. "carta-magica-monterrey") ----
+// Misma lógica que la función slugify() de Postgres (migración 041), para que un
+// slug calculado en el navegador coincida con lo que ya generó la base de datos.
+function slugify(texto) {
+  const limpio = (texto || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // quita acentos
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return limpio || null;
+}
+
+// Crea una fila con un slug único: intenta con el slug base y, si ya existe
+// (choque con otro nombre parecido), reintenta agregando "-2", "-3"... en vez
+// de bloquear el registro. Después de varios intentos, usa un sufijo corto
+// garantizado único para no quedarse trabado.
+async function crearConSlugUnico(tabla, datosBase, nombreParaSlug, session, fallbackPrefijo) {
+  const base = slugify(nombreParaSlug) || `${fallbackPrefijo}-${Math.random().toString(36).slice(2, 8)}`;
+  for (let intento = 1; intento <= 20; intento++) {
+    const slug = intento === 1 ? base : `${base}-${intento}`;
+    try {
+      return await sbWrite("POST", tabla, { ...datosBase, slug }, session);
+    } catch (e) {
+      if (!/duplicate key|already exists/i.test(e.message || "") || intento === 20) throw e;
+    }
+  }
+}
+
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
@@ -6798,7 +6856,7 @@ export default function EncuentraCartas() {
       const rows = await sb(`perfiles?select=*&id=eq.${s.user.id}`, s);
       let p = rows[0];
       if (!p && s.user.user_metadata?.tipo) {
-        const creado = await sbWrite("POST", "perfiles", {
+        const creado = await crearConSlugUnico("perfiles", {
           id: s.user.id,
           tipo: s.user.user_metadata.tipo,
           nombre: s.user.user_metadata.nombre,
@@ -6806,7 +6864,7 @@ export default function EncuentraCartas() {
           facebook: s.user.user_metadata.facebook || null,
           avatar_url: s.user.user_metadata.avatar_url || randomPokemonAvatar(),
           email: s.user.email || null,
-        }, s);
+        }, s.user.user_metadata.nombre, s, "usuario");
         p = Array.isArray(creado) ? creado[0] : creado;
       }
       setPerfil(p || null);
@@ -7034,11 +7092,26 @@ export default function EncuentraCartas() {
     cargarInbox();
   };
 
+  // Cada perfil y tienda tiene su propio link (?u=<slug> / ?tienda=<slug>),
+  // para compartir en redes, Google Business Profile, etc. en vez de que
+  // todos compartan la misma URL genérica. Esta función limpia los demás
+  // parámetros de deep-link (evita que se arrastren viejos) y pone los que
+  // correspondan a la vista nueva.
+  const actualizarUrlCompartible = (params) => {
+    try {
+      const u = new URL(window.location.href);
+      ["listing", "tabla", "u", "tienda"].forEach((k) => u.searchParams.delete(k));
+      Object.entries(params || {}).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
+      window.history.pushState({}, "", u);
+    } catch {}
+  };
+
   const openStore = (store) => {
     setSelectedStore(store);
     setView("storeDetail");
     setLoadingStoreDetail(true);
     setStoreResenas([]); setStoreVentasCompletadas(0); setStoreDestellos(0); setStoreSeguidores(0);
+    actualizarUrlCompartible(store.slug ? { tienda: store.slug } : {});
     Promise.all([
       sb(`inventario_tienda?select=*&tienda_id=eq.${store.id}`),
       sb(`sellado_tienda?select=*&tienda_id=eq.${store.id}`),
@@ -7053,11 +7126,22 @@ export default function EncuentraCartas() {
     }
   };
 
+  const cerrarStore = () => {
+    setView("directory");
+    actualizarUrlCompartible({});
+  };
+
   const verPerfil = (perfilId) => {
     if (!perfilId) return;
     setVistaAntesDePerfil(view);
     setSelectedPerfilId(perfilId);
     setView("perfilPublico");
+    actualizarUrlCompartible({}); // el slug se agrega solo cuando PerfilPublicoView termine de cargarlo
+  };
+
+  const cerrarPerfil = () => {
+    setView(vistaAntesDePerfil);
+    actualizarUrlCompartible({});
   };
 
   // Ficha de detalle de una publicación (carta o sellado): abre en grande la
@@ -7072,33 +7156,34 @@ export default function EncuentraCartas() {
     setVistaAntesDeDetalle(view === "cartaDetalle" ? vistaAntesDeDetalle : view);
     setSelectedListing({ id, tabla });
     setView("cartaDetalle");
-    try {
-      const u = new URL(window.location.href);
-      u.searchParams.set("listing", id);
-      u.searchParams.set("tabla", tabla);
-      window.history.pushState({}, "", u);
-    } catch {}
+    actualizarUrlCompartible({ listing: id, tabla });
   };
 
   const cerrarDetalle = () => {
     setSelectedListing(null);
     setView(vistaAntesDeDetalle);
-    try {
-      const u = new URL(window.location.href);
-      u.searchParams.delete("listing");
-      u.searchParams.delete("tabla");
-      window.history.pushState({}, "", u);
-    } catch {}
+    actualizarUrlCompartible({});
   };
 
-  // Al abrir la app con un link compartido de una publicación, la abrimos directo.
+  // Al abrir la app con un link compartido (de una publicación, un perfil o
+  // una tienda), la abrimos directo.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const listing = params.get("listing");
     const tabla = params.get("tabla");
+    const uSlug = params.get("u");
+    const tiendaSlug = params.get("tienda");
     if (listing && tabla) {
       setSelectedListing({ id: listing, tabla });
       setView("cartaDetalle");
+    } else if (uSlug) {
+      sb(`perfiles?select=id&slug=eq.${encodeURIComponent(uSlug)}`)
+        .then((rows) => { if (rows[0]) verPerfil(rows[0].id); })
+        .catch(() => {});
+    } else if (tiendaSlug) {
+      sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
+        .then((rows) => { if (rows[0]) openStore(rows[0]); })
+        .catch(() => {});
     }
   }, []);
 
@@ -7770,7 +7855,7 @@ export default function EncuentraCartas() {
         {/* STORE DETAIL */}
         {view === "storeDetail" && selectedStore && (
           <div>
-            <button onClick={() => setView("directory")} style={{ color: COLORS.muted }} className="flex items-center gap-1 text-sm mb-6">
+            <button onClick={cerrarStore} style={{ color: COLORS.muted }} className="flex items-center gap-1 text-sm mb-6">
               <ChevronLeft size={16} /> Volver
             </button>
             <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl overflow-hidden mb-6">
@@ -7792,6 +7877,7 @@ export default function EncuentraCartas() {
                     <VerificadoBadge perfil={selectedStore.perfiles} />
                     <NivelBadge total={storeDestellos} />
                     <VendedorBadge ventasCompletadas={storeVentasCompletadas} resenas={storeResenas} />
+                    <CopiarLinkBoton param="tienda" slug={selectedStore.slug} />
                   </div>
                   {session && session.user.id !== selectedStore.perfil_id && (
                     <div className="ml-auto pb-1.5 flex items-center gap-2">
@@ -7921,10 +8007,11 @@ export default function EncuentraCartas() {
           <PerfilPublicoView
             perfilId={selectedPerfilId}
             session={session}
-            onVolver={() => setView(vistaAntesDePerfil)}
+            onVolver={cerrarPerfil}
             onAbrirChat={abrirChat}
             onVerTienda={verTiendaDesdePerfil}
             onAbrirDetalle={abrirDetalle}
+            onSlugResuelto={(slug) => actualizarUrlCompartible(slug ? { u: slug } : {})}
           />
         )}
 

@@ -1246,6 +1246,50 @@ migración 040 todavía no se haya corrido.
 ### Pendiente por aplicar en Supabase
 Copiar y pegar en el SQL Editor: `040_carta_gradeada.sql`.
 
+## 50. Link propio para cada perfil y cada tienda (slug)
+
+Antes, la única forma de compartir un perfil o una tienda era la URL
+genérica de la app — todos compartían el mismo link, sin importar a quién
+se estuviera mostrando. Ahora cada perfil y cada tienda tiene su propia
+URL corta basada en su nombre:
+
+- `https://encuentracartasmx.com/?u=carta-magica-monterrey` → perfil
+- `https://encuentracartasmx.com/?tienda=carta-magica-monterrey` → tienda
+
+El "slug" se genera automáticamente a partir del nombre (minúsculas, sin
+acentos, espacios y símbolos convertidos a guiones) al crear el perfil o
+la tienda — no hay que escribir nada a mano. Si dos nombres generan el
+mismo slug (ej. dos tiendas que se llaman "Carta Mágica"), al segundo se
+le agrega automáticamente "-2", "-3", etc. en vez de bloquear el registro
+o pedir un nombre distinto — así nadie se queda sin poder registrarse
+solo porque alguien más ya usó un nombre parecido.
+
+Un botón nuevo "Copiar link" (junto a las demás insignias, en el perfil
+público y en el detalle de tienda) copia esa URL corta al portapapeles
+para pegarla en Google Business Profile, redes sociales, WhatsApp, etc.
+
+Detalles técnicos:
+- El slug se genera en 3 lugares: al crear el perfil propio
+  (`cargarOCrearPerfil`), al crear una tienda desde el panel de Admin
+  (`crearTienda`), y al crear un sub-perfil administrado
+  (`api/admin/subperfiles.js`) — los tres con la misma lógica de
+  reintento con sufijo numérico.
+- Al abrir la app con `?u=` o `?tienda=` en la URL, se busca el perfil o
+  la tienda por slug y se abre directo esa vista (mismo mecanismo que ya
+  existía para `?listing=&tabla=` en la ficha de detalle de una carta).
+- La URL visible se actualiza sola (sin recargar la página) al entrar o
+  salir de un perfil/tienda, usando `window.history.pushState`.
+- Migración `041_slugs.sql`: agrega la columna `slug` (única, obligatoria)
+  a `perfiles` y `tiendas`, generando y desduplicando los slugs de las
+  filas que ya existían antes de aplicar el `UNIQUE`.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `041_slugs.sql`. **Importante:** a
+diferencia de otras migraciones recientes (gradeo, foto real), esta
+columna es obligatoria (`NOT NULL`) — hasta que se corra esta migración,
+crear un perfil o una tienda nueva fallará con un error de "la columna
+slug no existe". Correrla antes de (o al mismo tiempo que) este despliegue.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
