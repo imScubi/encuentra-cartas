@@ -1290,6 +1290,47 @@ columna es obligatoria (`NOT NULL`) — hasta que se corra esta migración,
 crear un perfil o una tienda nueva fallará con un error de "la columna
 slug no existe". Correrla antes de (o al mismo tiempo que) este despliegue.
 
+## 51. Tiendas afiliadas: entrega en buzón para publicaciones del Mercado
+
+Nuevo mecanismo pensado para que un vendedor individual (o una cuenta de
+tienda vendiendo en "Vender en el Mercado") pueda ofrecer dejar la carta en
+tratos en el buzón de una tienda física de confianza, en vez de solo
+coordinar entrega en persona o envío.
+
+- **Admin → pestaña "Tiendas" → "Todas las tiendas"**: cada tienda tiene
+  ahora un botón **"📦 Marcar afiliada" / "📦 Quitar afiliada"** —
+  independiente de si esa tienda ya tiene o no una cuenta vinculada. Solo
+  las tiendas marcadas como afiliadas van a aparecer como opción de buzón.
+- **"Vender en el Mercado" (`MyMarketPanel`)**: al publicar una carta o
+  producto sellado, si existe al menos una tienda afiliada aparece la
+  casilla **"📦 Ofrezco entrega en buzón de una tienda afiliada
+  (opcional)"** — al marcarla, se despliega un selector con **solo** las
+  tiendas afiliadas (ej. si únicamente HQ y Kantocards están afiliadas,
+  esas dos son las únicas opciones). Se guarda en
+  `mercado_listings.buzon_tienda_id`.
+- **Buzón por default**: arriba del formulario, un selector
+  "Usar este buzón en todas mis publicaciones nuevas" guarda la preferencia
+  en `perfiles.buzon_default_tienda_id` — a partir de ahí, cada publicación
+  nueva ya sale con esa casilla marcada y esa tienda elegida, sin tener que
+  repetirlo a mano. Se puede seguir cambiando o quitando el buzón en una
+  publicación puntual sin afectar la preferencia guardada.
+- **Visible en toda la app**: la insignia "📦 Buzón: `<nombre de la
+  tienda>`" se muestra junto a las demás (idioma, estado, gradeo) en
+  cualquier lugar donde ya aparecía una publicación del Mercado — tus
+  propias publicaciones, la pestaña "Mercado", la vitrina de inicio, los
+  resultados de "Buscar", el perfil público y la ficha de detalle de la
+  publicación. No aplica al inventario propio de una tienda (`Mi tienda`),
+  solo a publicaciones de "Vender en el Mercado".
+
+Migración `042_buzon_tiendas_afiliadas.sql`: agrega `tiendas.afiliada`
+(boolean, default `false`), `mercado_listings.buzon_tienda_id` y
+`perfiles.buzon_default_tienda_id` (ambas `uuid references tiendas(id)`).
+No requiere ninguna política de RLS nueva — `tiendas` ya es de lectura
+pública y cada quien ya puede escribir su propio `mercado_listings`/`perfiles`.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `042_buzon_tiendas_afiliadas.sql`.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

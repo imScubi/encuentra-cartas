@@ -780,6 +780,14 @@ function GradeoBadge({ gradeada, grado_empresa, grado_empresa_otro, grado_califi
   return <Badge color={COLORS.azulPalido}>{texto}</Badge>;
 }
 
+// Badge de entrega en buzón: solo aplica a publicaciones del Mercado que el
+// vendedor marcó con una tienda afiliada (mercado_listings.buzon_tienda_id).
+function BuzonBadge({ tienda }) {
+  const nombre = tienda?.nombre;
+  if (!nombre) return null;
+  return <Badge color={COLORS.azulMedio}>📦 Buzón: {nombre}</Badge>;
+}
+
 function PrecioConOferta({ precio, precioAntes, size = "lg" }) {
   const enOferta = precioAntes && Number(precioAntes) > Number(precio);
   const pct = enOferta ? Math.round((1 - Number(precio) / Number(precioAntes)) * 100) : 0;
@@ -1414,17 +1422,37 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const [saving, setSaving] = useState(false);
   const [tipo, setTipo] = useState("carta"); // carta | sellado
 
+  // ---- Entrega en buzón de tienda afiliada (opcional) ----
+  const [tiendasAfiliadas, setTiendasAfiliadas] = useState([]);
+  const [buzonDefault, setBuzonDefault] = useState(perfil?.buzon_default_tienda_id || "");
+  const [guardandoBuzonDefault, setGuardandoBuzonDefault] = useState(false);
+
+  useEffect(() => {
+    sb(`tiendas?select=id,nombre&afiliada=eq.true&order=nombre.asc`).then(setTiendasAfiliadas).catch(() => {});
+  }, []);
+
   const vacio = {
     tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
-    gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
+    gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "", buzon_tienda_id: "",
   };
-  const [nueva, setNueva] = useState(vacio);
+  const [nueva, setNueva] = useState({ ...vacio, buzon_tienda_id: buzonDefault });
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
+  // Guarda la preferencia de buzón por default (perfiles.buzon_default_tienda_id)
+  // para no tener que marcarla a mano en cada publicación nueva.
+  const guardarBuzonDefault = async (valor) => {
+    setGuardandoBuzonDefault(true); setError(null);
+    try {
+      await sbWrite("PATCH", `perfiles?id=eq.${session.user.id}`, { buzon_default_tienda_id: valor || null }, session);
+      setBuzonDefault(valor);
+      setNueva((n) => ({ ...n, buzon_tienda_id: valor }));
+    } catch (e) { setError(e.message); } finally { setGuardandoBuzonDefault(false); }
+  };
+
   const cargar = () => {
     setLoading(true); setError(null);
-    sb(`mercado_listings?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
+    sb(`mercado_listings?select=*,buzon_tienda:buzon_tienda_id(nombre)&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
       .then(setPublicaciones)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -1454,15 +1482,17 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nueva.card_api_id || null,
         imagen_url: nueva.imagen_url || null,
         precio_ref_mxn: nueva.precio_ref_mxn || null,
-        // foto_real_url y los campos de gradeo solo se mandan si de verdad
-        // aplican: así publicar sigue funcionando aunque las migraciones que
-        // agregan esas columnas (036, 040) todavía no se hayan corrido.
+        // foto_real_url, los campos de gradeo y el buzón solo se mandan si de
+        // verdad aplican: así publicar sigue funcionando aunque las
+        // migraciones que agregan esas columnas (036, 040, 042) todavía no
+        // se hayan corrido.
         ...(tipo === "carta" && nueva.foto_real_url ? { foto_real_url: nueva.foto_real_url } : {}),
         ...(tipo === "carta" && nueva.gradeada
           ? { gradeada: true, grado_empresa: nueva.grado_empresa || null, grado_empresa_otro: nueva.grado_empresa === "OTRO" ? nueva.grado_empresa_otro || null : null, grado_calificacion: nueva.grado_calificacion || null }
           : {}),
+        ...(nueva.buzon_tienda_id ? { buzon_tienda_id: nueva.buzon_tienda_id } : {}),
       }, session);
-      setNueva(vacio);
+      setNueva({ ...vacio, buzon_tienda_id: buzonDefault });
       cargar();
     } catch (e) { setError(e.message); } finally { setSaving(false); }
   };
@@ -1510,13 +1540,26 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
 
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid gap-3">
         <div className="flex gap-2">
-          <button type="button" onClick={() => { setTipo("carta"); setNueva(vacio); }}
+          <button type="button" onClick={() => { setTipo("carta"); setNueva({ ...vacio, buzon_tienda_id: buzonDefault }); }}
             style={{ background: tipo === "carta" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "carta" ? COLORS.azulPalido : COLORS.surface2}`, color: tipo === "carta" ? COLORS.azulPalido : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Carta suelta</button>
-          <button type="button" onClick={() => { setTipo("sellado"); setNueva(vacio); }}
+          <button type="button" onClick={() => { setTipo("sellado"); setNueva({ ...vacio, buzon_tienda_id: buzonDefault }); }}
             style={{ background: tipo === "sellado" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "sellado" ? COLORS.azulClaro : COLORS.surface2}`, color: tipo === "sellado" ? COLORS.azulClaro : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Producto sellado</button>
         </div>
+
+        {tiendasAfiliadas.length > 0 && (
+          <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-2 flex-wrap">
+            <Package size={14} color={COLORS.muted} />
+            <p style={{ color: COLORS.muted }} className="text-xs">Usar este buzón en todas mis publicaciones nuevas:</p>
+            <select value={buzonDefault} onChange={(e) => guardarBuzonDefault(e.target.value)} disabled={guardandoBuzonDefault}
+              style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs">
+              <option value="">Ninguno (marcar manualmente cada vez)</option>
+              {tiendasAfiliadas.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+            </select>
+            {guardandoBuzonDefault && <span style={{ color: COLORS.muted }} className="text-xs">Guardando...</span>}
+          </div>
+        )}
 
         {tipo === "carta" ? (
           <>
@@ -1575,6 +1618,21 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           </div>
         )}
 
+        {tiendasAfiliadas.length > 0 && (
+          <div className="grid gap-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer w-fit" style={{ color: COLORS.muted }}>
+              <input type="checkbox" checked={!!nueva.buzon_tienda_id}
+                onChange={(e) => setNueva({ ...nueva, buzon_tienda_id: e.target.checked ? (tiendasAfiliadas[0]?.id || "") : "" })} />
+              <Package size={14} /> Ofrezco entrega en buzón de una tienda afiliada (opcional)
+            </label>
+            {nueva.buzon_tienda_id && (
+              <select value={nueva.buzon_tienda_id} onChange={(e) => setNueva({ ...nueva, buzon_tienda_id: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
+                {tiendasAfiliadas.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+              </select>
+            )}
+          </div>
+        )}
+
         <div className="grid sm:grid-cols-4 gap-2">
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nueva.precio_antes} onChange={(e) => setNueva({ ...nueva, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
@@ -1598,6 +1656,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
                 {item.tipo !== "sellado" && <IdiomaBadge idioma={item.idioma} />}
                 {item.tipo !== "sellado" && <EstadoCartaBadge condicion={item.condicion} />}
                 {item.tipo !== "sellado" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />}
+                <BuzonBadge tienda={item.buzon_tienda} />
                 <BoostBadge item={item} />
               </div>
               <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.zona}</p>
@@ -2097,6 +2156,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const [loadingTodasTiendas, setLoadingTodasTiendas] = useState(true);
   const [borrandoTienda, setBorrandoTienda] = useState(null);
   const [cambiandoAmatista, setCambiandoAmatista] = useState(null);
+  const [cambiandoAfiliada, setCambiandoAfiliada] = useState(null);
 
   const cargarTodasTiendas = () => {
     setLoadingTodasTiendas(true);
@@ -2125,6 +2185,16 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
       }, session);
       setTodasTiendas((prev) => prev.map((x) => (x.id === t.id ? { ...x, perfiles: { ...x.perfiles, plan: tieneAmatista ? "pokeball" : "ultraball" } } : x)));
     } catch (e) { setError(e.message); } finally { setCambiandoAmatista(null); }
+  };
+
+  // "Afiliada": habilita a esta tienda como opción de buzón para entregas
+  // de publicaciones del Mercado (independiente del plan/perfil vinculado).
+  const toggleAfiliada = async (t) => {
+    setCambiandoAfiliada(t.id);
+    try {
+      await sbWrite("PATCH", `tiendas?id=eq.${t.id}`, { afiliada: !t.afiliada }, session);
+      setTodasTiendas((prev) => prev.map((x) => (x.id === t.id ? { ...x, afiliada: !t.afiliada } : x)));
+    } catch (e) { setError(e.message); } finally { setCambiandoAfiliada(null); }
   };
 
   const borrarTienda = async (t) => {
@@ -2363,6 +2433,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                         <p style={{ color: COLORS.muted }} className="text-xs">
                           {t.direccion}{t.zona ? ` · ${t.zona}` : ""}{t.perfil_id ? "" : " · sin cuenta vinculada"}
                           {t.lat && t.lng ? " · 📍 con ubicación" : " · sin ubicación"}
+                          {t.afiliada ? " · 📦 Afiliada (buzón)" : ""}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -2376,6 +2447,10 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                             {cambiandoAmatista === t.id ? "..." : t.perfiles?.plan === "ultraball" ? "🟣 Quitar Amatista" : "🟣 Dar Amatista"}
                           </button>
                         )}
+                        <button onClick={() => toggleAfiliada(t)} disabled={cambiandoAfiliada === t.id}
+                          style={{ color: COLORS.azulMedio, border: `1px solid ${COLORS.azulMedio}` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                          {cambiandoAfiliada === t.id ? "..." : t.afiliada ? "📦 Quitar afiliada" : "📦 Marcar afiliada"}
+                        </button>
                         <button onClick={() => borrarTienda(t)} disabled={borrandoTienda === t.id}
                           style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                           {borrandoTienda === t.id ? "Borrando..." : "Borrar tienda"}
@@ -4987,7 +5062,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
         const tareas = [];
         if (p.tipo === "individual" && vis.publicaciones !== false) {
           tareas.push(
-            sb(`mercado_listings?select=*&perfil_id=eq.${perfilId}&order=created_at.desc`).then((filas) => {
+            sb(`mercado_listings?select=*,buzon_tienda:buzon_tienda_id(nombre)&perfil_id=eq.${perfilId}&order=created_at.desc`).then((filas) => {
               setCartas(filas.filter((f) => f.tipo !== "sellado"));
               setSellado(filas.filter((f) => f.tipo === "sellado"));
             })
@@ -5172,6 +5247,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
                         {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                         {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
                         {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
+                        <BuzonBadge tienda={r.buzon_tienda} />
                         <BoostBadge item={r} />
                       </div>
                       <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
@@ -5231,7 +5307,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
 // a una sola forma para que CartaDetalleView no tenga que saber de dónde vino.
 async function cargarDetalleListing(tabla, id) {
   if (tabla === "mercado_listings") {
-    const rows = await sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&id=eq.${id}`);
+    const rows = await sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&id=eq.${id}`);
     const r = rows[0];
     if (!r) return null;
     return {
@@ -5240,6 +5316,7 @@ async function cargarDetalleListing(tabla, id) {
       gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.zona,
       imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
+      buzonTienda: r.buzon_tienda || null,
       vendedor: { perfilId: r.perfil_id, nombre: r.perfiles?.nombre || "Usuario", avatarUrl: r.perfiles?.avatar_url, whatsapp: r.perfiles?.whatsapp, facebook: r.perfiles?.facebook, perfil: r.perfiles, esTienda: false },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""}`,
     };
@@ -5411,6 +5488,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
             <IdiomaBadge idioma={item.idioma} />
             <EstadoCartaBadge condicion={item.condicion} />
             <GradeoBadge gradeada={item.gradeada} grado_empresa={item.gradoEmpresa} grado_empresa_otro={item.gradoEmpresaOtro} grado_calificacion={item.gradoCalificacion} />
+            <BuzonBadge tienda={item.buzonTienda} />
           </div>
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold mb-1">{item.nombre}</h2>
           {item.setNombre && <p style={{ color: COLORS.muted }} className="text-sm mb-4">{item.setNombre}</p>}
@@ -6991,7 +7069,7 @@ export default function EncuentraCartas() {
     const t = setTimeout(() => {
       Promise.all([
         sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&${filtroCartaSet}&order=precio.asc`),
-        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&${filtroCartaSet}&order=precio.asc`),
+        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&${filtroCartaSet}&order=precio.asc`),
         sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&producto=ilike.*${q}*&order=precio.asc`),
       ])
         .then(([inv, merc, sel]) => setSearchResults({ tiendas: conBoostPrimero(inv), mercado: conBoostPrimero(merc), sellado: conBoostPrimero(sel) }))
@@ -7006,7 +7084,7 @@ export default function EncuentraCartas() {
     const necesitaVitrina = view === "search" && !query.trim();
     if ((view === "market" || necesitaVitrina) && market.length === 0) {
       setLoadingMarket(true);
-      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
+      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
     }
     if ((view === "news" || necesitaVitrina) && news.length === 0) {
       setLoadingNews(true);
@@ -7431,6 +7509,7 @@ export default function EncuentraCartas() {
                                 {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                                 {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
                                 {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
+                                {!r._esTienda && <BuzonBadge tienda={r.buzon_tienda} />}
                                 <BoostBadge item={r} />
                               </div>
                               <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
@@ -7484,7 +7563,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {(r.foto_real_url || r.imagen_url) && <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}{r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}{r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}{r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}{r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}<BuzonBadge tienda={r.buzon_tienda} /><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
                       <button onClick={(e) => { e.stopPropagation(); verPerfil(r.perfil_id); }} className="flex items-center gap-2 mt-2 hover:brightness-125">
@@ -7629,6 +7708,7 @@ export default function EncuentraCartas() {
                       {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                       {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
                       {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
+                      <BuzonBadge tienda={r.buzon_tienda} />
                       <PlanBadge perfil={r.perfiles} />
                       <BoostBadge item={r} />
                     </div>
