@@ -1419,11 +1419,77 @@ mientras el filtro esté en "Todos" o "Pokémon" (hoy todo el sellado
 existente es Pokémon) y se oculta con cualquier otro TCG elegido, para no
 mostrar sellado con la etiqueta equivocada.
 
-**Nota de alcance**: el filtro de TCG hoy solo afecta la pantalla de
-inicio/Mercado — el Directorio de tiendas, el perfil público, "Armar mazo"
-y el detalle de una tienda todavía no lo usan (las tiendas venden de
-cualquier TCG mezclado, así que filtrar ahí es un paso aparte si hace
-falta más adelante).
+**Nota de alcance** (ya resuelta en la sección 54 de abajo): el filtro de
+TCG en esta primera versión solo vivía en la pantalla de inicio/Mercado —
+el Directorio de tiendas y el detalle de una tienda no lo usaban todavía.
+
+## 54. Los 5 TCG completos: Yu-Gi-Oh, Lorcana y One Piece + sellado multi-TCG + filtro en Tiendas
+
+Segunda pasada, después del piloto de Magic (sección 53): se agregan los
+tres TCG que faltaban, producto sellado para cualquier TCG, y el filtro de
+TCG también en el Directorio de tiendas.
+
+**Buscador de texto libre agregado a:**
+- **Yu-Gi-Oh!** vía [YGOPRODeck](https://db.ygoprodeck.com/api-guide/)
+  (`buscarCartasYugioh` en `pokemonApi.js`) — gratis, sin llave, con precio
+  de referencia incluido en la misma respuesta.
+- **Lorcana** vía [lorcana-api.com](https://lorcana-api.com) — con una
+  diferencia: esta API no documenta de forma confiable una búsqueda
+  parcial por nombre, así que en vez de arriesgar la sintaxis exacta del
+  query se trae el catálogo completo **una sola vez** (son pocos cientos
+  de cartas) y se filtra por nombre en el navegador — mismo patrón que ya
+  usa el buscador de Pokémon para elegir foto de perfil. **Aviso de
+  honestidad**: no se pudieron confirmar en vivo los nombres exactos de
+  los campos de esa API desde este entorno (el proxy de red del sandbox
+  bloquea dominios externos) — el código prueba varias variantes de
+  nombre de campo por si acaso; si ves nombres o imágenes en blanco al
+  buscar Lorcana, avisa para ajustar el mapeo exacto.
+- Con esto, `TCG_CON_CATALOGO` (theme.js) ya incluye Pokémon, Magic,
+  Yu-Gi-Oh y Lorcana — los 4 con buscador de una sola caja de texto.
+
+**One Piece: por qué se quedó fuera del buscador de texto libre.** Se
+investigaron varias opciones (apitcg.com, optcgapi.com, un proxy en
+Cloudflare Workers) y ninguna resultó ser, a la vez, gratis, sin necesitar
+llave/registro, y con una búsqueda por nombre confiable y verificable
+desde este entorno — la más completa (`optcg-api` de GitHub) exige pedir
+una llave por correo o estar en la lista blanca de otro dominio. En vez de
+integrar algo no verificado que podría fallar en silencio, One Piece (y el
+producto sellado de **todos** los TCG, ver abajo) usa el catálogo de
+TCGplayer.
+
+**Producto sellado para cualquier TCG** (antes solo existía para Pokémon):
+- Migración `044_sellado_multi_tcg.sql`: agrega `sellado_tienda.tcg`
+  (default `'pokemon'`, para no romper el sellado ya publicado).
+- `TCGplayerPicker` (antes se llamaba `SealedPicker`, ahora generalizado):
+  en vez de buscar por texto libre contra todo el catálogo (TCGplayer no
+  lo permite), es un picker de 2 pasos — elige el set/expansión, luego
+  busca el producto dentro de ese set. Sirve tanto para producto sellado
+  de cualquier TCG como para cartas sueltas de One Piece.
+- El **categoryId** de TCGplayer para cada juego (el número interno con el
+  que identifican Pokémon, Magic, etc.) no está documentado públicamente y
+  no es adivinable con confianza para juegos que agregaron hace poco
+  (Lorcana, One Piece). En vez de hardcodear un número que podría fallar
+  en silencio para siempre, `categoriaIdTCGplayer()` (pokemonApi.js) lo
+  busca por nombre contra el catálogo de categorías en vivo de TCGCSV — se
+  auto-corrige solo si TCGplayer cambia esos números.
+- `CardPickerUniversal` (nuevo): decide automáticamente entre el buscador
+  de texto libre (`CardPicker`) o el de 2 pasos (`TCGplayerPicker`) según
+  el TCG — los formularios de publicar ("Vender en el Mercado", "Mi
+  tienda", Wishlist Premium) ya no necesitan saber cuál es cuál. El
+  selector de TCG ahora vive **fuera** de la rama "Carta suelta"/"Producto
+  sellado" en esos 3 formularios, para que también aplique al publicar
+  sellado (antes solo existía para cartas sueltas).
+
+**Directorio de tiendas: filtro por TCG.** Mismo selector de botones que ya
+tenía "Buscar" — se calcula qué TCG vende cada tienda a partir de su
+inventario/sellado real (`inventario_tienda`/`sellado_tienda`) y se
+filtran tanto la lista del directorio como el inventario/sellado dentro
+del detalle de una tienda.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `044_sellado_multi_tcg.sql`. Hasta
+entonces, elegir un TCG distinto de Pokémon al publicar producto sellado
+va a fallar con "la columna tcg no existe" en `sellado_tienda`.
 
 ## Qué falta / próximos pasos posibles
 

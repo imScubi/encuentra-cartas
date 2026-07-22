@@ -43,7 +43,12 @@ export const TCG_OPCIONES = [
   { key: "onepiece", label: "One Piece" },
 ];
 export const TCG_LABEL = Object.fromEntries(TCG_OPCIONES.map((o) => [o.key, o.label]));
-export const TCG_CON_CATALOGO = ["pokemon", "magic"];
+// TCG con buscador de texto libre (una sola caja, contra todo el catálogo):
+// Pokémon (pokemontcg.io), Magic (Scryfall), Yu-Gi-Oh (YGOPRODeck) y Lorcana
+// (lorcana-api.com). One Piece no tiene todavía una fuente gratis confiable
+// de texto libre — usa TCGplayerPicker (elegir set, luego buscar dentro,
+// ver App.jsx) en su lugar, igual que el producto sellado de todos los TCG.
+export const TCG_CON_CATALOGO = ["pokemon", "magic", "yugioh", "lorcana"];
 
 // ---- Idioma de la carta: obligatorio al publicar, para que el comprador
 // sepa en qué idioma está la carta sin tener que preguntar ----

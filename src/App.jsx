@@ -16,7 +16,7 @@ import { setUidActual } from "./lib/errorReporting.jsx";
 import {
   pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
   parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
-  buscarCartasCatalogo, obtenerPrecioRefActualPorTcg,
+  buscarCartasCatalogo, obtenerPrecioRefActualPorTcg, categoriaIdTCGplayer,
 } from "./lib/pokemonApi.js";
 import {
   FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
@@ -1090,7 +1090,12 @@ function CardPicker({ tcg = "pokemon", onSelect }) {
   return (
     <div className="relative">
       <input
-        placeholder={tcg === "magic" ? 'Nombre de la carta (ej. "Lightning Bolt")' : 'Nombre, número (ej. "016" o "#016") o set (ej. Sprigatito Journey Together)'}
+        placeholder={
+          tcg === "pokemon" ? 'Nombre, número (ej. "016" o "#016") o set (ej. Sprigatito Journey Together)'
+            : tcg === "magic" ? 'Nombre de la carta (ej. "Lightning Bolt")'
+            : tcg === "yugioh" ? 'Nombre de la carta (ej. "Dark Magician")'
+            : 'Nombre de la carta'
+        }
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
@@ -1283,8 +1288,29 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
   );
 }
 
-function SealedPicker({ onSelect }) {
+// Nombres de campo que TCGCSV/TCGplayer usa (varía un poco según el juego)
+// para indicar que un producto es una carta suelta con número de colección.
+// Si un producto no trae ninguno de estos, se asume que es producto sellado
+// (booster box, ETB, mazo, etc.) — es una heurística, no una regla oficial
+// documentada por TCGplayer, así que puede fallar para algún juego/producto
+// raro; si ves algo mal clasificado, avisa con el nombre exacto.
+const CAMPOS_NUMERO_CARTA = ["Number", "Card Number", "CardNumber"];
+function looksLikeCard(producto) {
+  return (producto.extendedData || []).some((e) => CAMPOS_NUMERO_CARTA.includes(e.name));
+}
+
+// ---- Buscador contra el catálogo de TCGplayer (vía TCGCSV, api/tcgcsv.js) ----
+// A diferencia de CardPicker (Pokémon/Magic, con buscador de texto libre
+// contra todo el catálogo), TCGplayer/TCGCSV no ofrece una búsqueda así de
+// simple — solo se puede listar por set/expansión y buscar dentro de ese
+// set. Por eso este picker es de dos pasos: "elige el set" y luego "busca
+// el producto dentro de ese set". Sirve para dos casos:
+// - Producto sellado (soloSellado=true) de CUALQUIER TCG.
+// - Cartas sueltas (soloSellado=false) de los TCG que todavía no tienen un
+//   buscador de texto libre propio (Yu-Gi-Oh, Lorcana, One Piece).
+function TCGplayerPicker({ tcg = "pokemon", soloSellado = true, onSelect }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [categoriaId, setCategoriaId] = useState(undefined); // undefined = resolviendo, null = no encontrada
   const [grupos, setGrupos] = useState([]);
   const [loadingGrupos, setLoadingGrupos] = useState(true);
   const [grupoId, setGrupoId] = useState("");
@@ -1295,38 +1321,51 @@ function SealedPicker({ onSelect }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    fetch("/api/tcgcsv?path=tcgplayer/3/groups")
-      .then((r) => r.json())
-      .then((d) => setGrupos((d.results || []).slice().sort((a, b) => (b.publishedOn || "").localeCompare(a.publishedOn || ""))))
-      .catch(() => {})
-      .finally(() => setLoadingGrupos(false));
-  }, []);
+    setLoadingGrupos(true);
+    setGrupoId(""); setGrupos([]); setProductos([]); setPrecios([]);
+    categoriaIdTCGplayer(tcg).then((id) => {
+      setCategoriaId(id);
+      if (!id) { setLoadingGrupos(false); return; }
+      fetch(`/api/tcgcsv?path=tcgplayer/${id}/groups`)
+        .then((r) => r.json())
+        .then((d) => setGrupos((d.results || []).slice().sort((a, b) => (b.publishedOn || "").localeCompare(a.publishedOn || ""))))
+        .catch(() => {})
+        .finally(() => setLoadingGrupos(false));
+    });
+  }, [tcg]);
 
   useEffect(() => {
-    if (!grupoId) { setProductos([]); setPrecios([]); return; }
+    if (!grupoId || !categoriaId) { setProductos([]); setPrecios([]); return; }
     setLoadingProductos(true);
     Promise.all([
-      fetch(`/api/tcgcsv?path=tcgplayer/3/${grupoId}/products`).then((r) => r.json()),
-      fetch(`/api/tcgcsv?path=tcgplayer/3/${grupoId}/prices`).then((r) => r.json()),
+      fetch(`/api/tcgcsv?path=tcgplayer/${categoriaId}/${grupoId}/products`).then((r) => r.json()),
+      fetch(`/api/tcgcsv?path=tcgplayer/${categoriaId}/${grupoId}/prices`).then((r) => r.json()),
     ])
       .then(([p, pr]) => {
-        // Filtramos: si el producto NO tiene "Number" en sus datos, no es una carta suelta, es producto sellado
-        const sellado = (p.results || []).filter((item) => !(item.extendedData || []).some((e) => e.name === "Number"));
-        setProductos(sellado);
+        const filtrados = (p.results || []).filter((item) => (soloSellado ? !looksLikeCard(item) : looksLikeCard(item)));
+        setProductos(filtrados);
         setPrecios(pr.results || []);
       })
       .catch(() => { setProductos([]); setPrecios([]); })
       .finally(() => setLoadingProductos(false));
-  }, [grupoId]);
+  }, [grupoId, categoriaId, soloSellado]);
 
   const filtrados = productos.filter((p) => p.name.toLowerCase().includes(busqueda.toLowerCase()));
+  const grupoSeleccionado = grupos.find((g) => String(g.groupId) === String(grupoId));
 
   const seleccionar = (p) => {
     const precioInfo = precios.find((x) => x.productId === p.productId && x.marketPrice);
     const precioRefMxn = precioInfo ? Math.round(precioInfo.marketPrice * USD_TO_MXN) : null;
-    onSelect({ producto: p.name, imagen_url: p.imageUrl, card_api_id: `tcgcsv-${p.productId}`, precio_ref_mxn: precioRefMxn });
+    onSelect({
+      name: p.name, producto: p.name, set_nombre: grupoSeleccionado?.name || "",
+      imagen_url: p.imageUrl, card_api_id: `tcgcsv-${p.productId}`, precio_ref_mxn: precioRefMxn,
+    });
     setOpen(false); setBusqueda("");
   };
+
+  if (categoriaId === null) {
+    return <p style={{ color: COLORS.muted }} className="text-xs">No encontramos el catálogo de {TCG_LABEL[tcg] || tcg} todavía — puedes publicar con nombre e imagen a mano más abajo (si el formulario lo permite) o intenta de nuevo más tarde.</p>;
+  }
 
   return (
     <div className="grid gap-2">
@@ -1338,7 +1377,7 @@ function SealedPicker({ onSelect }) {
       {grupoId && (
         <div className="relative">
           <input
-            placeholder="2. Busca el producto (ej. Elite Trainer Box)"
+            placeholder={soloSellado ? "2. Busca el producto (ej. Elite Trainer Box)" : "2. Busca la carta dentro de este set"}
             value={busqueda}
             onChange={(e) => { setBusqueda(e.target.value); setOpen(true); }}
             onFocus={() => setOpen(true)}
@@ -1364,6 +1403,16 @@ function SealedPicker({ onSelect }) {
       )}
     </div>
   );
+}
+
+// ---- Despachador único: elige el buscador correcto según el TCG (y si es
+// carta suelta o producto sellado) — así los formularios de publicar no
+// necesitan saber de dónde viene cada catálogo. ----
+function CardPickerUniversal({ tcg = "pokemon", soloSellado = false, onSelect }) {
+  if (!soloSellado && TCG_CON_CATALOGO.includes(tcg)) {
+    return <CardPicker tcg={tcg} onSelect={onSelect} />;
+  }
+  return <TCGplayerPicker tcg={tcg} soloSellado={soloSellado} onSelect={onSelect} />;
 }
 
 function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda = false }) {
@@ -1569,31 +1618,25 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           </div>
         )}
 
+        <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+
         {tipo === "carta" ? (
           <>
-            <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
-              {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-            </select>
-            {TCG_CON_CATALOGO.includes(nueva.tcg) ? (
-              <div>
-                <CardPicker tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
-                {nueva.card_api_id && (
-                  <div className="flex items-center gap-3 mt-2">
-                    {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
-                    <div>
-                      <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
-                      {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-                      <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
-                    </div>
+            <div>
+              <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+              {nueva.card_api_id && (
+                <div className="flex items-center gap-3 mt-2">
+                  {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                  <div>
+                    <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
+                    {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                    <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="grid sm:grid-cols-2 gap-2">
-                <input placeholder="Nombre de la carta" value={nueva.carta} onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-                <input placeholder="Set / número" value={nueva.set_nombre} onChange={(e) => setNueva({ ...nueva, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-              </div>
-            )}
+                </div>
+              )}
+            </div>
             <div>
               <p style={{ color: COLORS.muted }} className="text-xs mb-1">Estado de la carta (obligatorio)</p>
               <EstadoCartaSelector value={nueva.condicion} onChange={(v) => setNueva({ ...nueva, condicion: v })} />
@@ -1612,7 +1655,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             />
           </>
         ) : (
-          <SealedPicker onSelect={(p) => setNueva({ ...nueva, carta: p.producto, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
+          <CardPickerUniversal tcg={nueva.tcg} soloSellado onSelect={(p) => setNueva({ ...nueva, carta: p.producto, set_nombre: p.set_nombre, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
         )}
 
         {tipo === "sellado" && nueva.card_api_id && (
@@ -3524,7 +3567,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
     tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
     gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
   });
-  const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+  const [nuevoSellado, setNuevoSellado] = useState({ tcg: "pokemon", producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
@@ -3608,7 +3651,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         imagen_url: nuevoSellado.imagen_url || null,
         precio_ref_mxn: nuevoSellado.precio_ref_mxn || null,
       }, session);
-      setNuevoSellado({ producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+      setNuevoSellado({ tcg: nuevoSellado.tcg, producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingSellado(false); }
   };
@@ -3681,38 +3724,31 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
           {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
         </select>
 
-        {TCG_CON_CATALOGO.includes(nuevaCarta.tcg) ? (
-          <div className="sm:col-span-2">
-            <CardPicker tcg={nuevaCarta.tcg} onSelect={(c) => setNuevaCarta({
-              ...nuevaCarta,
-              carta: c.name,
-              set_nombre: c.set_nombre,
-              card_api_id: c.card_api_id,
-              imagen_url: c.imagen_url,
-              precio_ref_mxn: c.precio_ref_mxn,
-              precio: nuevaCarta.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : ""),
-            })} />
-            {nuevaCarta.card_api_id && (
-              <div className="flex items-center gap-3 mt-2">
-                {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
-                <div>
-                  <Badge color={COLORS.azulPalido}>{nuevaCarta.carta}</Badge>
-                  {nuevaCarta.precio_ref_mxn && (
-                    <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">
-                      Precio de referencia en mercado: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
-                    </p>
-                  )}
-                  <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
-                </div>
+        <div className="sm:col-span-2">
+          <CardPickerUniversal tcg={nuevaCarta.tcg} onSelect={(c) => setNuevaCarta({
+            ...nuevaCarta,
+            carta: c.name,
+            set_nombre: c.set_nombre,
+            card_api_id: c.card_api_id,
+            imagen_url: c.imagen_url,
+            precio_ref_mxn: c.precio_ref_mxn,
+            precio: nuevaCarta.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : ""),
+          })} />
+          {nuevaCarta.card_api_id && (
+            <div className="flex items-center gap-3 mt-2">
+              {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
+              <div>
+                <Badge color={COLORS.azulPalido}>{nuevaCarta.carta}</Badge>
+                {nuevaCarta.precio_ref_mxn && (
+                  <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">
+                    Precio de referencia en mercado: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
+                  </p>
+                )}
+                <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
               </div>
-            )}
-          </div>
-        ) : (
-          <>
-            <input placeholder="Nombre de la carta" value={nuevaCarta.carta} onChange={(e) => setNuevaCarta({ ...nuevaCarta, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
-            <input placeholder="Set / número" value={nuevaCarta.set_nombre} onChange={(e) => setNuevaCarta({ ...nuevaCarta, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
-          </>
-        )}
+            </div>
+          )}
+        </div>
 
         <input placeholder="Precio" type="number" value={nuevaCarta.precio} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio antes (oferta, opcional)" type="number" value={nuevaCarta.precio_antes} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" title="Si lo llenas, se muestra como oferta con el % de descuento" />
@@ -3770,9 +3806,12 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
 
       <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2">
+        <select value={nuevoSellado.tcg} onChange={(e) => setNuevoSellado({ ...nuevoSellado, tcg: e.target.value, producto: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
         {!selladoManual ? (
           <>
-            <SealedPicker onSelect={(p) => setNuevoSellado({
+            <CardPickerUniversal tcg={nuevoSellado.tcg} soloSellado onSelect={(p) => setNuevoSellado({
               ...nuevoSellado,
               producto: p.producto,
               imagen_url: p.imagen_url,
@@ -6124,44 +6163,22 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Producto sellado</button>
         </div>
 
-        {tipo === "carta" ? (
-          <>
-            <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
-              {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-            </select>
-            {TCG_CON_CATALOGO.includes(nueva.tcg) ? (
+        <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+        <div>
+          <CardPickerUniversal tcg={nueva.tcg} soloSellado={tipo === "sellado"} onSelect={(c) => setNueva({ ...nueva, carta: c.name, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_max: nueva.precio_max || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+          {nueva.card_api_id && (
+            <div className="flex items-center gap-3 mt-2">
+              {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
               <div>
-                <CardPicker tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_max: nueva.precio_max || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
-                {nueva.card_api_id && (
-                  <div className="flex items-center gap-3 mt-2">
-                    {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
-                    <div>
-                      <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
-                      {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-                      <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
-                    </div>
-                  </div>
-                )}
+                <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
+                {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
               </div>
-            ) : (
-              <input placeholder="Nombre de la carta" value={nueva.carta} onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-            )}
-          </>
-        ) : (
-          <div>
-            <SealedPicker onSelect={(p) => setNueva({ ...nueva, carta: p.producto, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio_max: nueva.precio_max || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
-            {nueva.card_api_id && (
-              <div className="flex items-center gap-3 mt-2">
-                {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
-                <div>
-                  <Badge color={COLORS.azulClaro}>{nueva.carta}</Badge>
-                  {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-                  <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
         <div className="grid sm:grid-cols-2 gap-2">
           <input placeholder="Precio máximo (MXN)" type="number" value={nueva.precio_max} onChange={(e) => setNueva({ ...nueva, precio_max: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
@@ -7217,6 +7234,25 @@ export default function EncuentraCartas() {
   const [loadingTiendas, setLoadingTiendas] = useState(true);
   const [errorTiendas, setErrorTiendas] = useState(null);
 
+  // Qué TCG vende cada tienda (a partir de su inventario/sellado real), para
+  // poder filtrar el Directorio por TCG igual que Buscar/Mercado.
+  const [tiendasTcgMap, setTiendasTcgMap] = useState({});
+  useEffect(() => {
+    Promise.all([
+      sb("inventario_tienda?select=tienda_id,tcg").catch(() => []),
+      // sellado_tienda.tcg es columna nueva (migración 044) — si todavía no se
+      // corrió, esta consulta falla sola sin tumbar el mapa de inventario.
+      sb("sellado_tienda?select=tienda_id,tcg").catch(() => []),
+    ]).then(([inv, sel]) => {
+      const mapa = {};
+      [...inv, ...sel].forEach((r) => {
+        if (!mapa[r.tienda_id]) mapa[r.tienda_id] = new Set();
+        mapa[r.tienda_id].add(r.tcg);
+      });
+      setTiendasTcgMap(mapa);
+    }).catch(() => {});
+  }, []);
+
   // ---- Directorio: filtro por zona + tienda más cercana (Zafiro+) ----
   const [filtroZona, setFiltroZona] = useState("");
   const [ubicacionUsuario, setUbicacionUsuario] = useState(null); // { lat, lng }
@@ -7240,6 +7276,7 @@ export default function EncuentraCartas() {
   }));
   const tiendasFiltradas = tiendasConDistancia
     .filter((t) => !filtroZona || t.zona === filtroZona)
+    .filter((t) => tcgFiltro === "todos" || tiendasTcgMap[t.id]?.has(tcgFiltro))
     .sort((a, b) => {
       if (!ubicacionUsuario) return 0;
       if (a._distanciaKm == null && b._distanciaKm == null) return 0;
@@ -7765,10 +7802,7 @@ export default function EncuentraCartas() {
             )}
 
             {(() => {
-              // sellado_tienda todavía no guarda de qué TCG es (siempre Pokémon
-              // hoy) — con un filtro puesto en otro TCG, se oculta en vez de
-              // mostrar sellado que en realidad es de otro juego.
-              const selladoVisible = tcgFiltro === "todos" || tcgFiltro === "pokemon" ? searchResults.sellado : [];
+              const selladoVisible = searchResults.sellado.filter(pasaFiltroTcg);
               const tiendasVisibles = searchResults.tiendas.filter(pasaFiltroTcg);
               const mercadoVisible = searchResults.mercado.filter(pasaFiltroTcg);
               return (
@@ -7870,7 +7904,21 @@ export default function EncuentraCartas() {
         {/* DIRECTORY */}
         {view === "directory" && (
           <div>
-            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">Directorio de tiendas</h2>
+            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-3">Directorio de tiendas</h2>
+            <div className="flex flex-wrap items-center gap-1.5 mb-6">
+              <p style={{ color: COLORS.muted }} className="text-xs mr-1">TCG:</p>
+              {[{ key: "todos", label: "Todos" }, ...TCG_OPCIONES].map((o) => (
+                <button key={o.key} type="button" onClick={() => setTcgFiltro(o.key)}
+                  style={{
+                    background: tcgFiltro === o.key ? COLORS.surface2 : "transparent",
+                    border: `1px solid ${tcgFiltro === o.key ? COLORS.azulClaro : COLORS.surface2}`,
+                    color: tcgFiltro === o.key ? COLORS.azulClaro : COLORS.muted,
+                  }}
+                  className="px-3 py-1 rounded-full text-xs font-semibold">
+                  {o.label}
+                </button>
+              ))}
+            </div>
             {loadingTiendas && <Loading label="Cargando tiendas desde Supabase..." />}
             {errorTiendas && <ErrorBox message={errorTiendas} />}
 
@@ -8277,8 +8325,8 @@ export default function EncuentraCartas() {
               <>
                 <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
                 <div className="grid gap-3 mb-8">
-                  {storeInventory.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Esta tienda todavía no ha subido inventario.</p>}
-                  {storeInventory.map((item) => (
+                  {storeInventory.filter(pasaFiltroTcg).length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">{storeInventory.length === 0 ? "Esta tienda todavía no ha subido inventario." : `Esta tienda no tiene cartas de ${TCG_LABEL[tcgFiltro] || tcgFiltro} registradas.`}</p>}
+                  {storeInventory.filter(pasaFiltroTcg).map((item) => (
                     <div key={item.id} onClick={() => abrirDetalle(item.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
                       <div className="flex items-center gap-3">
                         {(item.foto_real_url || item.imagen_url) && <img src={item.foto_real_url || item.imagen_url} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
@@ -8309,8 +8357,8 @@ export default function EncuentraCartas() {
                 </div>
                 <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
                 <div className="grid gap-3">
-                  {storeSellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin producto sellado registrado.</p>}
-                  {storeSellado.map((item) => (
+                  {storeSellado.filter(pasaFiltroTcg).length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">{storeSellado.length === 0 ? "Sin producto sellado registrado." : `Sin producto sellado de ${TCG_LABEL[tcgFiltro] || tcgFiltro}.`}</p>}
+                  {storeSellado.filter(pasaFiltroTcg).map((item) => (
                     <div key={item.id} onClick={() => abrirDetalle(item.id, "sellado_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
                       <div className="flex items-center gap-3">
                         {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}

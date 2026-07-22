@@ -261,19 +261,151 @@ export async function obtenerPrecioRefActualMagic(cardApiId) {
   }
 }
 
-// Elige el catálogo correcto según el TCG de la publicación. Hoy solo
-// Pokémon y Magic tienen buscador visual con imagen/precio (TCG_CON_CATALOGO
-// en theme.js) — Yu-Gi-Oh, Lorcana y One Piece siguen en texto libre hasta
-// que se conecte su propia fuente, con este mismo patrón.
+// ---- Yu-Gi-Oh! — YGOPRODeck, gratis y sin llave. A diferencia de Scryfall,
+// el precio viene ya calculado por carta (varias fuentes) en la misma
+// respuesta, no hay que pedirlo aparte. ----
+function precioRefDeCartaYgoprodeck(c) {
+  const precios = c.card_prices?.[0];
+  if (!precios) return null;
+  const usd = Number(precios.tcgplayer_price || precios.ebay_price || precios.amazon_price || 0);
+  if (usd > 0) return Math.round(usd * USD_TO_MXN);
+  const eur = Number(precios.cardmarket_price || 0);
+  if (eur > 0) return Math.round(eur * EUR_TO_MXN);
+  return null;
+}
+
+export async function buscarCartasYugioh(texto, limite = 24) {
+  const q = (texto || "").trim();
+  if (q.length < 3) return [];
+  try {
+    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+    if (!res.ok) return []; // YGOPRODeck responde 400 cuando no hay ninguna coincidencia, no es un error real
+    const data = await res.json();
+    return (data?.data || []).slice(0, limite).map((c) => ({
+      id: String(c.id),
+      name: c.name,
+      localId: c.card_sets?.[0]?.set_code || "",
+      setName: c.card_sets?.[0]?.set_name || c.type || "",
+      setTotal: "",
+      image: c.card_images?.[0]?.image_url || null,
+      precioRefMxn: precioRefDeCartaYgoprodeck(c),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function obtenerPrecioRefActualYugioh(cardApiId) {
+  if (!cardApiId) return null;
+  try {
+    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${encodeURIComponent(cardApiId)}`);
+    if (!res.ok) return null;
+    const c = (await res.json())?.data?.[0];
+    if (!c) return null;
+    return { precioRefMxn: precioRefDeCartaYgoprodeck(c), tcgplayerUrl: null, cardmarketUrl: null };
+  } catch {
+    return null;
+  }
+}
+
+// ---- Lorcana — lorcana-api.com, gratis y sin llave. Esta API no ofrece
+// una búsqueda parcial documentada de forma confiable, así que en vez de
+// arriesgar la sintaxis exacta del query se trae el catálogo completo UNA
+// vez (son pocos cientos de cartas, cabe bien en memoria) y se filtra por
+// nombre en el navegador — mismo patrón que ya usa obtenerListaPokemon()
+// para el buscador de avatar. Aviso de honestidad: no pudimos confirmar en
+// vivo los nombres exactos de los campos del JSON de esta API desde este
+// entorno (proxy de red restringido) — el código intenta varias
+// variantes (may­úscula/minúscula) por si acaso; si algo sale con nombre o
+// imagen en blanco, avisa para ajustar el mapeo.
+let _lorcanaCache = null;
+async function obtenerTodasLasCartasLorcana() {
+  if (_lorcanaCache) return _lorcanaCache;
+  try {
+    const res = await fetch("https://api.lorcana-api.com/cards/all");
+    const data = await res.json();
+    _lorcanaCache = Array.isArray(data) ? data : (data?.cards || data?.results || []);
+  } catch {
+    _lorcanaCache = [];
+  }
+  return _lorcanaCache;
+}
+
+export async function buscarCartasLorcana(texto, limite = 24) {
+  const q = (texto || "").trim().toLowerCase();
+  if (q.length < 3) return [];
+  const todas = await obtenerTodasLasCartasLorcana();
+  return todas
+    .filter((c) => (c.Name || c.name || "").toLowerCase().includes(q))
+    .slice(0, limite)
+    .map((c) => ({
+      id: String(c.Unique_ID || c.id || c.Name || c.name),
+      name: c.Name || c.name || "",
+      localId: c.Card_Num || c.card_num || c.number || "",
+      setName: c.Set_Name || c.set_name || c.set || "",
+      setTotal: "",
+      image: c.Image || c.image || c.Image_URL || null,
+      precioRefMxn: null, // esta API no trae precio de referencia
+    }));
+}
+
+// Elige el catálogo correcto según el TCG de la publicación (ver
+// TCG_CON_CATALOGO en theme.js: qué TCG ya tienen buscador de texto libre).
+// One Piece todavía no tiene una fuente gratis confiable de texto libre —
+// usa TCGplayerPicker (elegir set, luego buscar dentro de ese set) en vez
+// de este despachador; ver App.jsx.
 export async function buscarCartasCatalogo(tcg, texto) {
   if (tcg === "magic") return buscarCartasMagic(texto);
   if (tcg === "pokemon") return buscarCartasVisual(texto);
+  if (tcg === "yugioh") return buscarCartasYugioh(texto);
+  if (tcg === "lorcana") return buscarCartasLorcana(texto);
   return [];
 }
 
 export async function obtenerPrecioRefActualPorTcg(tcg, cardApiId) {
   if (tcg === "magic") return obtenerPrecioRefActualMagic(cardApiId);
+  if (tcg === "yugioh") return obtenerPrecioRefActualYugioh(cardApiId);
+  // Pokémon usa pokemontcg.io; Lorcana/One Piece no tienen precio en vivo
+  // propio todavía, así que caen aquí también (esta llamada falla en
+  // silencio si el id no es de pokemontcg.io, sin romper la pantalla).
   return obtenerPrecioRefActual(cardApiId);
+}
+
+// ---- Categorías de TCGplayer (vía TCGCSV, api/tcgcsv.js) ----
+// TCGplayer usa un "categoryId" numérico para cada juego (Pokémon, Magic,
+// etc.), pero esos números no están documentados públicamente y no son
+// adivinables con confianza (sobre todo para juegos que TCGplayer agregó
+// hace poco, como Lorcana o One Piece). En vez de arriesgarnos a
+// hardcodear un ID equivocado (fallaría en silencio, sin resultados, para
+// siempre), se busca el ID real por nombre contra el catálogo en vivo de
+// categorías — se cachea en memoria porque casi no cambia.
+const PATRON_NOMBRE_CATEGORIA_TCGPLAYER = {
+  pokemon: /pok[eé]mon/i,
+  magic: /magic/i,
+  yugioh: /yu-?gi-?oh/i,
+  lorcana: /lorcana/i,
+  onepiece: /one piece/i,
+};
+
+let _categoriasTCGplayerCache = null;
+async function obtenerCategoriasTCGplayer() {
+  if (_categoriasTCGplayerCache) return _categoriasTCGplayerCache;
+  try {
+    const res = await fetch("/api/tcgcsv?path=tcgplayer/categories");
+    const data = await res.json();
+    _categoriasTCGplayerCache = data?.results || [];
+  } catch {
+    _categoriasTCGplayerCache = [];
+  }
+  return _categoriasTCGplayerCache;
+}
+
+export async function categoriaIdTCGplayer(tcg) {
+  const patron = PATRON_NOMBRE_CATEGORIA_TCGPLAYER[tcg];
+  if (!patron) return null;
+  const categorias = await obtenerCategoriasTCGplayer();
+  const encontrada = categorias.find((c) => patron.test(c.name || ""));
+  return encontrada?.categoryId ?? null;
 }
 
 // Precio de referencia "en vivo" para la ficha de detalle de una publicación:
