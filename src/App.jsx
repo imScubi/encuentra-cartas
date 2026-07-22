@@ -4,18 +4,18 @@ import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
-  ArrowUp, ArrowDown, Navigation,
+  ArrowUp, ArrowDown, Navigation, Image as ImageIcon, Trash2, ChevronDown, ChevronUp, Tag,
 } from "lucide-react";
 import {
   VAPID_PUBLIC_KEY,
   setOnSesionRefrescada,
   sb, sbWrite, authSignUp, authSignIn,
-  subirAvatar, subirImagenAnuncio, subirImagenABucket, subirImagenCarta,
+  subirAvatar, subirImagenAnuncio, subirImagenABucket, subirImagenCarta, subirImagenMensaje,
 } from "./lib/supabase.js";
 import { setUidActual } from "./lib/errorReporting.jsx";
 import {
   pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
-  parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex, buscarCartasVisual,
+  parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
 } from "./lib/pokemonApi.js";
 import {
   FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
@@ -23,6 +23,7 @@ import {
   BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero,
   MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, aplicarTema,
   IDIOMA_OPCIONES, IDIOMA_LABEL,
+  CONDICION_OPCIONES, CONDICION_LABEL, CONDICION_DESC, normalizarCondicion,
 } from "./theme.js";
 
 function AvatarImg({ url, size = 36 }) {
@@ -676,6 +677,41 @@ function IdiomaBadge({ idioma }) {
   return <Badge color={COLORS.violeta}>{IDIOMA_LABEL[idioma]}</Badge>;
 }
 
+// ---- Selector de estado (condición) de la carta: obligatorio al publicar
+// una carta suelta, para que el comprador sepa el desgaste real ----
+function EstadoCartaSelector({ value, onChange }) {
+  return (
+    <div className="grid gap-1.5">
+      <div className="flex gap-2 flex-wrap">
+        {CONDICION_OPCIONES.map((o) => (
+          <button key={o.key} type="button" onClick={() => onChange(o.key)} title={o.desc}
+            style={{
+              background: value === o.key ? COLORS.surface2 : "transparent",
+              border: `1px solid ${value === o.key ? COLORS.gold : COLORS.surface2}`,
+              color: value === o.key ? COLORS.gold : COLORS.muted,
+            }}
+            className="rounded-lg px-3 py-2 text-sm font-semibold">
+            {o.key} <span className="font-normal opacity-80">· {o.label}</span>
+          </button>
+        ))}
+      </div>
+      {value && CONDICION_DESC[value] && (
+        <p style={{ color: COLORS.muted }} className="text-xs">{CONDICION_DESC[value]}</p>
+      )}
+    </div>
+  );
+}
+
+// Badge de estado/condición para mostrar en cualquier publicación de carta.
+function EstadoCartaBadge({ condicion }) {
+  if (!condicion || !CONDICION_LABEL[condicion]) return null;
+  return (
+    <span title={`${CONDICION_LABEL[condicion]} — ${CONDICION_DESC[condicion]}`}>
+      <Badge color={COLORS.gold}>{condicion}</Badge>
+    </span>
+  );
+}
+
 function PrecioConOferta({ precio, precioAntes, size = "lg" }) {
   const enOferta = precioAntes && Number(precioAntes) > Number(precio);
   const pct = enOferta ? Math.round((1 - Number(precio) / Number(precioAntes)) * 100) : 0;
@@ -1009,12 +1045,19 @@ function CardPicker({ onSelect }) {
   );
 }
 
+// Ventanita de chat anclada abajo-derecha (como Messenger en escritorio), en
+// vez de un modal centrado que tapa toda la pantalla: se puede seguir viendo
+// y navegando el resto de la web mientras el chat sigue abierto. Se puede
+// minimizar (queda solo la barra con el nombre) o cerrar del todo.
 function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, otherFacebook, otherAvatar, onClose }) {
   const [mensajes, setMensajes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [subiendoImagen, setSubiendoImagen] = useState(false);
   const [error, setError] = useState(null);
+  const [minimizado, setMinimizado] = useState(false);
+  const listaRef = useRef(null);
 
   const uid = session.user.id;
 
@@ -1023,8 +1066,8 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
     return sb(path, session);
   };
 
-  const enviar = async (texto) => {
-    return sbWrite("POST", "mensajes", { de_perfil_id: uid, para_perfil_id: otherId, texto, contexto }, session);
+  const enviar = async (texto, imagenUrl) => {
+    return sbWrite("POST", "mensajes", { de_perfil_id: uid, para_perfil_id: otherId, texto: texto || null, imagen_url: imagenUrl || null, contexto }, session);
   };
 
   useEffect(() => {
@@ -1044,6 +1087,10 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!minimizado && listaRef.current) listaRef.current.scrollTop = listaRef.current.scrollHeight;
+  }, [mensajes, minimizado]);
+
   const handleSend = async () => {
     if (!draft.trim()) return;
     setSending(true);
@@ -1055,68 +1102,97 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
     } catch (e) { setError(e.message); } finally { setSending(false); }
   };
 
-  return (
-    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()}
-        style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}66`, boxShadow: `0 0 40px ${COLORS.azulClaro}33` }}
-        className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col">
-        <div style={{ borderBottom: `1px solid ${COLORS.surface2}` }} className="flex items-center justify-between p-4 gap-2">
-          <div className="min-w-0 flex items-center gap-2">
-            <AvatarImg url={otherAvatar} size={32} />
-            <div className="min-w-0">
-              <p className="font-semibold truncate">{otherNombre || "Vendedor"}</p>
-              <p style={{ color: COLORS.muted }} className="text-xs truncate">{contexto}</p>
-            </div>
+  const handleAdjuntarImagen = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSubiendoImagen(true); setError(null);
+    try {
+      const url = await subirImagenMensaje(file, session);
+      await enviar(null, url);
+      const rows = await cargarMensajes();
+      setMensajes(rows);
+    } catch (err) { setError(err.message); } finally { setSubiendoImagen(false); e.target.value = ""; }
+  };
+
+  return createPortal(
+    <div
+      style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}66`, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
+      className="fixed bottom-0 right-0 sm:bottom-4 sm:right-4 z-[80] w-full sm:w-96 max-w-full rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
+    >
+      <button onClick={() => setMinimizado((v) => !v)} style={{ borderBottom: minimizado ? "none" : `1px solid ${COLORS.surface2}` }}
+        className="flex items-center justify-between p-3 gap-2 w-full text-left">
+        <div className="min-w-0 flex items-center gap-2">
+          <AvatarImg url={otherAvatar} size={32} />
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">{otherNombre || "Vendedor"}</p>
+            {!minimizado && <p style={{ color: COLORS.muted }} className="text-xs truncate">{contexto}</p>}
           </div>
-          <button onClick={onClose} style={{ color: COLORS.muted }} className="shrink-0"><X size={18} /></button>
         </div>
-
-        <div className="flex-1 p-4 grid gap-2" style={{ minHeight: "180px", maxHeight: "300px", overflowY: "auto" }}>
-          {loading && <Loading label="Cargando conversación..." />}
-          {error && <ErrorBox message={error} />}
-          {!loading && mensajes.map((m) => (
-            <div key={m.id}
-              style={{
-                alignSelf: m.de_perfil_id === uid ? "flex-end" : "flex-start",
-                background: m.de_perfil_id === uid ? `${COLORS.azul}33` : COLORS.surface2,
-                border: `1px solid ${m.de_perfil_id === uid ? COLORS.azul : COLORS.surface2}`,
-              }}
-              className="px-3 py-2 rounded-lg text-sm max-w-[80%]">
-              {m.texto}
-            </div>
-          ))}
+        <div className="flex items-center gap-1 shrink-0">
+          <span style={{ color: COLORS.muted }} className="p-1">{minimizado ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
+          <span onClick={(e) => { e.stopPropagation(); onClose(); }} style={{ color: COLORS.muted }} className="p-1"><X size={18} /></span>
         </div>
+      </button>
 
-        <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="p-3 flex items-center gap-2">
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="Escribe un mensaje..." style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
-            className="flex-1 rounded-lg px-3 py-2 text-sm outline-none" />
-          <button onClick={handleSend} disabled={sending} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg p-2">
-            <Send size={16} />
-          </button>
-        </div>
-
-        {(otherWhatsapp || otherFacebook) && (
-          <div style={{ borderTop: `1px solid ${COLORS.surface2}`, background: COLORS.bg }} className="p-3">
-            <p style={{ color: COLORS.muted }} className="text-xs mb-2">O continúa la conversación fuera de la app:</p>
-            <div className="flex gap-2">
-              {otherWhatsapp && (
-                <a href={`https://wa.me/${otherWhatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
-                  style={{ border: "1px solid #25D36688", color: "#25D366" }} className="flex-1 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1">
-                  WhatsApp <ExternalLink size={12} />
-                </a>
-              )}
-              {otherFacebook && (
-                <a href={otherFacebook} target="_blank" rel="noreferrer"
-                  style={{ border: `1px solid ${COLORS.azulMedio}88`, color: COLORS.azulMedio }} className="flex-1 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1">
-                  Facebook <ExternalLink size={12} />
-                </a>
-              )}
-            </div>
+      {!minimizado && (
+        <>
+          <div ref={listaRef} className="flex-1 p-4 grid gap-2" style={{ minHeight: "260px", maxHeight: "45vh", overflowY: "auto" }}>
+            {loading && <Loading label="Cargando conversación..." />}
+            {error && <ErrorBox message={error} />}
+            {!loading && mensajes.map((m) => (
+              <div key={m.id}
+                style={{
+                  alignSelf: m.de_perfil_id === uid ? "flex-end" : "flex-start",
+                  background: m.de_perfil_id === uid ? `${COLORS.azul}33` : COLORS.surface2,
+                  border: `1px solid ${m.de_perfil_id === uid ? COLORS.azul : COLORS.surface2}`,
+                }}
+                className="px-3 py-2 rounded-lg text-sm max-w-[80%] grid gap-1">
+                {m.imagen_url && (
+                  <a href={m.imagen_url} target="_blank" rel="noreferrer">
+                    <img src={m.imagen_url} alt="" style={{ maxWidth: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 6 }} />
+                  </a>
+                )}
+                {m.texto && <span>{m.texto}</span>}
+              </div>
+            ))}
           </div>
-        )}
-      </div>
-    </div>
+
+          <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="p-3 flex items-center gap-2">
+            <label style={{ color: subiendoImagen ? COLORS.muted : COLORS.azulPalido }} className="shrink-0 cursor-pointer">
+              {subiendoImagen ? <Loader2 size={18} className="animate-spin" /> : <ImageIcon size={18} />}
+              <input type="file" accept="image/*" className="hidden" onChange={handleAdjuntarImagen} disabled={subiendoImagen} />
+            </label>
+            <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              placeholder="Escribe un mensaje..." style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
+              className="flex-1 rounded-lg px-3 py-2 text-sm outline-none min-w-0" />
+            <button onClick={handleSend} disabled={sending} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg p-2 shrink-0">
+              <Send size={16} />
+            </button>
+          </div>
+
+          {(otherWhatsapp || otherFacebook) && (
+            <div style={{ borderTop: `1px solid ${COLORS.surface2}`, background: COLORS.bg }} className="p-3">
+              <p style={{ color: COLORS.muted }} className="text-xs mb-2">O continúa la conversación fuera de la app:</p>
+              <div className="flex gap-2">
+                {otherWhatsapp && (
+                  <a href={`https://wa.me/${otherWhatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
+                    style={{ border: "1px solid #25D36688", color: "#25D366" }} className="flex-1 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1">
+                    WhatsApp <ExternalLink size={12} />
+                  </a>
+                )}
+                {otherFacebook && (
+                  <a href={otherFacebook} target="_blank" rel="noreferrer"
+                    style={{ border: `1px solid ${COLORS.azulMedio}88`, color: COLORS.azulMedio }} className="flex-1 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1">
+                    Facebook <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>,
+    document.body
   );
 }
 
@@ -1267,7 +1343,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const [saving, setSaving] = useState(false);
   const [tipo, setTipo] = useState("carta"); // carta | sellado
 
-  const vacio = { tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null };
+  const vacio = { tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "" };
   const [nueva, setNueva] = useState(vacio);
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
@@ -1285,7 +1361,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const alLimite = limiteAlcanzado(perfil, publicaciones.length);
 
   const agregar = async () => {
-    if (!nueva.carta || !nueva.precio || !nueva.zona || (tipo === "carta" && !nueva.idioma)) return;
+    if (!nueva.carta || !nueva.precio || !nueva.zona || (tipo === "carta" && (!nueva.idioma || !nueva.condicion))) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante para inventario ilimitado.`); return; }
     setSaving(true);
     try {
@@ -1304,6 +1380,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nueva.card_api_id || null,
         imagen_url: nueva.imagen_url || null,
         precio_ref_mxn: nueva.precio_ref_mxn || null,
+        foto_real_url: tipo === "carta" ? (nueva.foto_real_url || null) : null,
       }, session);
       setNueva(vacio);
       cargar();
@@ -1386,10 +1463,17 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
                 <input placeholder="Set / número" value={nueva.set_nombre} onChange={(e) => setNueva({ ...nueva, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
               </div>
             )}
-            <input placeholder="Condición (ej. NM, LP)" value={nueva.condicion} onChange={(e) => setNueva({ ...nueva, condicion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <div>
+              <p style={{ color: COLORS.muted }} className="text-xs mb-1">Estado de la carta (obligatorio)</p>
+              <EstadoCartaSelector value={nueva.condicion} onChange={(v) => setNueva({ ...nueva, condicion: v })} />
+            </div>
             <div>
               <p style={{ color: COLORS.muted }} className="text-xs mb-1">Idioma de la carta (obligatorio)</p>
               <IdiomaSelector value={nueva.idioma} onChange={(v) => setNueva({ ...nueva, idioma: v })} />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto real subida" : "📷 Foto real de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
           </>
         ) : (
@@ -1411,7 +1495,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nueva.precio_antes} onChange={(e) => setNueva({ ...nueva, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregar} disabled={saving || alLimite || (tipo === "carta" && !nueva.idioma)} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={agregar} disabled={saving || alLimite || (tipo === "carta" && (!nueva.idioma || !nueva.condicion))} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
           </button>
         </div>
@@ -1422,20 +1506,24 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         {publicaciones.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has publicado nada en el mercado.</p>}
         {publicaciones.map((item) => (
           <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
-            {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
+            {(item.foto_real_url || item.imagen_url) && <img src={item.foto_real_url || item.imagen_url} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
                 <Badge color={item.tipo === "sellado" ? COLORS.azulClaro : COLORS.azulPalido}>{item.tipo === "sellado" ? "Sellado" : "Carta"}</Badge>
                 {item.tipo !== "sellado" && <IdiomaBadge idioma={item.idioma} />}
+                {item.tipo !== "sellado" && <EstadoCartaBadge condicion={item.condicion} />}
                 <BoostBadge item={item} />
               </div>
-              <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} {item.condicion ? `· ${item.condicion}` : ""} · {item.zona}</p>
+              <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.zona}</p>
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
             <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
             {!item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
+            {item.tipo !== "sellado" && (
+              <SubirFotoManual session={session} label={item.foto_real_url ? "Cambiar foto real" : "📷 Foto real"} onSubido={async (url) => { await actualizar(item.id, "foto_real_url", url); cargar(); }} />
+            )}
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
             <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} onVendida={cargar} />
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
@@ -2651,7 +2739,7 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
   const filasDeTexto = () =>
     texto.split("\n").map((l) => l.trim()).filter(Boolean).map((linea) => {
       const [carta, set_nombre, condicion, precio, cantidad] = linea.split(",").map((c) => c.trim());
-      return { carta, set_nombre: set_nombre || null, condicion: condicion || "NM", precio: Number(precio), cantidad: Number(cantidad) || 1 };
+      return { carta, set_nombre: set_nombre || null, condicion: normalizarCondicion(condicion), precio: Number(precio), cantidad: Number(cantidad) || 1 };
     });
 
   const filasDeArchivo = async (file) => {
@@ -2663,7 +2751,7 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
     return filas.map((f) => ({
       carta: String(f.carta || f.nombre || f.Carta || f.Nombre || "").trim(),
       set_nombre: String(f.set_nombre || f.set || f.Set || "").trim() || null,
-      condicion: String(f.condicion || f.Condicion || "NM").trim() || "NM",
+      condicion: normalizarCondicion(f.condicion || f.Condicion),
       precio: Number(f.precio || f.Precio || 0),
       cantidad: Number(f.cantidad || f.Cantidad || 1) || 1,
     }));
@@ -2728,7 +2816,7 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
         </label>
       </div>
       <p style={{ color: COLORS.muted }} className="text-xs">
-        Formato de texto: nombre, set (opcional), condición (opcional, NM por defecto), precio, cantidad (opcional, 1 por defecto) — separados por comas.
+        Formato de texto: nombre, set (opcional), condición (opcional, NM por defecto — usa GM, NM, LP, MP, HP o DMG), precio, cantidad (opcional, 1 por defecto) — separados por comas.
         En Excel/CSV usa columnas: carta, set_nombre, condicion, precio, cantidad.
       </p>
     </div>
@@ -2751,6 +2839,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   const [publicando, setPublicando] = useState(false);
   const [zonaMercado, setZonaMercado] = useState("");
   const [idiomaCarpeta, setIdiomaCarpeta] = useState(""); // idioma de todas las cartas de esta revisión
+  const [estadoCarpeta, setEstadoCarpeta] = useState(""); // estado/condición de todas las cartas de esta revisión
 
   const cargar = () => {
     setLoading(true); setError(null);
@@ -2883,13 +2972,14 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
     if (!validas.length) { setError("Ponle un precio y una foto (del catálogo o subida a mano) a al menos una carta para publicarla."); return; }
     if (contexto === "mercado" && !zonaMercado.trim()) { setError("Escribe tu zona para publicar en el Mercado."); return; }
     if (!idiomaCarpeta) { setError("Elige el idioma de estas cartas antes de publicar."); return; }
+    if (!estadoCarpeta) { setError("Elige el estado (condición) de estas cartas antes de publicar."); return; }
     setPublicando(true); setError(null);
     try {
       const filas = validas.map((f) => ({
         tcg: "pokemon",
         carta: f.encontrada?.name || f.nombre || f.nombreManual,
         set_nombre: f.encontrada?.set_nombre || f.set || null,
-        condicion: f.condicion,
+        condicion: estadoCarpeta,
         idioma: idiomaCarpeta,
         precio: Number(f.precio),
         cantidad: Number(f.cantidad) || 1,
@@ -2903,6 +2993,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
       await sbWrite("POST", contexto === "tienda" ? "inventario_tienda" : "mercado_listings", filas, session);
       setRevision(null);
       setIdiomaCarpeta("");
+      setEstadoCarpeta("");
       onPublicado?.();
     } catch (e) { setError(e.message); } finally { setPublicando(false); }
   };
@@ -2975,6 +3066,10 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
             <p style={{ color: COLORS.muted }} className="text-xs mb-1">Idioma de estas cartas (obligatorio — se aplica a todas las de esta revisión)</p>
             <IdiomaSelector value={idiomaCarpeta} onChange={setIdiomaCarpeta} />
           </div>
+          <div>
+            <p style={{ color: COLORS.muted }} className="text-xs mb-1">Estado de estas cartas (obligatorio — se aplica a todas las de esta revisión)</p>
+            <EstadoCartaSelector value={estadoCarpeta} onChange={setEstadoCarpeta} />
+          </div>
           <div className="grid gap-2">
             {revision.filas.map((f, idx) => {
               const imagen = f.imagenManual || f.encontrada?.imagen_url;
@@ -3026,11 +3121,11 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
             })}
           </div>
           <div className="flex gap-2">
-            <button onClick={publicarRevision} disabled={publicando || !idiomaCarpeta}
+            <button onClick={publicarRevision} disabled={publicando || !idiomaCarpeta || !estadoCarpeta}
               style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">
               {publicando ? "Publicando..." : "Publicar cartas incluidas"}
             </button>
-            <button onClick={() => { setRevision(null); setIdiomaCarpeta(""); }} style={{ color: COLORS.muted }} className="text-sm">Cancelar</button>
+            <button onClick={() => { setRevision(null); setIdiomaCarpeta(""); setEstadoCarpeta(""); }} style={{ color: COLORS.muted }} className="text-sm">Cancelar</button>
           </div>
         </div>
       )}
@@ -3045,7 +3140,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "" });
   const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
@@ -3076,7 +3171,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const alLimite = limiteAlcanzado(perfil, totalActivos);
 
   const agregarCarta = async () => {
-    if (!nuevaCarta.carta || !nuevaCarta.precio || !nuevaCarta.idioma) return;
+    if (!nuevaCarta.carta || !nuevaCarta.precio || !nuevaCarta.idioma || !nuevaCarta.condicion) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.`); return; }
     setSavingCarta(true);
     try {
@@ -3089,8 +3184,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nuevaCarta.card_api_id || null,
         imagen_url: nuevaCarta.imagen_url || null,
         precio_ref_mxn: nuevaCarta.precio_ref_mxn || null,
+        foto_real_url: nuevaCarta.foto_real_url || null,
       }, session);
-      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "NM", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "" });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingCarta(false); }
   };
@@ -3227,14 +3323,21 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
           </>
         )}
 
-        <input placeholder="Condición" value={nuevaCarta.condicion} onChange={(e) => setNuevaCarta({ ...nuevaCarta, condicion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio" type="number" value={nuevaCarta.precio} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio antes (oferta, opcional)" type="number" value={nuevaCarta.precio_antes} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" title="Si lo llenas, se muestra como oferta con el % de descuento" />
+        <div className="sm:col-span-6">
+          <p style={{ color: COLORS.muted }} className="text-xs mb-1">Estado de la carta (obligatorio)</p>
+          <EstadoCartaSelector value={nuevaCarta.condicion} onChange={(v) => setNuevaCarta({ ...nuevaCarta, condicion: v })} />
+        </div>
         <div className="sm:col-span-6">
           <p style={{ color: COLORS.muted }} className="text-xs mb-1">Idioma de la carta (obligatorio)</p>
           <IdiomaSelector value={nuevaCarta.idioma} onChange={(v) => setNuevaCarta({ ...nuevaCarta, idioma: v })} />
         </div>
-        <button onClick={agregarCarta} disabled={savingCarta || alLimite || !nuevaCarta.idioma} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
+        <div className="sm:col-span-6 flex items-center gap-2 flex-wrap">
+          <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Foto real subida" : "📷 Foto real de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} />
+          {nuevaCarta.foto_real_url && <img src={nuevaCarta.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+        </div>
+        <button onClick={agregarCarta} disabled={savingCarta || alLimite || !nuevaCarta.idioma || !nuevaCarta.condicion} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
           {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
       </div>
@@ -3242,14 +3345,15 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
         {inventario.map((item) => (
           <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
-            {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
+            {(item.foto_real_url || item.imagen_url) && <img src={item.foto_real_url || item.imagen_url} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
                 <IdiomaBadge idioma={item.idioma} />
+                <EstadoCartaBadge condicion={item.condicion} />
                 <BoostBadge item={item} />
               </div>
-              <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion}</p>
+              <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre}</p>
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarCarta(item.id, "precio", e.target.value)}
               style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
@@ -4753,7 +4857,7 @@ function ComprasVentasView({ session }) {
   );
 }
 
-function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTienda }) {
+function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTienda, onAbrirDetalle }) {
   const [perfil, setPerfil] = useState(undefined); // undefined = cargando, null = no existe
   const [cartas, setCartas] = useState([]);
   const [sellado, setSellado] = useState([]);
@@ -4953,14 +5057,15 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
               <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">En venta</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {[...cartas, ...sellado].map((r) => (
-                  <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-xl overflow-hidden flex flex-col">
+                  <div key={r.id} onClick={() => onAbrirDetalle?.(r.id, "mercado_listings")} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}`, cursor: onAbrirDetalle ? "pointer" : "default" }} className="rounded-xl overflow-hidden flex flex-col">
                     <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
-                      {r.imagen_url ? <img src={r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
+                      {(r.foto_real_url || r.imagen_url) ? <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
                     </div>
                     <div className="p-2">
                       <div className="flex items-center gap-1 flex-wrap mb-1">
                         {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
                         {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
+                        {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
                         <BoostBadge item={r} />
                       </div>
                       <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
@@ -5012,6 +5117,244 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
           : SECCIONES_PERFIL_ORDEN_DEFAULT;
         return orden.map((key) => bloques[key] || null);
       })()}
+    </div>
+  );
+}
+
+// Trae una publicación (carta o sellado) de la tabla que sea y la normaliza
+// a una sola forma para que CartaDetalleView no tenga que saber de dónde vino.
+async function cargarDetalleListing(tabla, id) {
+  if (tabla === "mercado_listings") {
+    const rows = await sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&id=eq.${id}`);
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      tabla,
+      nombre: r.carta, setNombre: r.set_nombre, tipo: r.tipo, condicion: r.condicion, idioma: r.idioma,
+      precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.zona,
+      imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
+      vendedor: { perfilId: r.perfil_id, nombre: r.perfiles?.nombre || "Usuario", avatarUrl: r.perfiles?.avatar_url, whatsapp: r.perfiles?.whatsapp, facebook: r.perfiles?.facebook, perfil: r.perfiles, esTienda: false },
+      contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""}`,
+    };
+  }
+  if (tabla === "inventario_tienda") {
+    const rows = await sb(`inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      tabla,
+      nombre: r.carta, setNombre: r.set_nombre, tipo: "carta", condicion: r.condicion, idioma: r.idioma,
+      precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
+      imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
+      vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
+      contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""} en ${r.tiendas?.nombre}`,
+    };
+  }
+  if (tabla === "sellado_tienda") {
+    const rows = await sb(`sellado_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      tabla,
+      nombre: r.producto, setNombre: null, tipo: "sellado", condicion: null, idioma: null,
+      precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
+      imagen: r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
+      vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
+      contexto: `${r.producto} en ${r.tiendas?.nombre}`,
+    };
+  }
+  return null;
+}
+
+// Comentarios y ofertas de compradores sobre una publicación específica.
+function OfertasPanel({ session, listingTabla, listingId }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [texto, setTexto] = useState("");
+  const [monto, setMonto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const cargar = () => {
+    setLoading(true);
+    sb(`publicacion_ofertas?select=*,autor:autor_id(nombre,avatar_url)&listing_tabla=eq.${listingTabla}&listing_id=eq.${listingId}&order=created_at.desc`)
+      .then(setItems)
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, [listingTabla, listingId]);
+
+  const publicar = async () => {
+    if (!texto.trim() && !monto) return;
+    setEnviando(true); setError(null);
+    try {
+      await sbWrite("POST", "publicacion_ofertas", {
+        listing_tabla: listingTabla,
+        listing_id: listingId,
+        autor_id: session.user.id,
+        texto: texto.trim() || null,
+        monto_oferta: monto ? Number(monto) : null,
+      }, session);
+      setTexto(""); setMonto("");
+      cargar();
+    } catch (e) { setError(e.message); } finally { setEnviando(false); }
+  };
+
+  const borrar = async (id) => {
+    try { await sbWrite("DELETE", `publicacion_ofertas?id=eq.${id}`, {}, session); cargar(); } catch (e) { setError(e.message); }
+  };
+
+  return (
+    <div>
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Comentarios y ofertas</h3>
+      {error && <div className="mb-3"><ErrorBox message={error} /></div>}
+      {session ? (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 mb-4 grid gap-2">
+          <textarea placeholder="Escribe un comentario o pregunta..." value={texto} onChange={(e) => setTexto(e.target.value)} rows={2}
+            style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <div className="flex gap-2 items-center flex-wrap">
+            <input type="number" placeholder="Tu oferta en $ (opcional)" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[140px]" />
+            <button onClick={publicar} disabled={enviando || (!texto.trim() && !monto)} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+              {enviando ? "Enviando..." : "Publicar"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">Inicia sesión para comentar u ofertar por esta publicación.</p>
+      )}
+
+      {loading ? <Loading label="Cargando comentarios..." /> : items.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm">Sé el primero en comentar o hacer una oferta.</p>
+      ) : (
+        <div className="grid gap-2">
+          {items.map((c) => (
+            <div key={c.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-start gap-2">
+              <AvatarImg url={c.autor?.avatar_url} size={28} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold">{c.autor?.nombre || "Usuario"}</p>
+                  {c.monto_oferta != null && <Badge color={COLORS.gold}>Oferta: ${Number(c.monto_oferta).toLocaleString("es-MX")}</Badge>}
+                  <p style={{ color: COLORS.muted }} className="text-[10px]">{new Date(c.created_at).toLocaleString("es-MX")}</p>
+                </div>
+                {c.texto && <p className="text-sm mt-0.5">{c.texto}</p>}
+              </div>
+              {session?.user?.id === c.autor_id && (
+                <button onClick={() => borrar(c.id)} style={{ color: COLORS.muted }} className="text-xs shrink-0">Borrar</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Ficha de detalle de una publicación: imagen grande, estado/idioma, precio
+// propio + precio de referencia en vivo (TCGplayer/Cardmarket vía
+// pokemontcg.io), vendedor, botón de contacto y comentarios/ofertas. Se
+// llega por click en cualquier tarjeta o por un link compartido
+// (?listing=<id>&tabla=<tabla>, ver abrirDetalle en el componente raíz).
+function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerfil }) {
+  const [item, setItem] = useState(undefined); // undefined = cargando, null = no encontrada
+  const [precioVivo, setPrecioVivo] = useState(null);
+  const [cargandoPrecio, setCargandoPrecio] = useState(false);
+
+  useEffect(() => {
+    setItem(undefined);
+    setPrecioVivo(null);
+    cargarDetalleListing(tabla, id).then(setItem).catch(() => setItem(null));
+  }, [id, tabla]);
+
+  useEffect(() => {
+    if (!item?.cardApiId) return;
+    setCargandoPrecio(true);
+    obtenerPrecioRefActual(item.cardApiId).then(setPrecioVivo).finally(() => setCargandoPrecio(false));
+  }, [item?.cardApiId]);
+
+  const volver = (
+    <button onClick={onVolver} style={{ color: COLORS.azulPalido }} className="flex items-center gap-1 text-sm mb-4">
+      <ChevronLeft size={16} /> Volver
+    </button>
+  );
+
+  if (item === undefined) return <div>{volver}<Loading label="Cargando publicación..." /></div>;
+  if (!item) return <div>{volver}<ErrorBox message="Esta publicación ya no está disponible (puede que se haya vendido o el vendedor la haya borrado)." /></div>;
+
+  const esMio = session && item.vendedor.perfilId === session.user.id;
+
+  return (
+    <div>
+      {volver}
+      <div className="grid sm:grid-cols-[minmax(0,340px)_1fr] gap-6">
+        <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4 sm:sticky sm:top-24 self-start">
+          {item.imagen ? (
+            <img src={item.imagen} alt={item.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+          ) : (
+            <Package size={64} color={COLORS.muted} />
+          )}
+        </div>
+        <div>
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <Badge color={item.tipo === "sellado" ? COLORS.azulMedio : item.vendedor.esTienda ? COLORS.azulPalido : COLORS.azulClaro}>
+              {item.tipo === "sellado" ? "Sellado" : item.vendedor.esTienda ? "Tienda" : "Vendedor individual"}
+            </Badge>
+            <IdiomaBadge idioma={item.idioma} />
+            <EstadoCartaBadge condicion={item.condicion} />
+          </div>
+          <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold mb-1">{item.nombre}</h2>
+          {item.setNombre && <p style={{ color: COLORS.muted }} className="text-sm mb-4">{item.setNombre}</p>}
+
+          <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4">
+            <PrecioConOferta precio={item.precio} precioAntes={item.precioAntes} size="lg" />
+            {item.cantidad > 1 && <p style={{ color: COLORS.muted }} className="text-xs mt-1">{item.cantidad} disponibles</p>}
+            <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="mt-3 pt-3">
+              <p style={{ color: COLORS.muted }} className="text-xs uppercase font-semibold mb-1">Precio de referencia en el mercado</p>
+              {cargandoPrecio ? (
+                <p style={{ color: COLORS.muted }} className="text-xs">Consultando TCGplayer / Cardmarket...</p>
+              ) : precioVivo?.precioRefMxn ? (
+                <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-lg font-bold">~${precioVivo.precioRefMxn.toLocaleString("es-MX")} MXN</p>
+              ) : item.precioRefGuardado ? (
+                <p style={{ color: COLORS.muted }} className="text-sm">~${Number(item.precioRefGuardado).toLocaleString("es-MX")} MXN <span className="text-xs">(guardado al publicar)</span></p>
+              ) : (
+                <p style={{ color: COLORS.muted }} className="text-xs">Sin precio de referencia disponible para esta carta.</p>
+              )}
+              {(precioVivo?.tcgplayerUrl || precioVivo?.cardmarketUrl) && (
+                <div className="flex gap-3 mt-1">
+                  {precioVivo.tcgplayerUrl && <a href={precioVivo.tcgplayerUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulClaro }} className="text-xs flex items-center gap-1">TCGplayer <ExternalLink size={10} /></a>}
+                  {precioVivo.cardmarketUrl && <a href={precioVivo.cardmarketUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulClaro }} className="text-xs flex items-center gap-1">Cardmarket <ExternalLink size={10} /></a>}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <button onClick={() => onVerPerfil(item.vendedor.perfilId)} disabled={!item.vendedor.perfilId}
+            style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+            className="rounded-xl p-3 flex items-center gap-3 w-full mb-4 hover:brightness-125 text-left">
+            <AvatarImg url={item.vendedor.avatarUrl} size={40} />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sm truncate">{item.vendedor.nombre}</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <PlanBadge perfil={item.vendedor.perfil} />
+                {item.zona && <p style={{ color: COLORS.muted }} className="text-xs">{item.zona}</p>}
+              </div>
+            </div>
+          </button>
+
+          {!esMio && (
+            <button
+              onClick={() => onAbrirChat(item.vendedor.perfilId, item.vendedor.nombre, item.contexto, item.vendedor.whatsapp, item.vendedor.facebook, item.vendedor.avatarUrl)}
+              disabled={!item.vendedor.perfilId}
+              style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: item.vendedor.perfilId ? 1 : 0.5 }}
+              className="rounded-xl py-3 text-sm font-bold w-full flex items-center justify-center gap-2 mb-8">
+              <MessageCircle size={16} /> Contactar vendedor
+            </button>
+          )}
+
+          <OfertasPanel session={session} listingTabla={tabla} listingId={id} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -6544,15 +6887,32 @@ export default function EncuentraCartas() {
 
   const [conversaciones, setConversaciones] = useState([]);
   const [loadingInbox, setLoadingInbox] = useState(false);
+  const [tabInbox, setTabInbox] = useState("mensajes"); // "mensajes" | "papelera"
+  const [papelera, setPapelera] = useState([]);
+  const [loadingPapelera, setLoadingPapelera] = useState(false);
+
+  const cargarPapelera = () => {
+    setLoadingPapelera(true);
+    const uid = session.user.id;
+    sb(`mensajes_papelera?select=*,otro:otro_perfil_id(nombre,avatar_url)&perfil_id=eq.${uid}&definitivo=eq.false&order=eliminado_en.desc`, session)
+      .then(setPapelera)
+      .catch(() => setPapelera([]))
+      .finally(() => setLoadingPapelera(false));
+  };
 
   const cargarInbox = () => {
     setLoadingInbox(true);
     const uid = session.user.id;
-    sb(
-      `mensajes?select=*,remitente:de_perfil_id(nombre,whatsapp,facebook,avatar_url),destinatario:para_perfil_id(nombre,whatsapp,facebook,avatar_url)&or=(de_perfil_id.eq.${uid},para_perfil_id.eq.${uid})&order=created_at.desc`,
-      session
-    )
-      .then((rows) => {
+    Promise.all([
+      sb(
+        `mensajes?select=*,remitente:de_perfil_id(nombre,whatsapp,facebook,avatar_url),destinatario:para_perfil_id(nombre,whatsapp,facebook,avatar_url)&or=(de_perfil_id.eq.${uid},para_perfil_id.eq.${uid})&order=created_at.desc`,
+        session
+      ),
+      sb(`mensajes_papelera?select=otro_perfil_id,contexto&perfil_id=eq.${uid}`, session).catch(() => []),
+    ])
+      .then(([rows, papeleraRows]) => {
+        // Las conversaciones que ya moví a la papelera no se muestran en la bandeja.
+        const enPapelera = new Set((papeleraRows || []).map((p) => `${p.otro_perfil_id}::${p.contexto}`));
         // Agrupamos por conversación: mismo interlocutor + mismo tema (contexto)
         const grupos = new Map();
         rows.forEach((m) => {
@@ -6560,6 +6920,7 @@ export default function EncuentraCartas() {
           const otherId = soyRemitente ? m.para_perfil_id : m.de_perfil_id;
           const otherPerfil = soyRemitente ? m.destinatario : m.remitente;
           const key = `${otherId}::${m.contexto}`;
+          if (enPapelera.has(key)) return;
           if (!grupos.has(key)) {
             grupos.set(key, {
               otherId,
@@ -6576,6 +6937,21 @@ export default function EncuentraCartas() {
         setConversaciones(Array.from(grupos.values()));
       })
       .finally(() => setLoadingInbox(false));
+    cargarPapelera();
+  };
+
+  const moverAPapelera = async (otherId, contexto) => {
+    try {
+      await sbWrite("POST", "mensajes_papelera", { perfil_id: session.user.id, otro_perfil_id: otherId, contexto }, session);
+    } catch {} // si ya estaba en la papelera (duplicado), no pasa nada
+    cargarInbox();
+  };
+
+  const restaurarDePapelera = async (otherId, contexto) => {
+    try {
+      await sbWrite("DELETE", `mensajes_papelera?perfil_id=eq.${session.user.id}&otro_perfil_id=eq.${otherId}&contexto=eq.${encodeURIComponent(contexto)}`, {}, session);
+    } catch {}
+    cargarInbox();
   };
 
   const openStore = (store) => {
@@ -6603,6 +6979,48 @@ export default function EncuentraCartas() {
     setSelectedPerfilId(perfilId);
     setView("perfilPublico");
   };
+
+  // Ficha de detalle de una publicación (carta o sellado): abre en grande la
+  // imagen, precio de referencia en vivo, vendedor y ofertas/comentarios. Se
+  // puede llegar por click en cualquier tarjeta o por un link compartido
+  // (?listing=<id>&tabla=<tabla>).
+  const [selectedListing, setSelectedListing] = useState(null); // { id, tabla }
+  const [vistaAntesDeDetalle, setVistaAntesDeDetalle] = useState("search");
+
+  const abrirDetalle = (id, tabla) => {
+    if (!id || !tabla) return;
+    setVistaAntesDeDetalle(view === "cartaDetalle" ? vistaAntesDeDetalle : view);
+    setSelectedListing({ id, tabla });
+    setView("cartaDetalle");
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.set("listing", id);
+      u.searchParams.set("tabla", tabla);
+      window.history.pushState({}, "", u);
+    } catch {}
+  };
+
+  const cerrarDetalle = () => {
+    setSelectedListing(null);
+    setView(vistaAntesDeDetalle);
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.delete("listing");
+      u.searchParams.delete("tabla");
+      window.history.pushState({}, "", u);
+    } catch {}
+  };
+
+  // Al abrir la app con un link compartido de una publicación, la abrimos directo.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const listing = params.get("listing");
+    const tabla = params.get("tabla");
+    if (listing && tabla) {
+      setSelectedListing({ id: listing, tabla });
+      setView("cartaDetalle");
+    }
+  }, []);
 
   const verTiendaDesdePerfil = (tiendaId) => {
     sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&id=eq.${tiendaId}`)
@@ -6832,12 +7250,12 @@ export default function EncuentraCartas() {
                         .slice(0, 10)
                         .map((r) => (
                           <button key={`${r._esTienda ? "t" : "m"}-${r.id}`}
-                            onClick={() => setView(r._esTienda ? "directory" : "market")}
+                            onClick={() => abrirDetalle(r.id, r._esTienda ? "inventario_tienda" : "mercado_listings")}
                             style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}` }}
                             className="text-left rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                             <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
-                              {r.imagen_url ? (
-                                <img src={r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                              {(r.foto_real_url || r.imagen_url) ? (
+                                <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                               ) : (
                                 <Package size={28} color={COLORS.muted} />
                               )}
@@ -6846,6 +7264,7 @@ export default function EncuentraCartas() {
                               <div className="flex items-center gap-1 flex-wrap mb-1">
                                 <Badge color={r._esTienda ? COLORS.azulPalido : COLORS.azulClaro}>{r._esTienda ? "Tienda" : "Mercado"}</Badge>
                                 {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
+                                {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
                                 <BoostBadge item={r} />
                               </div>
                               <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
@@ -6867,12 +7286,12 @@ export default function EncuentraCartas() {
 
             <div className="grid gap-4">
               {searchResults.tiendas.map((r) => (
-                <div key={r.id} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29` }}
+                <div key={r.id} onClick={() => abrirDetalle(r.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
-                    {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                    {(r.foto_real_url || r.imagen_url) && <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><IdiomaBadge idioma={r.idioma} /><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><IdiomaBadge idioma={r.idioma} /><EstadoCartaBadge condicion={r.condicion} /><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <AvatarImg url={r.tiendas?.perfiles?.avatar_url} size={20} />
@@ -6884,7 +7303,7 @@ export default function EncuentraCartas() {
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
-                      onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url)}
+                      onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
                       disabled={!r.tiendas?.perfil_id}
                       style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
@@ -6894,15 +7313,15 @@ export default function EncuentraCartas() {
                 </div>
               ))}
               {searchResults.mercado.map((r) => (
-                <div key={r.id} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29` }}
+                <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
-                    {r.imagen_url && <img src={r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                    {(r.foto_real_url || r.imagen_url) && <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}{r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
-                      <button onClick={() => verPerfil(r.perfil_id)} className="flex items-center gap-2 mt-2 hover:brightness-125">
+                      <button onClick={(e) => { e.stopPropagation(); verPerfil(r.perfil_id); }} className="flex items-center gap-2 mt-2 hover:brightness-125">
                         <AvatarImg url={r.perfiles?.avatar_url} size={22} />
                         <p style={{ color: COLORS.muted }} className="text-xs">{r.perfiles?.nombre || "Usuario"}</p>
                       </button>
@@ -6912,7 +7331,7 @@ export default function EncuentraCartas() {
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
-                      onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url)}
+                      onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
                       style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
                       <MessageCircle size={12} /> Contactar
@@ -6921,7 +7340,7 @@ export default function EncuentraCartas() {
                 </div>
               ))}
               {searchResults.sellado.map((r) => (
-                <div key={`sel-${r.id}`} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29` }}
+                <div key={`sel-${r.id}`} onClick={() => abrirDetalle(r.id, "sellado_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
                     {r.imagen_url && <img src={r.imagen_url} alt={r.producto} style={{ width: 72, height: 100, objectFit: "contain" }} />}
@@ -6937,7 +7356,7 @@ export default function EncuentraCartas() {
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <button
-                      onClick={() => abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url)}
+                      onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
                       disabled={!r.tiendas?.perfil_id}
                       style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
@@ -7030,10 +7449,10 @@ export default function EncuentraCartas() {
             )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               {market.map((r) => (
-                <div key={r.id} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}` }} className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
+                <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                   <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
-                    {r.imagen_url ? (
-                      <img src={r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    {(r.foto_real_url || r.imagen_url) ? (
+                      <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                     ) : (
                       <Package size={40} color={COLORS.muted} />
                     )}
@@ -7042,6 +7461,7 @@ export default function EncuentraCartas() {
                     <div className="flex items-center gap-1 flex-wrap">
                       {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
                       {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
+                      {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
                       <PlanBadge perfil={r.perfiles} />
                       <BoostBadge item={r} />
                     </div>
@@ -7051,12 +7471,12 @@ export default function EncuentraCartas() {
                       <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="md" />
                     </div>
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs -mt-1">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                    <button onClick={() => verPerfil(r.perfil_id)} className="flex items-center gap-2 mt-auto pt-2 hover:brightness-125">
+                    <button onClick={(e) => { e.stopPropagation(); verPerfil(r.perfil_id); }} className="flex items-center gap-2 mt-auto pt-2 hover:brightness-125">
                       <AvatarImg url={r.perfiles?.avatar_url} size={20} />
                       <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.perfiles?.nombre || "Usuario"}</p>
                     </button>
                     <button
-                      onClick={() => abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url)}
+                      onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
                       style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
                       className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center justify-center gap-1 w-full"
                     >
@@ -7104,67 +7524,132 @@ export default function EncuentraCartas() {
         {/* MENSAJES */}
         {view === "inbox" && session && (
           <div>
-            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">Mensajes</h2>
-            {loadingInbox && <Loading label="Cargando tus conversaciones..." />}
-            {!loadingInbox && conversaciones.length === 0 && (
-              <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
-                Todavía no tienes conversaciones. En cuanto alguien te contacte por una carta, o tú contactes a alguien, va a aparecer aquí.
-              </p>
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-6">
+              <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">Mensajes</h2>
+              <div className="flex gap-2">
+                <button onClick={() => setTabInbox("mensajes")}
+                  style={{ background: tabInbox === "mensajes" ? COLORS.surface2 : "transparent", border: `1px solid ${tabInbox === "mensajes" ? COLORS.azulPalido : COLORS.surface2}`, color: tabInbox === "mensajes" ? COLORS.azulPalido : COLORS.muted }}
+                  className="px-3 py-1.5 rounded-lg text-sm font-semibold">Mensajes</button>
+                <button onClick={() => setTabInbox("papelera")}
+                  style={{ background: tabInbox === "papelera" ? COLORS.surface2 : "transparent", border: `1px solid ${tabInbox === "papelera" ? COLORS.azulPalido : COLORS.surface2}`, color: tabInbox === "papelera" ? COLORS.azulPalido : COLORS.muted }}
+                  className="px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1"><Trash2 size={14} /> Papelera{papelera.length > 0 ? ` (${papelera.length})` : ""}</button>
+              </div>
+            </div>
+
+            {tabInbox === "mensajes" && (
+              <>
+                {loadingInbox && <Loading label="Cargando tus conversaciones..." />}
+                {!loadingInbox && conversaciones.length === 0 && (
+                  <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
+                    Todavía no tienes conversaciones. En cuanto alguien te contacte por una carta, o tú contactes a alguien, va a aparecer aquí.
+                  </p>
+                )}
+
+                {!loadingInbox && conversaciones.length > 0 && (
+                  <>
+                    <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Recientes</h3>
+                    <div className="grid gap-3 mb-8">
+                      {conversaciones.slice(0, 3).map((c) => (
+                        <div
+                          key={`reciente-${c.otherId}::${c.contexto}`}
+                          onClick={() => setChatContext(c)}
+                          style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulPalido}55`, cursor: "pointer" }}
+                          className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110 overflow-hidden"
+                        >
+                          <div className="min-w-0 overflow-hidden flex items-center gap-3">
+                            <AvatarImg url={c.otherAvatar} size={36} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-1 min-w-0">
+                                <p className="font-semibold shrink-0">{c.otherNombre}</p>
+                                <Badge color={COLORS.azulClaro}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
+                              </div>
+                              <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">
+                              {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                            </p>
+                            <button onClick={(e) => { e.stopPropagation(); moverAPapelera(c.otherId, c.contexto); }} title="Mover a la papelera" style={{ color: COLORS.muted }} className="p-1 hover:brightness-125">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Todos tus chats</h3>
+                    <div className="grid gap-3">
+                      {conversaciones.map((c) => (
+                        <div
+                          key={`${c.otherId}::${c.contexto}`}
+                          onClick={() => setChatContext(c)}
+                          style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}`, cursor: "pointer" }}
+                          className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110 overflow-hidden"
+                        >
+                          <div className="min-w-0 overflow-hidden flex items-center gap-3">
+                            <AvatarImg url={c.otherAvatar} size={36} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-1 min-w-0">
+                                <p className="font-semibold shrink-0">{c.otherNombre}</p>
+                                <Badge color={COLORS.azulClaro}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
+                              </div>
+                              <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">
+                              {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                            </p>
+                            <button onClick={(e) => { e.stopPropagation(); moverAPapelera(c.otherId, c.contexto); }} title="Mover a la papelera" style={{ color: COLORS.muted }} className="p-1 hover:brightness-125">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
             )}
 
-            {!loadingInbox && conversaciones.length > 0 && (
+            {tabInbox === "papelera" && (
               <>
-                <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Recientes</h3>
-                <div className="grid gap-3 mb-8">
-                  {conversaciones.slice(0, 3).map((c) => (
-                    <button
-                      key={`reciente-${c.otherId}::${c.contexto}`}
-                      onClick={() => setChatContext(c)}
-                      style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulPalido}55` }}
-                      className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110 overflow-hidden"
-                    >
-                      <div className="min-w-0 overflow-hidden flex items-center gap-3">
-                        <AvatarImg url={c.otherAvatar} size={36} />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-1 min-w-0">
-                            <p className="font-semibold shrink-0">{c.otherNombre}</p>
-                            <Badge color={COLORS.azulClaro}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
+                {loadingPapelera && <Loading label="Cargando la papelera..." />}
+                {!loadingPapelera && papelera.length === 0 && (
+                  <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
+                    Tu papelera está vacía. Los chats que borres aparecen aquí y se eliminan definitivamente a los 7 días.
+                  </p>
+                )}
+                {!loadingPapelera && papelera.length > 0 && (
+                  <div className="grid gap-3">
+                    {papelera.map((p) => {
+                      const diasRestantes = Math.max(0, 7 - Math.floor((Date.now() - new Date(p.eliminado_en).getTime()) / (24 * 60 * 60 * 1000)));
+                      return (
+                        <div key={`${p.otro_perfil_id}::${p.contexto}`} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                          className="rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap opacity-80">
+                          <div className="min-w-0 overflow-hidden flex items-center gap-3">
+                            <AvatarImg url={p.otro?.avatar_url} size={36} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-1 min-w-0">
+                                <p className="font-semibold shrink-0">{p.otro?.nombre || "Usuario"}</p>
+                                <Badge color={COLORS.azulClaro}>{p.contexto.length > 26 ? p.contexto.slice(0, 26) + "…" : p.contexto}</Badge>
+                              </div>
+                              <p style={{ color: COLORS.muted }} className="text-xs">
+                                Se borra definitivamente en {diasRestantes} día{diasRestantes === 1 ? "" : "s"}
+                              </p>
+                            </div>
                           </div>
-                          <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
+                          <button onClick={() => restaurarDePapelera(p.otro_perfil_id, p.contexto)}
+                            style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap shrink-0">
+                            Restaurar
+                          </button>
                         </div>
-                      </div>
-                      <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap shrink-0">
-                        {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-
-                <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Todos tus chats</h3>
-                <div className="grid gap-3">
-                  {conversaciones.map((c) => (
-                    <button
-                      key={`${c.otherId}::${c.contexto}`}
-                      onClick={() => setChatContext(c)}
-                      style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
-                      className="text-left rounded-xl p-4 flex items-center justify-between gap-4 hover:brightness-110 overflow-hidden"
-                    >
-                      <div className="min-w-0 overflow-hidden flex items-center gap-3">
-                        <AvatarImg url={c.otherAvatar} size={36} />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-1 min-w-0">
-                            <p className="font-semibold shrink-0">{c.otherNombre}</p>
-                            <Badge color={COLORS.azulClaro}>{c.contexto.length > 26 ? c.contexto.slice(0, 26) + "…" : c.contexto}</Badge>
-                          </div>
-                          <p style={{ color: COLORS.muted }} className="text-sm truncate">{c.ultimoMensaje}</p>
-                        </div>
-                      </div>
-                      <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap shrink-0">
-                        {new Date(c.fecha).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
-                      </p>
-                    </button>
-                  ))}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -7291,23 +7776,24 @@ export default function EncuentraCartas() {
                 <div className="grid gap-3 mb-8">
                   {storeInventory.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Esta tienda todavía no ha subido inventario.</p>}
                   {storeInventory.map((item) => (
-                    <div key={item.id} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}` }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
+                    <div key={item.id} onClick={() => abrirDetalle(item.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
                       <div className="flex items-center gap-3">
-                        {item.imagen_url && <img src={item.imagen_url} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                        {(item.foto_real_url || item.imagen_url) && <img src={item.foto_real_url || item.imagen_url} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium">{item.carta}</p>
                             <IdiomaBadge idioma={item.idioma} />
+                            <EstadoCartaBadge condicion={item.condicion} />
                             <BoostBadge item={item} />
                           </div>
-                          <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.condicion}</p>
+                          <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre}</p>
                         </div>
                       </div>
                       <div className="text-right">
                         <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                         <button
-                          onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url)}
+                          onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
                           disabled={!selectedStore.perfil_id}
                           style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
                           className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
@@ -7321,7 +7807,7 @@ export default function EncuentraCartas() {
                 <div className="grid gap-3">
                   {storeSellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin producto sellado registrado.</p>}
                   {storeSellado.map((item) => (
-                    <div key={item.id} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}` }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
+                    <div key={item.id} onClick={() => abrirDetalle(item.id, "sellado_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
                       <div className="flex items-center gap-3">
                         {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                         <div className="flex items-center gap-2 flex-wrap">
@@ -7333,7 +7819,7 @@ export default function EncuentraCartas() {
                         <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                         <button
-                          onClick={() => abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url)}
+                          onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
                           disabled={!selectedStore.perfil_id}
                           style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
                           className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
@@ -7355,6 +7841,18 @@ export default function EncuentraCartas() {
             onVolver={() => setView(vistaAntesDePerfil)}
             onAbrirChat={abrirChat}
             onVerTienda={verTiendaDesdePerfil}
+            onAbrirDetalle={abrirDetalle}
+          />
+        )}
+
+        {view === "cartaDetalle" && selectedListing && (
+          <CartaDetalleView
+            id={selectedListing.id}
+            tabla={selectedListing.tabla}
+            session={session}
+            onVolver={cerrarDetalle}
+            onAbrirChat={abrirChat}
+            onVerPerfil={verPerfil}
           />
         )}
 

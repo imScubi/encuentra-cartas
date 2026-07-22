@@ -205,3 +205,27 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
     precioRefMxn: precioRefDeCartaPokemonTCG(c),
   }));
 }
+
+// Precio de referencia "en vivo" para la ficha de detalle de una publicación:
+// se consulta pokemontcg.io por el id exacto de la carta (en vez de usar el
+// precio_ref_mxn guardado al momento de publicar, que puede quedar viejo).
+// pokemontcg.io ya trae los precios de TCGplayer y Cardmarket en la misma
+// respuesta, así que no hace falta integrar otro proveedor (Pricecharting,
+// Collectr, etc.) por separado.
+export async function obtenerPrecioRefActual(cardApiId) {
+  if (!cardApiId) return null;
+  try {
+    const res = await fetch(`https://api.pokemontcg.io/v2/cards/${encodeURIComponent(cardApiId)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const c = data?.data;
+    if (!c) return null;
+    return {
+      precioRefMxn: precioRefDeCartaPokemonTCG(c),
+      tcgplayerUrl: c.tcgplayer?.url || null,
+      cardmarketUrl: c.cardmarket?.url || null,
+    };
+  } catch {
+    return null;
+  }
+}

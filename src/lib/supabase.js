@@ -192,3 +192,7 @@ export async function subirImagenABucket(bucket, file, session) {
 export async function subirImagenCarta(file, session) {
   return subirImagenABucket("cartas", file, session);
 }
+
+export async function subirImagenMensaje(file, session) {
+  return subirImagenABucket("mensajes", file, session);
+}

@@ -1091,6 +1091,93 @@ a la hoja de estilos global en `theme.js`, junto con una regla
 `prefers-reduced-motion` que apaga las animaciones en bucle para quien
 tenga esa preferencia activada en su sistema.
 
+## 48. Estado de la carta, ficha de detalle, ofertas/comentarios y chat rediseñado
+
+Feature grande con seis piezas relacionadas:
+
+**1. Estado (condición) de la carta — obligatorio.** El campo `condicion`
+(antes texto libre, con "NM" como valor por defecto sin validar nada) ahora
+es un selector obligatorio de 6 valores fijos, la escala estándar de
+condición de cartas coleccionables: `GM` Gem Mint, `NM` Near Mint, `LP`
+Lightly Played, `MP` Moderately Played, `HP` Heavily Played, `DMG` Damaged
+— cada uno con su significado en español al lado (`CONDICION_OPCIONES` en
+`theme.js`). Aplicado en `MyMarketPanel` y `MyStorePanel` (selector
+`EstadoCartaSelector`, mismo patrón que `IdiomaSelector`). En los flujos
+por lote (`ImportadorMasivo`, que ya permitía condición por fila en texto
+libre) se normaliza automáticamente el texto a uno de los 6 códigos
+(`normalizarCondicion()`); en `CarpetasPanel` se agregó un selector a nivel
+de lote (`estadoCarpeta`), igual que ya existía para el idioma. La
+migración `036_estado_carta.sql` normaliza los valores ya guardados en la
+base antes de agregar el `CHECK` (para no romper publicaciones existentes)
+y agrega la columna `foto_real_url` a `mercado_listings` e
+`inventario_tienda`.
+
+**2. Foto real de la carta.** Aparte de `imagen_url` (la imagen de
+referencia del catálogo oficial, para identificar la carta), ahora se
+puede subir una foto de la carta física (`foto_real_url`, mismo control
+`SubirFotoManual` ya existente, reutilizado con una segunda instancia).
+En las miniaturas de toda la web, si existe `foto_real_url` se muestra esa
+en vez de la imagen de catálogo — así el comprador ve el desgaste real
+antes de contactar.
+
+**3. Ficha de detalle de una publicación.** Nueva vista (`view ===
+"cartaDetalle"`, componente `CartaDetalleView`): imagen grande, estado e
+idioma, precio propio, y un precio de referencia **en vivo** (se vuelve a
+consultar pokemontcg.io por el `card_api_id` exacto en el momento de abrir
+la ficha, en vez de solo mostrar el precio guardado al publicar — que
+puede quedar viejo). pokemontcg.io ya trae en la misma respuesta los
+precios de TCGplayer y Cardmarket (con links directos a ambos), así que
+cubre lo pedido de "tomar información de páginas como Pricecharting,
+Collectr, TCGplayer" sin sumar otra integración de pago. Debajo, tarjeta
+del vendedor (click → su perfil público) y botón "Contactar vendedor".
+Se llega por click en **cualquier** tarjeta de publicación de toda la
+web (Buscar, Mercado, vitrina de inicio, perfil de tienda, perfil
+público) — los botones de "Contactar"/avatar dentro de la tarjeta siguen
+funcionando igual (`stopPropagation` para no abrir el detalle sin
+querer). También soporta compartir un link directo:
+`?listing=<id>&tabla=mercado_listings|inventario_tienda|sellado_tienda`
+se lee al abrir la web y salta directo a esa ficha.
+
+**4. Comentarios y ofertas.** Nueva tabla `publicacion_ofertas`
+(migración `037_publicacion_ofertas.sql`, lectura pública, publicar/borrar
+solo lo propio) y componente `OfertasPanel` dentro de la ficha de
+detalle: cualquiera con sesión puede dejar un comentario y/o un monto de
+oferta; se muestran en orden cronológico con el nombre y avatar de quien
+comentó. No incluye un flujo de "aceptar/rechazar" oferta — es solo el
+canal de comunicación pública, el cierre del trato sigue pasando por el
+chat.
+
+**5. Chat: adjuntar imágenes + rediseño estilo Messenger web.**
+Migración `038_mensajes_imagen.sql` agrega `mensajes.imagen_url` (y
+vuelve `texto` opcional, para que un mensaje pueda ser solo una foto) más
+el bucket de Storage `mensajes`. En el chat ahora hay un ícono de imagen
+junto al campo de texto para adjuntar una foto (usa
+`subirImagenMensaje()`, mismo patrón que las demás subidas). Además, el
+chat dejó de ser un modal centrado que tapaba toda la pantalla: ahora es
+un panel anclado abajo a la derecha (como Messenger en su versión de
+escritorio), sin fondo oscuro detrás, así se puede seguir viendo y
+navegando el resto de la web con el chat abierto. Se puede minimizar
+(queda solo la barra con el nombre) o cerrar del todo.
+
+**6. Papelera de chats.** Cada persona puede "borrar" una conversación
+de su propia bandeja sin afectar la copia de la otra persona — se guarda
+en una tabla nueva `mensajes_papelera` (migración
+`039_mensajes_papelera.sql`, una fila por `perfil_id` + la otra persona +
+el contexto de la conversación). La bandeja de Mensajes ahora tiene dos
+pestañas: "Mensajes" (con un ícono de basura por conversación para
+mandarla a la papelera) y "Papelera" (con cuenta regresiva de 7 días y
+botón "Restaurar"). Pasados los 7 días, un cron diario nuevo
+(`api/cron/limpiar-papelera-chats.js`, agregado a `vercel.json`) marca la
+fila como definitiva (ya no se puede restaurar); si **ambas** personas de
+esa conversación ya la marcaron como definitiva, ese mismo cron borra
+físicamente los mensajes — si solo una persona la borró, la conversación
+sigue intacta para la otra.
+
+### Pendiente por aplicar en Supabase
+Correr en orden, copiando y pegando en el SQL Editor: `036_estado_carta.sql`,
+`037_publicacion_ofertas.sql`, `038_mensajes_imagen.sql`,
+`039_mensajes_papelera.sql`.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
