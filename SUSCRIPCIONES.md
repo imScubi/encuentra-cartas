@@ -1370,6 +1370,61 @@ políticas de lectura de admin en `pagos`/`boosts`.
 ### Pendiente por aplicar en Supabase
 Copiar y pegar en el SQL Editor: `043_admin_estadisticas.sql`.
 
+## 53. Segundo TCG con catálogo real: Magic (piloto) + selector de TCG en el inicio
+
+Primer paso de expandir más allá de Pokémon: el campo `tcg` ya existía desde
+hace tiempo en "Vender en el Mercado"/"Mi tienda"/Wishlist (Yu-Gi-Oh,
+Lorcana, Magic y One Piece ya se podían elegir), pero solo Pokémon tenía
+catálogo real conectado — el resto era texto libre, sin imagen ni precio de
+referencia. Se eligió **Magic** como piloto del segundo TCG porque su API
+pública (Scryfall) es gratuita, no pide llave, y es la más completa y
+estable del mercado — mejor terreno de prueba que Yu-Gi-Oh/Lorcana/One
+Piece, cuyas opciones gratuitas de datos son bastante menos maduras.
+
+**No requirió ninguna migración**: las columnas `tcg` de `mercado_listings`
+e `inventario_tienda` ya eran texto libre desde antes de que existiera esta
+carpeta de migraciones (tablas originales del proyecto), así que ya
+aceptaban "magic" sin ningún cambio de esquema.
+
+- **Buscador visual de Magic** (`buscarCartasMagic` en `src/lib/pokemonApi.js`,
+  vía `api.scryfall.com`): mismo componente `CardPicker` que ya usaba
+  Pokémon, ahora recibe un prop `tcg` y usa el catálogo correspondiente —
+  imagen, set, número de coleccionista y precio de referencia (USD de
+  Scryfall convertido a MXN). Disponible en los 3 lugares donde ya existía
+  el selector de TCG: "Vender en el Mercado", "Mi tienda" (cartas sueltas)
+  y Wishlist Premium.
+- **Precio en vivo en la ficha de detalle**: igual que Pokémon consulta
+  pokemontcg.io por el id exacto, una publicación de Magic ahora consulta
+  Scryfall por su id (`obtenerPrecioRefActualMagic`) y trae también los
+  links directos de compra (TCGplayer/Cardmarket) que Scryfall ya incluye.
+- **Yu-Gi-Oh, Lorcana y One Piece** siguen en texto libre por ahora (sin
+  imagen ni precio) — se pueden ir agregando uno por uno con el mismo
+  patrón (`buscarCartasCatalogo`/`obtenerPrecioRefActualPorTcg` en
+  `pokemonApi.js` son los "despachadores" que deciden qué catálogo usar
+  según el TCG; agregar uno nuevo es sumar un caso ahí).
+- **Producto sellado** (booster boxes, etc.) sigue siendo Pokémon-only por
+  ahora — `sellado_tienda` no tiene columna `tcg`, es la siguiente pieza
+  pendiente si se quiere vender sellado de otros TCG.
+
+**Selector de TCG en el inicio**: en la pantalla "Buscar", debajo del
+buscador principal, un grupo de botones ("Todos", Pokémon, Yu-Gi-Oh,
+Lorcana, Magic, One Piece) para elegir qué TCG te interesa ver. Se guarda
+solo en el dispositivo (`localStorage`, igual que el tema de Apariencia),
+no en la cuenta. Filtra:
+- Los resultados de la búsqueda en vivo (tiendas, Mercado).
+- La vitrina "🔥 Recién publicado" y la pestaña "Mercado entre usuarios".
+
+El producto sellado (que no tiene `tcg` guardado) se sigue mostrando
+mientras el filtro esté en "Todos" o "Pokémon" (hoy todo el sellado
+existente es Pokémon) y se oculta con cualquier otro TCG elegido, para no
+mostrar sellado con la etiqueta equivocada.
+
+**Nota de alcance**: el filtro de TCG hoy solo afecta la pantalla de
+inicio/Mercado — el Directorio de tiendas, el perfil público, "Armar mazo"
+y el detalle de una tienda todavía no lo usan (las tiendas venden de
+cualquier TCG mezclado, así que filtrar ahí es un paso aparte si hace
+falta más adelante).
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

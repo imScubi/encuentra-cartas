@@ -206,6 +206,76 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
   }));
 }
 
+// ---- Magic: The Gathering (segundo TCG con catálogo real, después de
+// Pokémon) — usa Scryfall, gratis y sin necesitar llave. A diferencia de
+// pokemontcg.io, la búsqueda de texto de Scryfall ya es difusa por nombre/
+// set/número por sí sola, así que no hace falta la lógica de separar
+// nombre+set+número que sí necesita construirQueryPokemonTCG. ----
+function imagenDeCartaScryfall(c) {
+  return c.image_uris?.normal || c.image_uris?.large
+    || c.card_faces?.[0]?.image_uris?.normal || c.card_faces?.[0]?.image_uris?.large || null;
+}
+
+function precioRefDeCartaScryfall(c) {
+  const usd = c.prices?.usd || c.prices?.usd_foil;
+  if (usd) return Math.round(Number(usd) * USD_TO_MXN);
+  const eur = c.prices?.eur || c.prices?.eur_foil;
+  if (eur) return Math.round(Number(eur) * EUR_TO_MXN);
+  return null;
+}
+
+export async function buscarCartasMagic(texto, limite = 24) {
+  const q = (texto || "").trim();
+  if (q.length < 3) return [];
+  try {
+    const res = await fetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&order=name&unique=cards`);
+    if (!res.ok) return []; // incluye el 404 de "sin resultados" de Scryfall, no es un error real
+    const data = await res.json();
+    return (data?.data || []).slice(0, limite).map((c) => ({
+      id: c.id,
+      name: c.name,
+      localId: c.collector_number,
+      setName: c.set_name || "",
+      setTotal: "",
+      image: imagenDeCartaScryfall(c),
+      precioRefMxn: precioRefDeCartaScryfall(c),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function obtenerPrecioRefActualMagic(cardApiId) {
+  if (!cardApiId) return null;
+  try {
+    const res = await fetch(`https://api.scryfall.com/cards/${encodeURIComponent(cardApiId)}`);
+    if (!res.ok) return null;
+    const c = await res.json();
+    return {
+      precioRefMxn: precioRefDeCartaScryfall(c),
+      tcgplayerUrl: c.purchase_uris?.tcgplayer || null,
+      cardmarketUrl: c.purchase_uris?.cardmarket || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Elige el catálogo correcto según el TCG de la publicación. Hoy solo
+// Pokémon y Magic tienen buscador visual con imagen/precio (TCG_CON_CATALOGO
+// en theme.js) — Yu-Gi-Oh, Lorcana y One Piece siguen en texto libre hasta
+// que se conecte su propia fuente, con este mismo patrón.
+export async function buscarCartasCatalogo(tcg, texto) {
+  if (tcg === "magic") return buscarCartasMagic(texto);
+  if (tcg === "pokemon") return buscarCartasVisual(texto);
+  return [];
+}
+
+export async function obtenerPrecioRefActualPorTcg(tcg, cardApiId) {
+  if (tcg === "magic") return obtenerPrecioRefActualMagic(cardApiId);
+  return obtenerPrecioRefActual(cardApiId);
+}
+
 // Precio de referencia "en vivo" para la ficha de detalle de una publicación:
 // se consulta pokemontcg.io por el id exacto de la carta (en vez de usar el
 // precio_ref_mxn guardado al momento de publicar, que puede quedar viejo).

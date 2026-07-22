@@ -30,6 +30,21 @@ export const COLORS = {
   text: "#F4F6FB", muted: "#8291B5",
 };
 
+// ---- TCG (juego de cartas): Pokémon fue el primero en tener catálogo
+// visual real (imagen, set, precio de referencia); Magic es el segundo
+// piloto (vía Scryfall). Yu-Gi-Oh, Lorcana y One Piece ya se pueden
+// publicar (texto libre, sin catálogo todavía) hasta que se conecte su
+// propia fuente de datos, mismo patrón que Magic ----
+export const TCG_OPCIONES = [
+  { key: "pokemon", label: "Pokémon" },
+  { key: "yugioh", label: "Yu-Gi-Oh!" },
+  { key: "lorcana", label: "Lorcana" },
+  { key: "magic", label: "Magic" },
+  { key: "onepiece", label: "One Piece" },
+];
+export const TCG_LABEL = Object.fromEntries(TCG_OPCIONES.map((o) => [o.key, o.label]));
+export const TCG_CON_CATALOGO = ["pokemon", "magic"];
+
 // ---- Idioma de la carta: obligatorio al publicar, para que el comprador
 // sepa en qué idioma está la carta sin tener que preguntar ----
 export const IDIOMA_OPCIONES = [

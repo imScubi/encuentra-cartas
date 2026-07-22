@@ -16,6 +16,7 @@ import { setUidActual } from "./lib/errorReporting.jsx";
 import {
   pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
   parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
+  buscarCartasCatalogo, obtenerPrecioRefActualPorTcg,
 } from "./lib/pokemonApi.js";
 import {
   FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
@@ -25,6 +26,7 @@ import {
   IDIOMA_OPCIONES, IDIOMA_LABEL,
   CONDICION_OPCIONES, CONDICION_LABEL, CONDICION_DESC, normalizarCondicion,
   GRADEADORAS_OPCIONES, GRADEADORAS_LABEL, calificacionesDeEmpresa, textoGradeo,
+  TCG_OPCIONES, TCG_LABEL, TCG_CON_CATALOGO,
 } from "./theme.js";
 
 function AvatarImg({ url, size = 36 }) {
@@ -1056,7 +1058,7 @@ function ReintentarImagen({ nombre, setNombre, onEncontrada }) {
   );
 }
 
-function CardPicker({ onSelect }) {
+function CardPicker({ tcg = "pokemon", onSelect }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1066,13 +1068,13 @@ function CardPicker({ onSelect }) {
     if (!q.trim() || q.trim().length < 3) { setResults([]); return; }
     setLoading(true);
     const t = setTimeout(() => {
-      buscarCartasVisual(q.trim())
+      buscarCartasCatalogo(tcg, q.trim())
         .then(setResults)
         .catch(() => setResults([]))
         .finally(() => setLoading(false));
     }, 400);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, tcg]);
 
   const seleccionar = (c) => {
     onSelect({
@@ -1088,7 +1090,7 @@ function CardPicker({ onSelect }) {
   return (
     <div className="relative">
       <input
-        placeholder='Nombre, número (ej. "016" o "#016") o set (ej. Sprigatito Journey Together)'
+        placeholder={tcg === "magic" ? 'Nombre de la carta (ej. "Lightning Bolt")' : 'Nombre, número (ej. "016" o "#016") o set (ej. Sprigatito Journey Together)'}
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
@@ -1570,11 +1572,11 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         {tipo === "carta" ? (
           <>
             <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
-              <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
+              {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
             </select>
-            {nueva.tcg === "pokemon" ? (
+            {TCG_CON_CATALOGO.includes(nueva.tcg) ? (
               <div>
-                <CardPicker onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+                <CardPicker tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
                 {nueva.card_api_id && (
                   <div className="flex items-center gap-3 mt-2">
                     {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
@@ -3676,12 +3678,12 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-6">
         <select value={nuevaCarta.tcg} onChange={(e) => setNuevaCarta({ ...nuevaCarta, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1">
-          <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
         </select>
 
-        {nuevaCarta.tcg === "pokemon" ? (
+        {TCG_CON_CATALOGO.includes(nuevaCarta.tcg) ? (
           <div className="sm:col-span-2">
-            <CardPicker onSelect={(c) => setNuevaCarta({
+            <CardPicker tcg={nuevaCarta.tcg} onSelect={(c) => setNuevaCarta({
               ...nuevaCarta,
               carta: c.name,
               set_nombre: c.set_nombre,
@@ -5533,7 +5535,7 @@ async function cargarDetalleListing(tabla, id) {
       nombre: r.carta, setNombre: r.set_nombre, tipo: r.tipo, condicion: r.condicion, idioma: r.idioma,
       gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.zona,
-      imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
+      imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
       buzonTienda: r.buzon_tienda || null,
       vendedor: { perfilId: r.perfil_id, nombre: r.perfiles?.nombre || "Usuario", avatarUrl: r.perfiles?.avatar_url, whatsapp: r.perfiles?.whatsapp, facebook: r.perfiles?.facebook, perfil: r.perfiles, esTienda: false },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""}`,
@@ -5548,7 +5550,7 @@ async function cargarDetalleListing(tabla, id) {
       nombre: r.carta, setNombre: r.set_nombre, tipo: "carta", condicion: r.condicion, idioma: r.idioma,
       gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
-      imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
+      imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
       vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""} en ${r.tiendas?.nombre}`,
     };
@@ -5673,8 +5675,8 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
   useEffect(() => {
     if (!item?.cardApiId) return;
     setCargandoPrecio(true);
-    obtenerPrecioRefActual(item.cardApiId).then(setPrecioVivo).finally(() => setCargandoPrecio(false));
-  }, [item?.cardApiId]);
+    obtenerPrecioRefActualPorTcg(item.tcg, item.cardApiId).then(setPrecioVivo).finally(() => setCargandoPrecio(false));
+  }, [item?.cardApiId, item?.tcg]);
 
   const volver = (
     <button onClick={onVolver} style={{ color: COLORS.azulPalido }} className="flex items-center gap-1 text-sm mb-4">
@@ -6125,11 +6127,11 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
         {tipo === "carta" ? (
           <>
             <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
-              <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
+              {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
             </select>
-            {nueva.tcg === "pokemon" ? (
+            {TCG_CON_CATALOGO.includes(nueva.tcg) ? (
               <div>
-                <CardPicker onSelect={(c) => setNueva({ ...nueva, carta: c.name, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_max: nueva.precio_max || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+                <CardPicker tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_max: nueva.precio_max || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
                 {nueva.card_api_id && (
                   <div className="flex items-center gap-3 mt-2">
                     {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
@@ -7087,6 +7089,12 @@ async function crearConSlugUnico(tabla, datosBase, nombreParaSlug, session, fall
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
+  // Qué TCG le interesa ver (botón en el inicio): se guarda solo en este
+  // dispositivo (localStorage), igual que el tema — no requiere sesión ni
+  // columna nueva en la base de datos. "todos" no filtra nada.
+  const [tcgFiltro, setTcgFiltro] = useState(() => localStorage.getItem("ec_tcg_filtro") || "todos");
+  useEffect(() => { localStorage.setItem("ec_tcg_filtro", tcgFiltro); }, [tcgFiltro]);
+  const pasaFiltroTcg = (item) => tcgFiltro === "todos" || item.tcg === tcgFiltro;
   const [session, setSession] = useState(null);
   const [perfil, setPerfil] = useState(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
@@ -7649,6 +7657,21 @@ export default function EncuentraCartas() {
                   placeholder="Busca una carta..." style={{ color: COLORS.text }}
                   className="bg-transparent outline-none w-full py-2 text-lg" />
               </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-1.5 mt-4">
+                <p style={{ color: COLORS.muted }} className="text-xs mr-1">¿Qué TCG te interesa?</p>
+                {[{ key: "todos", label: "Todos" }, ...TCG_OPCIONES].map((o) => (
+                  <button key={o.key} type="button" onClick={() => setTcgFiltro(o.key)}
+                    style={{
+                      background: tcgFiltro === o.key ? COLORS.surface2 : "transparent",
+                      border: `1px solid ${tcgFiltro === o.key ? COLORS.azulClaro : COLORS.surface2}`,
+                      color: tcgFiltro === o.key ? COLORS.azulClaro : COLORS.muted,
+                    }}
+                    className="px-3 py-1 rounded-full text-xs font-semibold">
+                    {o.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {searching && <Loading label="Buscando en tiendas y mercado..." />}
@@ -7692,14 +7715,14 @@ export default function EncuentraCartas() {
                   <Loading label="Cargando lo más reciente..." />
                 )}
 
-                {(market.length > 0 || inicioTienda.length > 0) && (
+                {(market.filter(pasaFiltroTcg).length > 0 || inicioTienda.filter(pasaFiltroTcg).length > 0) && (
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h3 style={{ color: COLORS.azulClaro }} className="font-semibold text-sm uppercase">🔥 Recién publicado</h3>
                       <button onClick={() => setView("market")} style={{ color: COLORS.azulPalido }} className="text-xs font-semibold">Ver Mercado</button>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-                      {[...market.map((r) => ({ ...r, _esTienda: false })), ...inicioTienda.map((r) => ({ ...r, _esTienda: true }))]
+                      {[...market.filter(pasaFiltroTcg).map((r) => ({ ...r, _esTienda: false })), ...inicioTienda.filter(pasaFiltroTcg).map((r) => ({ ...r, _esTienda: true }))]
                         .sort((a, b) => {
                           const da = estaDestacado(a) ? 1 : 0, db = estaDestacado(b) ? 1 : 0;
                           if (da !== db) return db - da;
@@ -7741,14 +7764,23 @@ export default function EncuentraCartas() {
               </div>
             )}
 
-            {!searching && query.trim() && searchResults.tiendas.length === 0 && searchResults.mercado.length === 0 && searchResults.sellado.length === 0 && (
-              <p style={{ color: COLORS.muted }} className="text-center py-16 text-sm">
-                Nadie tiene "{query}" registrado todavía.
-              </p>
-            )}
+            {(() => {
+              // sellado_tienda todavía no guarda de qué TCG es (siempre Pokémon
+              // hoy) — con un filtro puesto en otro TCG, se oculta en vez de
+              // mostrar sellado que en realidad es de otro juego.
+              const selladoVisible = tcgFiltro === "todos" || tcgFiltro === "pokemon" ? searchResults.sellado : [];
+              const tiendasVisibles = searchResults.tiendas.filter(pasaFiltroTcg);
+              const mercadoVisible = searchResults.mercado.filter(pasaFiltroTcg);
+              return (
+                <>
+                  {!searching && query.trim() && tiendasVisibles.length === 0 && mercadoVisible.length === 0 && selladoVisible.length === 0 && (
+                    <p style={{ color: COLORS.muted }} className="text-center py-16 text-sm">
+                      Nadie tiene "{query}" registrado todavía{tcgFiltro !== "todos" ? ` en ${TCG_LABEL[tcgFiltro] || tcgFiltro}` : ""}.
+                    </p>
+                  )}
 
-            <div className="grid gap-4">
-              {searchResults.tiendas.map((r) => (
+                  <div className="grid gap-4">
+                    {tiendasVisibles.map((r) => (
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
@@ -7775,7 +7807,7 @@ export default function EncuentraCartas() {
                   </div>
                 </div>
               ))}
-              {searchResults.mercado.map((r) => (
+              {mercadoVisible.map((r) => (
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
@@ -7802,7 +7834,7 @@ export default function EncuentraCartas() {
                   </div>
                 </div>
               ))}
-              {searchResults.sellado.map((r) => (
+              {selladoVisible.map((r) => (
                 <div key={`sel-${r.id}`} onClick={() => abrirDetalle(r.id, "sellado_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
@@ -7828,7 +7860,10 @@ export default function EncuentraCartas() {
                   </div>
                 </div>
               ))}
-            </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -7905,13 +7940,15 @@ export default function EncuentraCartas() {
           <div>
             <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">Mercado entre usuarios</h2>
             {loadingMarket && <Loading label="Cargando publicaciones..." />}
-            {!loadingMarket && market.length === 0 && (
+            {!loadingMarket && market.filter(pasaFiltroTcg).length === 0 && (
               <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
-                Todavía no hay publicaciones de usuarios en el mercado. En cuanto alguien se registre como cuenta individual y publique una carta, aparecerá aquí automáticamente.
+                {market.length === 0
+                  ? "Todavía no hay publicaciones de usuarios en el mercado. En cuanto alguien se registre como cuenta individual y publique una carta, aparecerá aquí automáticamente."
+                  : `Nadie ha publicado ${TCG_LABEL[tcgFiltro] || tcgFiltro} todavía en el Mercado.`}
               </p>
             )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {market.map((r) => (
+              {market.filter(pasaFiltroTcg).map((r) => (
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                   <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
                     {(r.foto_real_url || r.imagen_url) ? (
