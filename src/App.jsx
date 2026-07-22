@@ -24,6 +24,7 @@ import {
   MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, aplicarTema,
   IDIOMA_OPCIONES, IDIOMA_LABEL,
   CONDICION_OPCIONES, CONDICION_LABEL, CONDICION_DESC, normalizarCondicion,
+  GRADEADORAS_OPCIONES, GRADEADORAS_LABEL, calificacionesDeEmpresa, textoGradeo,
 } from "./theme.js";
 
 function AvatarImg({ url, size = 36 }) {
@@ -712,6 +713,46 @@ function EstadoCartaBadge({ condicion }) {
   );
 }
 
+// ---- Gradeo de la carta: opcional. Si se marca, pide la empresa que la
+// gradeó y su calificación (para BGS, el 10 se divide en 3 niveles) ----
+function GradeoFields({ gradeada, empresa, empresaOtro, calificacion, onChange }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  return (
+    <div className="grid gap-2">
+      <label className="flex items-center gap-2 text-sm cursor-pointer w-fit" style={{ color: COLORS.muted }}>
+        <input type="checkbox" checked={gradeada}
+          onChange={(e) => onChange(e.target.checked ? { gradeada: true } : { gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "" })} />
+        <Tag size={14} /> Esta carta está gradeada (opcional)
+      </label>
+      {gradeada && (
+        <div className="grid sm:grid-cols-2 gap-2">
+          <select value={empresa} onChange={(e) => onChange({ grado_empresa: e.target.value, grado_calificacion: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+            <option value="">Empresa que gradeó...</option>
+            {GRADEADORAS_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+          {empresa === "OTRO" && (
+            <input placeholder="¿Qué empresa la gradeó?" value={empresaOtro} onChange={(e) => onChange({ grado_empresa_otro: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          )}
+          {empresa && (
+            <select value={calificacion} onChange={(e) => onChange({ grado_calificacion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+              <option value="">Calificación...</option>
+              {calificacionesDeEmpresa(empresa).map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Badge de gradeo para mostrar en cualquier publicación que la tenga marcada.
+function GradeoBadge({ gradeada, grado_empresa, grado_empresa_otro, grado_calificacion }) {
+  if (!gradeada) return null;
+  const texto = textoGradeo({ grado_empresa, grado_empresa_otro, grado_calificacion });
+  if (!texto) return null;
+  return <Badge color={COLORS.azulPalido}>{texto}</Badge>;
+}
+
 function PrecioConOferta({ precio, precioAntes, size = "lg" }) {
   const enOferta = precioAntes && Number(precioAntes) > Number(precio);
   const pct = enOferta ? Math.round((1 - Number(precio) / Number(precioAntes)) * 100) : 0;
@@ -1346,7 +1387,10 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const [saving, setSaving] = useState(false);
   const [tipo, setTipo] = useState("carta"); // carta | sellado
 
-  const vacio = { tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "" };
+  const vacio = {
+    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
+    gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
+  };
   const [nueva, setNueva] = useState(vacio);
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
@@ -1383,10 +1427,13 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nueva.card_api_id || null,
         imagen_url: nueva.imagen_url || null,
         precio_ref_mxn: nueva.precio_ref_mxn || null,
-        // foto_real_url solo se manda si el vendedor de verdad subió una: así
-        // publicar sigue funcionando aunque la migración 036 (que agrega esa
-        // columna) todavía no se haya corrido en Supabase.
+        // foto_real_url y los campos de gradeo solo se mandan si de verdad
+        // aplican: así publicar sigue funcionando aunque las migraciones que
+        // agregan esas columnas (036, 040) todavía no se hayan corrido.
         ...(tipo === "carta" && nueva.foto_real_url ? { foto_real_url: nueva.foto_real_url } : {}),
+        ...(tipo === "carta" && nueva.gradeada
+          ? { gradeada: true, grado_empresa: nueva.grado_empresa || null, grado_empresa_otro: nueva.grado_empresa === "OTRO" ? nueva.grado_empresa_otro || null : null, grado_calificacion: nueva.grado_calificacion || null }
+          : {}),
       }, session);
       setNueva(vacio);
       cargar();
@@ -1481,6 +1528,10 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto real subida" : "📷 Foto real de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
               {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
+            <GradeoFields
+              gradeada={nueva.gradeada} empresa={nueva.grado_empresa} empresaOtro={nueva.grado_empresa_otro} calificacion={nueva.grado_calificacion}
+              onChange={(patch) => setNueva({ ...nueva, ...patch })}
+            />
           </>
         ) : (
           <SealedPicker onSelect={(p) => setNueva({ ...nueva, carta: p.producto, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
@@ -1519,6 +1570,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
                 <Badge color={item.tipo === "sellado" ? COLORS.azulClaro : COLORS.azulPalido}>{item.tipo === "sellado" ? "Sellado" : "Carta"}</Badge>
                 {item.tipo !== "sellado" && <IdiomaBadge idioma={item.idioma} />}
                 {item.tipo !== "sellado" && <EstadoCartaBadge condicion={item.condicion} />}
+                {item.tipo !== "sellado" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />}
                 <BoostBadge item={item} />
               </div>
               <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.zona}</p>
@@ -3146,7 +3198,10 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [nuevaCarta, setNuevaCarta] = useState({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "" });
+  const [nuevaCarta, setNuevaCarta] = useState({
+    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
+    gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
+  });
   const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
@@ -3181,9 +3236,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.`); return; }
     setSavingCarta(true);
     try {
-      const { foto_real_url, ...nuevaCartaSinFoto } = nuevaCarta;
+      const { foto_real_url, gradeada, grado_empresa, grado_empresa_otro, grado_calificacion, ...nuevaCartaBase } = nuevaCarta;
       await sbWrite("POST", "inventario_tienda", {
-        ...nuevaCartaSinFoto,
+        ...nuevaCartaBase,
         precio: Number(nuevaCarta.precio),
         precio_antes: nuevaCarta.precio_antes ? Number(nuevaCarta.precio_antes) : null,
         cantidad: Number(nuevaCarta.cantidad),
@@ -3191,11 +3246,16 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nuevaCarta.card_api_id || null,
         imagen_url: nuevaCarta.imagen_url || null,
         precio_ref_mxn: nuevaCarta.precio_ref_mxn || null,
-        // foto_real_url solo se manda si de verdad se subió una: así seguir
-        // agregando cartas no se rompe si la migración 036 aún no corrió.
+        // foto_real_url y los campos de gradeo solo se mandan si de verdad
+        // aplican: así seguir agregando cartas no se rompe si las migraciones
+        // que agregan esas columnas (036, 040) aún no han corrido.
         ...(foto_real_url ? { foto_real_url } : {}),
+        ...(gradeada ? { gradeada: true, grado_empresa: grado_empresa || null, grado_empresa_otro: grado_empresa === "OTRO" ? grado_empresa_otro || null : null, grado_calificacion: grado_calificacion || null } : {}),
       }, session);
-      setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "" });
+      setNuevaCarta({
+        tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
+        gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
+      });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingCarta(false); }
   };
@@ -3346,6 +3406,12 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
           <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Foto real subida" : "📷 Foto real de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} />
           {nuevaCarta.foto_real_url && <img src={nuevaCarta.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
         </div>
+        <div className="sm:col-span-6">
+          <GradeoFields
+            gradeada={nuevaCarta.gradeada} empresa={nuevaCarta.grado_empresa} empresaOtro={nuevaCarta.grado_empresa_otro} calificacion={nuevaCarta.grado_calificacion}
+            onChange={(patch) => setNuevaCarta({ ...nuevaCarta, ...patch })}
+          />
+        </div>
         <button onClick={agregarCarta} disabled={savingCarta || alLimite || !nuevaCarta.idioma || !nuevaCarta.condicion} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
           {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
@@ -3359,6 +3425,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
                 <IdiomaBadge idioma={item.idioma} />
+                <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />
                 <EstadoCartaBadge condicion={item.condicion} />
                 <BoostBadge item={item} />
               </div>
@@ -5075,6 +5142,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
                         {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
                         {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                         {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
+                        {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
                         <BoostBadge item={r} />
                       </div>
                       <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
@@ -5140,6 +5208,7 @@ async function cargarDetalleListing(tabla, id) {
     return {
       tabla,
       nombre: r.carta, setNombre: r.set_nombre, tipo: r.tipo, condicion: r.condicion, idioma: r.idioma,
+      gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.zona,
       imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
       vendedor: { perfilId: r.perfil_id, nombre: r.perfiles?.nombre || "Usuario", avatarUrl: r.perfiles?.avatar_url, whatsapp: r.perfiles?.whatsapp, facebook: r.perfiles?.facebook, perfil: r.perfiles, esTienda: false },
@@ -5153,6 +5222,7 @@ async function cargarDetalleListing(tabla, id) {
     return {
       tabla,
       nombre: r.carta, setNombre: r.set_nombre, tipo: "carta", condicion: r.condicion, idioma: r.idioma,
+      gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
       imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
       vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
@@ -5311,6 +5381,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
             </Badge>
             <IdiomaBadge idioma={item.idioma} />
             <EstadoCartaBadge condicion={item.condicion} />
+            <GradeoBadge gradeada={item.gradeada} grado_empresa={item.gradoEmpresa} grado_empresa_otro={item.gradoEmpresaOtro} grado_calificacion={item.gradoCalificacion} />
           </div>
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold mb-1">{item.nombre}</h2>
           {item.setNombre && <p style={{ color: COLORS.muted }} className="text-sm mb-4">{item.setNombre}</p>}
@@ -7274,6 +7345,7 @@ export default function EncuentraCartas() {
                                 <Badge color={r._esTienda ? COLORS.azulPalido : COLORS.azulClaro}>{r._esTienda ? "Tienda" : "Mercado"}</Badge>
                                 {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                                 {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
+                                {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
                                 <BoostBadge item={r} />
                               </div>
                               <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
@@ -7300,7 +7372,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {(r.foto_real_url || r.imagen_url) && <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><IdiomaBadge idioma={r.idioma} /><EstadoCartaBadge condicion={r.condicion} /><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><IdiomaBadge idioma={r.idioma} /><EstadoCartaBadge condicion={r.condicion} /><GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} /><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <AvatarImg url={r.tiendas?.perfiles?.avatar_url} size={20} />
@@ -7327,7 +7399,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {(r.foto_real_url || r.imagen_url) && <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}{r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}{r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}{r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
                       <button onClick={(e) => { e.stopPropagation(); verPerfil(r.perfil_id); }} className="flex items-center gap-2 mt-2 hover:brightness-125">
@@ -7471,6 +7543,7 @@ export default function EncuentraCartas() {
                       {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
                       {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                       {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
+                      {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
                       <PlanBadge perfil={r.perfiles} />
                       <BoostBadge item={r} />
                     </div>
@@ -7793,6 +7866,7 @@ export default function EncuentraCartas() {
                             <p className="font-medium">{item.carta}</p>
                             <IdiomaBadge idioma={item.idioma} />
                             <EstadoCartaBadge condicion={item.condicion} />
+                            <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />
                             <BoostBadge item={item} />
                           </div>
                           <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre}</p>

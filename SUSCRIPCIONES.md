@@ -1173,10 +1173,39 @@ esa conversación ya la marcaron como definitiva, ese mismo cron borra
 físicamente los mensajes — si solo una persona la borró, la conversación
 sigue intacta para la otra.
 
+### Migraciones 036-039
+Ya se corrieron en Supabase (confirmado).
+
+## 49. Gradeo de la carta (opcional): empresa y calificación
+
+Extensión del punto anterior: al publicar una carta (formulario individual
+en `MyMarketPanel` y `MyStorePanel`), ahora hay una casilla opcional "Esta
+carta está gradeada". Si se marca, aparecen dos selectores más:
+
+- **Empresa que gradeó**: PSA, CGC, BGS, TAG, Value UP, u "Otro" (con un
+  campo de texto para escribir el nombre a mano).
+- **Calificación**: 1 a 10 para cualquier empresa, **excepto BGS**, donde
+  el 10 se divide en tres niveles distintos — "10 Gem Mint", "10 Pristine"
+  y "10 Black Label" — en vez de un simple "10" (`calificacionesDeEmpresa()`
+  en `theme.js` decide qué lista mostrar según la empresa elegida).
+
+Se guarda en 4 columnas nuevas (`gradeada`, `grado_empresa`,
+`grado_empresa_otro`, `grado_calificacion`) en `mercado_listings` e
+`inventario_tienda` — migración `040_carta_gradeada.sql`. Como es opcional
+y poco frecuente, no se agregó a los flujos por lote (importador masivo,
+Carpetas): es una casilla que aplica mejor al publicar una carta a la vez.
+El badge (`GradeoBadge`, ej. "PSA 9" o "BGS 10 Black Label") se muestra en
+todas las mismas vistas donde ya sale el estado/idioma de la carta:
+Buscar, Mercado, vitrina de inicio, perfil de tienda, perfil público y la
+ficha de detalle.
+
+Igual que con `foto_real_url`, los campos de gradeo solo se mandan al
+servidor cuando la carta de verdad está marcada como gradeada — así
+publicar una carta normal (sin gradeo) sigue funcionando aunque la
+migración 040 todavía no se haya corrido.
+
 ### Pendiente por aplicar en Supabase
-Correr en orden, copiando y pegando en el SQL Editor: `036_estado_carta.sql`,
-`037_publicacion_ofertas.sql`, `038_mensajes_imagen.sql`,
-`039_mensajes_papelera.sql`.
+Copiar y pegar en el SQL Editor: `040_carta_gradeada.sql`.
 
 ## Qué falta / próximos pasos posibles
 
