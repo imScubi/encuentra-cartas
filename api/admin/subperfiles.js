@@ -3,6 +3,39 @@
 // despliegue, y separarlos en 2 archivos ya no cabía.
 import crypto from "crypto";
 
+// Mismo criterio que slugify() en el navegador (src/App.jsx) y en Postgres
+// (migración 041): perfiles.slug es NOT NULL + unique, así que hay que
+// mandarlo siempre al crear uno, con reintento por si el nombre ya se usó.
+function slugify(texto) {
+  const limpio = (texto || "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return limpio || null;
+}
+
+async function crearPerfilConSlugUnico(supabaseUrl, headers, datosBase, nombreParaSlug) {
+  const base = slugify(nombreParaSlug) || `usuario-${crypto.randomBytes(4).toString("hex")}`;
+  for (let intento = 1; intento <= 20; intento++) {
+    const slug = intento === 1 ? base : `${base}-${intento}`;
+    const perfilRes = await fetch(`${supabaseUrl}/rest/v1/perfiles`, {
+      method: "POST",
+      headers: { ...headers, Prefer: "return=representation" },
+      body: JSON.stringify({ ...datosBase, slug }),
+    });
+    const perfilCreado = await perfilRes.json();
+    if (perfilRes.ok) return perfilCreado;
+    const yaExiste = /duplicate key|already exists/i.test(perfilCreado?.message || "");
+    if (!yaExiste || intento === 20) {
+      const err = new Error(Array.isArray(perfilCreado) ? "No se pudo crear el perfil" : perfilCreado?.message || "No se pudo crear el perfil");
+      err.status = perfilRes.status;
+      throw err;
+    }
+  }
+}
+
 async function crear(req, res, { supabaseUrl, headers, caller }) {
   const { nombre, tipo } = req.body || {};
   if (!nombre?.trim() || !["individual", "tienda"].includes(tipo)) {
@@ -22,15 +55,15 @@ async function crear(req, res, { supabaseUrl, headers, caller }) {
     return res.status(500).json({ error: nuevoUsuario?.msg || nuevoUsuario?.error_description || "No se pudo crear el sub-perfil" });
   }
 
-  const perfilRes = await fetch(`${supabaseUrl}/rest/v1/perfiles`, {
-    method: "POST",
-    headers: { ...headers, Prefer: "return=representation" },
-    body: JSON.stringify({ id: nuevoUsuario.id, nombre: nombre.trim(), tipo, email, plan: "pokeball", gestionado_por: caller.id }),
-  });
-  const perfilCreado = await perfilRes.json();
-  if (!perfilRes.ok) {
+  try {
+    await crearPerfilConSlugUnico(
+      supabaseUrl, headers,
+      { id: nuevoUsuario.id, nombre: nombre.trim(), tipo, email, plan: "pokeball", gestionado_por: caller.id },
+      nombre.trim()
+    );
+  } catch (e) {
     await fetch(`${supabaseUrl}/auth/v1/admin/users/${nuevoUsuario.id}`, { method: "DELETE", headers }).catch(() => {});
-    throw new Error(Array.isArray(perfilCreado) ? "No se pudo crear el perfil" : perfilCreado?.message || "No se pudo crear el perfil");
+    throw e;
   }
 
   res.status(200).json({ ok: true, id: nuevoUsuario.id, nombre: nombre.trim() });
