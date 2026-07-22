@@ -1,6 +1,13 @@
 # Sistema de rangos / suscripciones
 <!-- ping deploy 2026-07-21 16:03 UTC -->
 
+**Dominio oficial:** `encuentracartasmx.com` (comprado y conectado directo
+en Vercel → Settings → Domains; el dominio de respaldo
+`encuentra-cartas-nmcc-seven.vercel.app` sigue funcionando igual). No
+requirió ningún cambio de código — las URLs de Mercado Pago (`back_urls`,
+`notification_url`) se arman en `api/mercadopago/gestionar.js` a partir del
+dominio desde el que llega la petición (`req.headers.host`), así que
+adaptan solas al dominio que se esté usando en cada momento.
 
 Guía para dejar funcionando de verdad lo que se agregó: los 5 rangos (Cuarzo,
 Zafiro, Amatista, Diamante, Aurora — internamente siguen guardados como
@@ -40,10 +47,10 @@ También corre (en el mismo SQL Editor, uno por uno, en orden):
 | `SUPABASE_URL` | `https://nulypgaaekexlbxbxdwq.supabase.co` | ya la conoces |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → `service_role` | **nunca** la pongas en el frontend ni la subas a git |
 | `MP_ACCESS_TOKEN` | Mercado Pago → tu cuenta → Developers → Credenciales | usa el **Access Token de prueba** mientras pruebas |
-| `PUBLIC_BASE_URL` | tu dominio en Vercel, ej. `https://encuentra-cartas.vercel.app` | sin `/` al final |
+| `PUBLIC_BASE_URL` | `https://encuentracartasmx.com` (dominio oficial ya conectado) | sin `/` al final; opcional — si no la pones, el código igual arma la URL sola a partir del dominio desde el que llega la petición |
 | `VAPID_PUBLIC_KEY` | `BBPa0Sb2JnCX1McAm78espGKsZw8B7lYD2CFV4F_-F_9EghLKVjuhmSnVYh8YRkLgTibA5l5b5OKoujZD3_Dn8c` | ya generada, coincide con la que está en `src/App.jsx` |
 | `VAPID_PRIVATE_KEY` | te la doy en el resumen de este chat (no está en ningún archivo del repo) | cópiala directo a Vercel, no la subas a git |
-| `VAPID_SUBJECT` | `mailto:tu-correo@dominio.com` | cualquier correo de contacto |
+| `VAPID_SUBJECT` | `mailto:contacto@encuentracartasmx.com` (o el correo de contacto que prefieras) | cualquier correo de contacto |
 | `CRON_SECRET` | invéntala tú, ej. una contraseña larga random | Vercel la manda sola como header cuando corre el cron; protege `/api/cron/recordatorios` y `/api/cron/publicar-anuncios` de que cualquiera los llame |
 | `GMAIL_USER` | el correo de Gmail que quieras usar de remitente | opcional: si no la pones, la app sigue funcionando normal, solo no manda correos (el push sigue llegando igual) |
 | `GMAIL_APP_PASSWORD` | https://myaccount.google.com/apppasswords (requiere verificación en dos pasos activada en esa cuenta) | es una "contraseña de aplicación" de 16 caracteres, **no** tu contraseña normal de Gmail |
@@ -171,9 +178,11 @@ manda el correo (el push no se ve afectado). Los anuncios del administrador
 (sección 12) **no** mandan correo, solo push, tal como se pidió.
 
 Nota: Gmail limita a 500 correos salientes por día por cuenta — de sobra
-para el volumen actual. Si más adelante consigues un dominio propio, se
-puede migrar a un servicio como Resend para mandar volúmenes mayores con
-mejor entregabilidad.
+para el volumen actual. Ya que tienes dominio propio
+(`encuentracartasmx.com`), si más adelante el volumen de correos crece se
+puede migrar a un servicio como Resend (verificando el dominio ahí) para
+mandar más volumen con mejor entregabilidad — mientras tanto, Gmail SMTP
+sigue funcionando igual de bien.
 
 ## 12. Anuncios
 
