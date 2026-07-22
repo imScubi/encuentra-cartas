@@ -7858,8 +7858,8 @@ export default function EncuentraCartas() {
             <button onClick={cerrarStore} style={{ color: COLORS.muted }} className="flex items-center gap-1 text-sm mb-6">
               <ChevronLeft size={16} /> Volver
             </button>
-            <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl overflow-hidden mb-6">
-              <div style={{ height: 110, position: "relative", overflow: "hidden", background: `linear-gradient(120deg, ${COLORS.azul}, ${COLORS.azulMedio} 60%, ${COLORS.azulClaro})` }}>
+            <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl mb-6" >
+              <div style={{ height: 110, position: "relative", overflow: "hidden", background: `linear-gradient(120deg, ${COLORS.azul}, ${COLORS.azulMedio} 60%, ${COLORS.azulClaro})` }} className="rounded-t-2xl">
                 <div style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(115deg, rgba(255,255,255,0.05) 0 2px, transparent 2px 22px)" }} />
               </div>
               <div className="p-6 pt-0">
