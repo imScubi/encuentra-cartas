@@ -1331,6 +1331,45 @@ pública y cada quien ya puede escribir su propio `mercado_listings`/`perfiles`.
 ### Pendiente por aplicar en Supabase
 Copiar y pegar en el SQL Editor: `042_buzon_tiendas_afiliadas.sql`.
 
+## 52. Panel de Admin: pestaña "Estadísticas" (crecimiento de la plataforma)
+
+Nueva pestaña, primera al abrir el panel de Admin, pensada para monitorear
+el crecimiento de la app con el tiempo sin tener que revisar la base de
+datos a mano.
+
+**Cifras al momento:**
+- Usuarios registrados (sin contar sub-perfiles administrados por el
+  admin, ver sección 38) y su distribución por los 5 planes (barra con el
+  mismo color que ya tiene asignado cada plan en el resto de la app).
+- Tiendas en el directorio y cuántas están afiliadas (sección 51).
+- Reportes pendientes y calificación promedio de la plataforma (reseñas).
+- Cartas y producto sellado **en venta ahora mismo** (suma de "Vender en
+  el Mercado" + inventario de tiendas).
+- Cartas y producto sellado **vendidos** (ventas confirmadas, ver sección
+  28) — separados por tipo gracias a la nueva columna `ventas.tipo`
+  (antes no se guardaba si lo vendido era carta o sellado, solo la tabla
+  de origen; las ventas ya existentes se marcaron como "carta" al aplicar
+  la migración).
+- Monto total transactado entre usuarios (ventas confirmadas), ingresos
+  totales por planes pagados y por Boost — estos dos últimos requieren
+  que el admin pueda leer la tabla `pagos`/`boosts` de **todos** los
+  usuarios (antes cada quien solo veía la suya), por eso la migración
+  agrega una política de lectura para admin en ambas tablas.
+
+**Gráficas de progreso en el tiempo** (acumulado semana a semana, sin
+ninguna librería de gráficas nueva — SVG simple hecho a mano, con tooltip
+al pasar el mouse sobre cada punto): usuarios registrados, ventas
+confirmadas, y publicaciones creadas en total (esta última mide actividad
+de publicación en el tiempo, no el inventario activo ahora — incluye lo
+que ya se vendió o se borró; el dato de "activo ahora" está en las cifras
+de arriba).
+
+Migración `043_admin_estadisticas.sql`: agrega `ventas.tipo` y las
+políticas de lectura de admin en `pagos`/`boosts`.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `043_admin_estadisticas.sql`.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

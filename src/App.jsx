@@ -442,10 +442,15 @@ function BuscadorComprador({ session, excluirId, onSelect }) {
   );
 }
 
-function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, onClose, onVendida }) {
+function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, tipoItem, onClose, onVendida }) {
   const [comprador, setComprador] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(null);
+
+  // sellado_tienda/inventario_tienda son de un solo tipo cada una; solo
+  // mercado_listings puede ser carta o sellado, por eso ahí sí hace falta
+  // el tipo del item (tipoItem) para guardarlo correctamente en ventas.tipo.
+  const tipoVenta = tabla === "sellado_tienda" ? "sellado" : tabla === "inventario_tienda" ? "carta" : (tipoItem || "carta");
 
   const confirmar = async () => {
     setEnviando(true); setError(null);
@@ -457,6 +462,7 @@ function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, onClo
         listing_id: itemId,
         descripcion,
         precio: precio || null,
+        tipo: tipoVenta,
       }, session);
       await sbWrite("DELETE", `${tabla}?id=eq.${itemId}`, {}, session);
       onVendida?.();
@@ -495,7 +501,7 @@ function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, onClo
   );
 }
 
-function MarcarVendidaBoton({ session, tabla, itemId, descripcion, precio, onVendida }) {
+function MarcarVendidaBoton({ session, tabla, itemId, descripcion, precio, tipoItem, onVendida }) {
   const [abierto, setAbierto] = useState(false);
   return (
     <>
@@ -503,7 +509,7 @@ function MarcarVendidaBoton({ session, tabla, itemId, descripcion, precio, onVen
         ✅ Vendida
       </button>
       {abierto && (
-        <MarcarVendidaModal session={session} tabla={tabla} itemId={itemId} descripcion={descripcion} precio={precio} onClose={() => setAbierto(false)} onVendida={onVendida} />
+        <MarcarVendidaModal session={session} tabla={tabla} itemId={itemId} descripcion={descripcion} precio={precio} tipoItem={tipoItem} onClose={() => setAbierto(false)} onVendida={onVendida} />
       )}
     </>
   );
@@ -1669,7 +1675,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               <SubirFotoManual session={session} label={item.foto_real_url ? "Cambiar foto real" : "📷 Foto real"} onSubido={async (url) => { await actualizar(item.id, "foto_real_url", url); cargar(); }} />
             )}
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
-            <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} onVendida={cargar} />
+            <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} tipoItem={item.tipo} onVendida={cargar} />
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
@@ -1804,9 +1810,218 @@ function CambiarPlanAdmin({ session }) {
   );
 }
 
+// ---- Estadísticas (Admin): piezas visuales reutilizables, sin ninguna
+// librería de gráficas nueva — solo SVG inline, mismo criterio minimalista
+// que el resto de la app (BackgroundField, etc.) ----
+function StatTile({ label, value, sub, color = COLORS.azulClaro }) {
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+      <p style={{ color: COLORS.muted }} className="text-xs uppercase font-semibold mb-1">{label}</p>
+      <p style={{ color, fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold">{value}</p>
+      {sub && <p style={{ color: COLORS.muted }} className="text-xs mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+// Gráfica de línea/área de una sola serie acumulada en el tiempo. Tooltip
+// nativo (title del navegador) en cada punto + etiqueta directa en el
+// último valor (el total actual) en vez de un número en cada punto.
+function MiniAreaChart({ puntos, color = COLORS.azulClaro, alto = 140 }) {
+  if (!puntos || puntos.length < 2) {
+    return <p style={{ color: COLORS.muted }} className="text-xs py-8 text-center">Todavía no hay suficientes datos para graficar.</p>;
+  }
+  const ancho = 600;
+  const padY = 18, padX = 4;
+  const maxValor = Math.max(1, ...puntos.map((p) => p.valor));
+  const x = (i) => padX + (i / (puntos.length - 1)) * (ancho - padX * 2);
+  const y = (v) => alto - padY - (v / maxValor) * (alto - padY * 2 - 10);
+  const linea = puntos.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(p.valor)}`).join(" ");
+  const area = `${linea} L ${x(puntos.length - 1)} ${alto - padY} L ${x(0)} ${alto - padY} Z`;
+  const gradId = `grad-${color.replace("#", "")}`;
+  const ultimo = puntos[puntos.length - 1];
+  return (
+    <svg viewBox={`0 0 ${ancho} ${alto}`} className="w-full" style={{ height: alto }} preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {[0.25, 0.5, 0.75].map((f) => (
+        <line key={f} x1={0} x2={ancho} y1={alto - padY - f * (alto - padY * 2 - 10)} y2={alto - padY - f * (alto - padY * 2 - 10)} stroke={COLORS.surface2} strokeWidth={1} />
+      ))}
+      <path d={area} fill={`url(#${gradId})`} stroke="none" />
+      <path d={linea} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      {puntos.map((p, i) => (
+        <circle key={i} cx={x(i)} cy={y(p.valor)} r={i === puntos.length - 1 ? 4 : 2.5} fill={color}>
+          <title>{p.etiqueta}: {p.valor.toLocaleString("es-MX")}</title>
+        </circle>
+      ))}
+      <text x={x(puntos.length - 1)} y={Math.max(11, y(ultimo.valor) - 8)} textAnchor="end" fontSize="11" fontWeight="700" fill={color}>
+        {ultimo.valor.toLocaleString("es-MX")}
+      </text>
+    </svg>
+  );
+}
+
+// Distribución de usuarios por plan — reutiliza los mismos colores que ya
+// tiene asignados cada plan en PLAN_INFO (los mismos de PlanBadge/RankIcon
+// en el resto de la app), en vez de inventar una paleta nueva.
+function BarrasPlan({ conteos }) {
+  const total = Math.max(1, PLAN_ORDER.reduce((s, p) => s + (conteos[p] || 0), 0));
+  return (
+    <div className="grid gap-2">
+      {PLAN_ORDER.map((p) => {
+        const n = conteos[p] || 0;
+        const pct = (n / total) * 100;
+        return (
+          <div key={p} className="flex items-center gap-3">
+            <p style={{ color: PLAN_INFO[p].color, width: 76 }} className="text-xs font-semibold shrink-0">{PLAN_INFO[p].nombre}</p>
+            <div style={{ background: COLORS.surface2 }} className="flex-1 rounded-full h-3 overflow-hidden">
+              <div style={{ background: PLAN_INFO[p].color, width: `${pct}%` }} className="h-full rounded-full" />
+            </div>
+            <p style={{ color: COLORS.muted }} className="text-xs w-10 text-right shrink-0">{n}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Agrupa una lista de fechas (created_at) en cubetas semanales (domingo a
+// sábado) y devuelve el conteo ACUMULADO hasta cada semana — así la
+// gráfica muestra crecimiento total en el tiempo, no solo lo nuevo de esa
+// semana en particular.
+function serieAcumuladaPorSemana(fechas) {
+  const validas = fechas.filter(Boolean).map((f) => new Date(f)).sort((a, b) => a - b);
+  if (validas.length === 0) return [];
+  const inicioSemana = (d) => {
+    const copia = new Date(d);
+    copia.setHours(0, 0, 0, 0);
+    copia.setDate(copia.getDate() - copia.getDay());
+    return copia;
+  };
+  const primera = inicioSemana(validas[0]);
+  const ultima = inicioSemana(validas[validas.length - 1]);
+  const semanas = [];
+  for (let d = new Date(primera); d <= ultima; d.setDate(d.getDate() + 7)) semanas.push(new Date(d));
+  let idx = 0, acumulado = 0;
+  return semanas.map((semana) => {
+    const finSemana = new Date(semana);
+    finSemana.setDate(finSemana.getDate() + 7);
+    while (idx < validas.length && validas[idx] < finSemana) { acumulado++; idx++; }
+    return { etiqueta: semana.toLocaleDateString("es-MX", { day: "2-digit", month: "short" }), valor: acumulado };
+  });
+}
+
+// ---- Panel de Admin → "Estadísticas": métricas de crecimiento de la
+// plataforma, con gráficas de progreso en el tiempo (ver arriba MiniAreaChart) ----
+function EstadisticasAdmin({ session }) {
+  const [datos, setDatos] = useState(null); // null = cargando
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    Promise.all([
+      sb(`perfiles?select=id,tipo,plan,gestionado_por,created_at`, session),
+      sb(`tiendas?select=id,afiliada,created_at`, session),
+      sb(`mercado_listings?select=id,tipo,created_at`, session),
+      sb(`inventario_tienda?select=id,created_at`, session),
+      sb(`sellado_tienda?select=id,created_at`, session),
+      sb(`ventas?select=id,estado,tipo,precio,created_at,confirmada_at`, session),
+      sb(`pagos?select=id,status,monto,created_at`, session).catch(() => []),
+      sb(`boosts?select=id,status,monto,created_at`, session).catch(() => []),
+      sb(`reportes?select=id,estado`, session).catch(() => []),
+      sb(`resenas?select=estrellas`, session).catch(() => []),
+    ])
+      .then(([perfiles, tiendas, mercado, inv, sellado, ventas, pagos, boosts, reportes, resenas]) =>
+        setDatos({ perfiles, tiendas, mercado, inv, sellado, ventas, pagos, boosts, reportes, resenas }))
+      .catch((e) => setError(e.message));
+  }, []);
+
+  if (error) return <ErrorBox message={error} />;
+  if (!datos) return <Loading label="Cargando estadísticas..." />;
+
+  const { perfiles, tiendas, mercado, inv, sellado, ventas, pagos, boosts, reportes, resenas } = datos;
+
+  const usuariosReales = perfiles.filter((p) => !p.gestionado_por);
+  const subperfiles = perfiles.filter((p) => p.gestionado_por);
+  const conteoPorPlan = {};
+  PLAN_ORDER.forEach((p) => { conteoPorPlan[p] = 0; });
+  usuariosReales.forEach((p) => { conteoPorPlan[p.plan] = (conteoPorPlan[p.plan] || 0) + 1; });
+
+  const cartasEnVenta = mercado.filter((m) => m.tipo !== "sellado").length + inv.length;
+  const selladoEnVenta = mercado.filter((m) => m.tipo === "sellado").length + sellado.length;
+
+  const ventasConfirmadas = ventas.filter((v) => v.estado === "confirmada");
+  const cartasVendidas = ventasConfirmadas.filter((v) => v.tipo !== "sellado").length;
+  const selladoVendido = ventasConfirmadas.filter((v) => v.tipo === "sellado").length;
+  const montoTotalVentas = ventasConfirmadas.reduce((s, v) => s + (Number(v.precio) || 0), 0);
+
+  const ingresosPlanes = pagos.filter((p) => p.status === "approved").reduce((s, p) => s + (Number(p.monto) || 0), 0);
+  const ingresosBoost = boosts.filter((b) => b.status === "approved").reduce((s, b) => s + (Number(b.monto) || 0), 0);
+
+  const reportesPendientes = reportes.filter((r) => r.estado === "pendiente").length;
+  const promedioEstrellas = resenas.length ? resenas.reduce((s, r) => s + r.estrellas, 0) / resenas.length : 0;
+
+  const serieUsuarios = serieAcumuladaPorSemana(usuariosReales.map((p) => p.created_at));
+  const serieVentas = serieAcumuladaPorSemana(ventasConfirmadas.map((v) => v.confirmada_at || v.created_at));
+  const seriePublicaciones = serieAcumuladaPorSemana([...mercado, ...inv, ...sellado].map((r) => r.created_at));
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Estadísticas</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">
+        Cifras al momento, para monitorear el crecimiento de la plataforma con el tiempo.
+      </p>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Usuarios y tiendas</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <StatTile label="Usuarios registrados" value={usuariosReales.length.toLocaleString("es-MX")} sub={`${subperfiles.length} sub-perfiles (no contados)`} color={COLORS.azulClaro} />
+        <StatTile label="Tiendas en el directorio" value={tiendas.length.toLocaleString("es-MX")} sub={`${tiendas.filter((t) => t.afiliada).length} afiliadas`} color={COLORS.azulMedio} />
+        <StatTile label="Reportes pendientes" value={reportesPendientes} color={reportesPendientes ? "#C24444" : COLORS.muted} />
+        <StatTile label="Calificación promedio" value={resenas.length ? `${promedioEstrellas.toFixed(1)} ★` : "—"} sub={`${resenas.length} reseñas`} color={COLORS.gold} />
+      </div>
+      <p style={{ color: COLORS.muted }} className="text-xs mb-2">Usuarios registrados por plan</p>
+      <div className="mb-8"><BarrasPlan conteos={conteoPorPlan} /></div>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Publicaciones</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+        <StatTile label="Cartas en venta ahora" value={cartasEnVenta.toLocaleString("es-MX")} color={COLORS.azulPalido} />
+        <StatTile label="Sellado en venta ahora" value={selladoEnVenta.toLocaleString("es-MX")} color={COLORS.azulClaro} />
+        <StatTile label="Cartas vendidas" value={cartasVendidas.toLocaleString("es-MX")} color={COLORS.gold} />
+        <StatTile label="Sellado vendido" value={selladoVendido.toLocaleString("es-MX")} color={COLORS.violeta} />
+      </div>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Ingresos</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+        <StatTile label="Ventas entre usuarios (monto)" value={`$${montoTotalVentas.toLocaleString("es-MX")}`} sub={`${ventasConfirmadas.length.toLocaleString("es-MX")} ventas confirmadas`} color={COLORS.azulClaro} />
+        <StatTile label="Ingresos por planes" value={`$${ingresosPlanes.toLocaleString("es-MX")}`} color={COLORS.violeta} />
+        <StatTile label="Ingresos por Boost" value={`$${ingresosBoost.toLocaleString("es-MX")}`} color={COLORS.gold} />
+      </div>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-4 text-sm uppercase">Crecimiento en el tiempo</h3>
+      <div className="grid gap-8">
+        <div>
+          <p className="text-sm font-semibold mb-2">Usuarios registrados (acumulado, por semana)</p>
+          <MiniAreaChart puntos={serieUsuarios} color={COLORS.azulClaro} />
+        </div>
+        <div>
+          <p className="text-sm font-semibold mb-2">Ventas confirmadas (acumulado, por semana)</p>
+          <MiniAreaChart puntos={serieVentas} color={COLORS.gold} />
+        </div>
+        <div>
+          <p className="text-sm font-semibold mb-1">Publicaciones creadas en total (acumulado, por semana)</p>
+          <p style={{ color: COLORS.muted }} className="text-xs mb-2">Incluye las que ya se vendieron o borraron — mide actividad de publicación, no el inventario activo ahora mismo (eso está arriba, en "Publicaciones").</p>
+          <MiniAreaChart puntos={seriePublicaciones} color={COLORS.violeta} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
-  const [tabAdmin, setTabAdmin] = useState("planes");
+  const [tabAdmin, setTabAdmin] = useState("estadisticas");
   const [tiendasSinDueno, setTiendasSinDueno] = useState([]);
   const [perfilesDisponibles, setPerfilesDisponibles] = useState([]);
   const [seleccion, setSeleccion] = useState({});
@@ -2299,6 +2514,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   if (loading) return <Loading label="Cargando panel de administración..." />;
 
   const tabs = [
+    { id: "estadisticas", label: "Estadísticas" },
     { id: "planes", label: "Planes" },
     { id: "tiendas", label: "Tiendas" },
     { id: "subperfiles", label: "Sub-perfiles" },
@@ -2327,6 +2543,8 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
       </div>
 
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {tabAdmin === "estadisticas" && <EstadisticasAdmin session={session} />}
 
       {tabAdmin === "planes" && <CambiarPlanAdmin session={session} />}
 
