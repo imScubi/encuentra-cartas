@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/recordatorios",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/limpiar-papelera-chats",
+      "schedule": "0 16 * * *"
     }
   ]
 }

@@ -39,6 +39,35 @@ export const IDIOMA_OPCIONES = [
 ];
 export const IDIOMA_LABEL = { EN: "Inglés", ES: "Español", JP: "Japonés" };
 
+// ---- Estado (condición) de la carta: obligatorio al publicar una carta suelta,
+// para que el comprador sepa el desgaste real antes de contactar al vendedor ----
+export const CONDICION_OPCIONES = [
+  { key: "GM", label: "Gem Mint", desc: "Perfecta, como recién salida del sobre" },
+  { key: "NM", label: "Near Mint", desc: "Casi perfecta, desgaste mínimo" },
+  { key: "LP", label: "Lightly Played", desc: "Desgaste leve, marcas pequeñas" },
+  { key: "MP", label: "Moderately Played", desc: "Desgaste visible, rayones o doblez leve" },
+  { key: "HP", label: "Heavily Played", desc: "Desgaste fuerte, doblez o daño notorio" },
+  { key: "DMG", label: "Damaged", desc: "Dañada: rota, manchada o muy deteriorada" },
+];
+export const CONDICION_LABEL = Object.fromEntries(CONDICION_OPCIONES.map((o) => [o.key, o.label]));
+export const CONDICION_DESC = Object.fromEntries(CONDICION_OPCIONES.map((o) => [o.key, o.desc]));
+// Para normalizar texto libre (importador masivo, CSV) a un código válido; si no reconoce nada, usa NM por defecto.
+export function normalizarCondicion(texto) {
+  const t = String(texto || "").trim().toUpperCase();
+  if (!t) return "NM";
+  const directo = CONDICION_OPCIONES.find((o) => o.key === t);
+  if (directo) return directo.key;
+  const porNombre = CONDICION_OPCIONES.find((o) => o.label.toUpperCase() === t);
+  if (porNombre) return porNombre.key;
+  if (/GEM ?MINT|^GM$/.test(t)) return "GM";
+  if (/DAMAGED|DMG|DAÑAD/.test(t)) return "DMG";
+  if (/HEAVILY|^HP$/.test(t)) return "HP";
+  if (/MODERATELY|^MP$/.test(t)) return "MP";
+  if (/LIGHTLY|^LP$/.test(t)) return "LP";
+  if (/NEAR ?MINT|^NM$/.test(t)) return "NM";
+  return "NM";
+}
+
 export const STORE_COLORS = [COLORS.azul, COLORS.azulClaro, COLORS.azulMedio, COLORS.azulPalido];
 export const colorFor = (i) => STORE_COLORS[i % STORE_COLORS.length];
 // De los tonos de la paleta, azul y azulMedio son oscuros: sobre ellos el texto debe ir blanco, no negro.
