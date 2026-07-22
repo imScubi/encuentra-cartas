@@ -9,6 +9,36 @@ requirió ningún cambio de código — las URLs de Mercado Pago (`back_urls`,
 dominio desde el que llega la petición (`req.headers.host`), así que
 adaptan solas al dominio que se esté usando en cada momento.
 
+## 50. SEO básico: que Google pueda encontrar e indexar la página
+
+Se agregó lo que depende del código (necesario, pero no basta por sí solo
+para aparecer en Google — falta la parte manual en Search Console, ver
+más abajo):
+- `index.html`: título y descripción pensados para búsquedas reales
+  ("Encuentra Cartas — Compra y vende cartas coleccionables en México"),
+  etiqueta `canonical` apuntando al dominio oficial, y las etiquetas Open
+  Graph/Twitter (para que se vea bien la miniatura cuando alguien comparte
+  el link en WhatsApp, Facebook, etc.) más un bloque de datos
+  estructurados (`JSON-LD` tipo `WebSite`) que ayuda a Google a entender
+  de qué trata el sitio.
+- `public/robots.txt` y `public/sitemap.xml`: le dicen a Google que puede
+  rastrear todo el sitio y dónde está el mapa del sitio.
+
+**Lo que falta es manual, en Google Search Console** (gratis,
+search.google.com/search-console):
+1. Agregar la propiedad `encuentracartasmx.com` (verificación por DNS: te
+   da un registro TXT que agregas en Vercel → tu dominio → DNS Records).
+2. Una vez verificado, en "Sitemaps" pega `https://encuentracartasmx.com/sitemap.xml`.
+3. En "Inspección de URLs" pega la URL principal y dale "Solicitar
+   indexación" para acelerar que Google la vea por primera vez.
+4. Opcional pero muy recomendable para que aparezca en búsquedas locales
+   ("cartas Pokémon Monterrey", etc.): crear un perfil de Google Business.
+
+Aparecer indexado suele tardar de días a un par de semanas; **rankear
+bien** para un término como "encuentra cartas" toma más tiempo y depende
+de que más gente entre, comparta el link y publique contenido real — no
+hay atajo instantáneo de código para eso.
+
 Guía para dejar funcionando de verdad lo que se agregó: los 5 rangos (Cuarzo,
 Zafiro, Amatista, Diamante, Aurora — internamente siguen guardados como
 pokeball/superball/ultraball/masterball/enteball en la base de datos), cobro
