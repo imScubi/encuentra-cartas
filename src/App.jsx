@@ -1067,7 +1067,10 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
   };
 
   const enviar = async (texto, imagenUrl) => {
-    return sbWrite("POST", "mensajes", { de_perfil_id: uid, para_perfil_id: otherId, texto: texto || null, imagen_url: imagenUrl || null, contexto }, session);
+    // imagen_url solo se manda si de verdad hay una imagen: así un mensaje de
+    // solo texto (el 99% de los casos) sigue funcionando aunque la migración
+    // 038 (que agrega esa columna) todavía no se haya corrido en Supabase.
+    return sbWrite("POST", "mensajes", { de_perfil_id: uid, para_perfil_id: otherId, texto: texto || null, contexto, ...(imagenUrl ? { imagen_url: imagenUrl } : {}) }, session);
   };
 
   useEffect(() => {
@@ -1380,7 +1383,10 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nueva.card_api_id || null,
         imagen_url: nueva.imagen_url || null,
         precio_ref_mxn: nueva.precio_ref_mxn || null,
-        foto_real_url: tipo === "carta" ? (nueva.foto_real_url || null) : null,
+        // foto_real_url solo se manda si el vendedor de verdad subió una: así
+        // publicar sigue funcionando aunque la migración 036 (que agrega esa
+        // columna) todavía no se haya corrido en Supabase.
+        ...(tipo === "carta" && nueva.foto_real_url ? { foto_real_url: nueva.foto_real_url } : {}),
       }, session);
       setNueva(vacio);
       cargar();
@@ -3175,8 +3181,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.`); return; }
     setSavingCarta(true);
     try {
+      const { foto_real_url, ...nuevaCartaSinFoto } = nuevaCarta;
       await sbWrite("POST", "inventario_tienda", {
-        ...nuevaCarta,
+        ...nuevaCartaSinFoto,
         precio: Number(nuevaCarta.precio),
         precio_antes: nuevaCarta.precio_antes ? Number(nuevaCarta.precio_antes) : null,
         cantidad: Number(nuevaCarta.cantidad),
@@ -3184,7 +3191,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nuevaCarta.card_api_id || null,
         imagen_url: nuevaCarta.imagen_url || null,
         precio_ref_mxn: nuevaCarta.precio_ref_mxn || null,
-        foto_real_url: nuevaCarta.foto_real_url || null,
+        // foto_real_url solo se manda si de verdad se subió una: así seguir
+        // agregando cartas no se rompe si la migración 036 aún no corrió.
+        ...(foto_real_url ? { foto_real_url } : {}),
       }, session);
       setNuevaCarta({ tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "" });
       cargar();
