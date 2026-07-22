@@ -7863,7 +7863,7 @@ export default function EncuentraCartas() {
                 <div style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(115deg, rgba(255,255,255,0.05) 0 2px, transparent 2px 22px)" }} />
               </div>
               <div className="p-6 pt-0">
-                <div className="flex items-end gap-3 flex-wrap" style={{ marginTop: -34 }}>
+                <div className="flex items-end gap-3 flex-wrap" style={{ marginTop: -34, position: "relative" }}>
                   <HoloAvatar perfil={selectedStore.perfiles} ringSize={78}>
                     <div style={{ border: `4px solid ${COLORS.surface}`, borderRadius: "9999px", background: COLORS.surface, flexShrink: 0 }}>
                       <AvatarImg url={selectedStore.perfiles?.avatar_url} size={72} />
