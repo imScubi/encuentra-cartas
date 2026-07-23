@@ -7571,9 +7571,12 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
               {eras.map((g) => (
                 <button key={g.era} onClick={() => setEraSel(g.era)}
                   style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
-                  className="rounded-xl p-4 text-left hover:brightness-125">
-                  <p className="font-semibold">{g.era}</p>
-                  <p style={{ color: COLORS.muted }} className="text-xs">{g.sets.length} set{g.sets.length === 1 ? "" : "s"}</p>
+                  className="rounded-xl p-4 text-left hover:brightness-125 flex items-center gap-3">
+                  {g.imagen && <img src={g.imagen} alt="" style={{ maxHeight: 36, maxWidth: 90, objectFit: "contain" }} />}
+                  <div>
+                    <p className="font-semibold">{g.era}</p>
+                    <p style={{ color: COLORS.muted }} className="text-xs">{g.sets.length} set{g.sets.length === 1 ? "" : "s"}</p>
+                  </div>
                 </button>
               ))}
             </div>
@@ -8124,24 +8127,25 @@ export default function EncuentraCartas() {
     { id: "search", label: "Buscar", icon: Search },
     { id: "directory", label: "Tiendas", icon: Store },
     { id: "market", label: "Mercado", icon: ShoppingBag },
-    ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
-  ];
-  // Secundarios: en escritorio se ven inline; en celular viven en el menú lateral.
-  const navSecundarios = [
-    { id: "news", label: "Anuncios y noticias", icon: Megaphone },
-    { id: "torneos", label: "Torneos", icon: Calendar },
     { id: "catalogo", label: "Catálogo", icon: BookOpen },
+    { id: "news", label: "Anuncios y noticias", icon: Megaphone },
+    ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
+    ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
+    ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
+    ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: Tag }] : []),
+  ];
+  // El resto vive en el menú lateral (Drawer) — se mantiene ahí para no saturar
+  // el encabezado con cosas que se usan poco (Wishlist, Recompensas, Apariencia, etc.).
+  const navSecundarios = [
+    { id: "torneos", label: "Torneos", icon: Calendar },
     { id: "armarMazo", label: "Armar mazo", icon: Layers },
     { id: "comunidad", label: "Comunidad", icon: Newspaper },
     ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
     ...(session ? [{ id: "siguiendo", label: "Siguiendo", icon: User }] : []),
-    ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
     ...(session ? [{ id: "recompensas", label: "Recompensas", icon: Sparkles }] : []),
     ...(session ? [{ id: "apariencia", label: "Apariencia", icon: Palette }] : []),
     { id: "planes", label: "Planes", icon: Shield },
     ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
-    ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
-    ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: ShoppingBag }] : []),
     { id: "ayuda", label: "Ayuda", icon: HelpCircle },
     ...(perfil?.es_admin ? [{ id: "admin", label: "Admin", icon: Shield }] : []),
   ];
@@ -8151,8 +8155,8 @@ export default function EncuentraCartas() {
     return (
       <button key={item.id} onClick={() => setView(item.id)}
         style={{ background: active ? COLORS.surface2 : "transparent", border: `1px solid ${active ? COLORS.azulPalido : COLORS.surface2}`, color: active ? COLORS.azulPalido : COLORS.muted }}
-        className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
-        <Icon size={15} /> <span className="hidden sm:inline">{item.label}</span>
+        className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 whitespace-nowrap">
+        <Icon size={15} /> <span>{item.label}</span>
       </button>
     );
   };
@@ -8187,7 +8191,7 @@ export default function EncuentraCartas() {
               </>
             )}
           </div>
-          <nav className="relative flex gap-2 items-center">
+          <nav className="relative flex flex-wrap gap-2 items-center">
             {navEsenciales.map(navButton)}
 
             <NotificationBell session={session} onNavigate={setView} />

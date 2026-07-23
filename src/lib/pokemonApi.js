@@ -379,7 +379,14 @@ export async function obtenerErasYSetsPokemon() {
       if (!porEra.has(era)) porEra.set(era, []);
       porEra.get(era).push({ id: s.id, nombre: s.name, cardCount: s.printedTotal, imagen: s.images?.logo || s.images?.symbol || null });
     }
-    _setsPokemonCache = Array.from(porEra, ([era, sets]) => ({ era, sets }));
+    // Logo representativo de la era: el de su set más antiguo (el "set base"
+    // de esa generación) — como los sets llegan ordenados por -releaseDate,
+    // el último empujado a cada era es el más viejo. pokemontcg.io no tiene
+    // un logo separado "de la era", así que se usa este como el más cercano.
+    _setsPokemonCache = Array.from(porEra, ([era, sets]) => {
+      const base = sets[sets.length - 1];
+      return { era, sets, imagen: base?.imagen || sets.find((s) => s.imagen)?.imagen || null };
+    });
   } catch {
     _setsPokemonCache = [];
   }
