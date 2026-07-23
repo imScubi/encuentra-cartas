@@ -2014,6 +2014,34 @@ accionable.
   antes -- este cambio solo afecta específicamente a las 4 funciones que
   hablan con catálogos externos de terceros.
 
+## 72. Filtrar ruido de errores que no tienen nada que ver con la app
+
+Tercer aviso de error el mismo día, esta vez `Uncaught Error: Error
+invoking postMessage: Java object is gone`, con el stack apuntando a
+`iabjs://navigation_performance_logger_android`. Ese `iabjs://` es el
+navegador integrado de una app de Android (Gmail, Facebook, Instagram,
+etc. cuando abres un link "dentro" de la app en vez de en Chrome) —
+su propio script de medición de navegación truena cuando cierran esa
+vista antes de que termine de llamar a su puente Java. No tiene nada que
+ver con el código de Encuentra Cartas ni es algo que se pueda arreglar
+desde la web.
+
+En vez de ir tapando un patrón a la vez cada vez que llegue uno nuevo, se
+agregó una lista de "ruido conocido" en `errorReporting.jsx`
+(`RUIDO_CONOCIDO`) que se revisa ANTES de mandar el reporte -- si el
+mensaje o el stack hace match, ni siquiera se manda la llamada de red.
+Incluye, además del caso de arriba: navegadores integrados de Android en
+general (`iabjs://`), la advertencia inofensiva de `ResizeObserver loop`
+(muy común en Chrome/Safari, no rompe nada), el `Script error.` genérico
+que mandan los navegadores cuando el script que falló es de otro origen
+(casi siempre una extensión instalada, no nuestro bundle), y errores con
+stack de una extensión del navegador (`chrome-extension://`,
+`moz-extension://`, `safari-extension://`). Cualquier error real de
+nuestro propio código sigue avisando exactamente igual que antes — esta
+lista es deliberadamente específica (son patrones que ya llegaron por
+correo, no una suposición) para no silenciar por accidente algo que sí
+importa.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
