@@ -21,7 +21,7 @@ import {
   obtenerErasYSetsCatalogo, obtenerCartasDeSetCatalogo,
 } from "./lib/pokemonApi.js";
 import {
-  FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
+  FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre, conAlpha,
   PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
   BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero,
   MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, aplicarTema,
@@ -226,10 +226,10 @@ function BoostButton({ session, tabla, item, onBoosted }) {
   return (
     <div className="flex items-center gap-1 flex-wrap">
       {error && <span style={{ color: COLORS.azulPalido }} className="text-xs">{error}</span>}
-      <button onClick={() => destacar(3)} disabled={pagando !== null} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+      <button onClick={() => destacar(3)} disabled={pagando !== null} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
         {pagando === 3 ? "..." : `3 días · $${BOOST_PRECIOS[3]}`}
       </button>
-      <button onClick={() => destacar(7)} disabled={pagando !== null} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+      <button onClick={() => destacar(7)} disabled={pagando !== null} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
         {pagando === 7 ? "..." : `7 días · $${BOOST_PRECIOS[7]}`}
       </button>
       <button onClick={() => setAbierto(false)} style={{ color: COLORS.muted }} className="text-xs px-1">✕</button>
@@ -256,7 +256,7 @@ function PlanBadge({ perfil, size = "sm" }) {
   const iconPx = size === "lg" ? 18 : 14;
   const holoStyle = info.holo
     ? {
-        color: COLORS.bg,
+        color: COLORS.textoOscuro,
         border: "none",
         background: "linear-gradient(90deg,#FF9FE0,#9EC0EE,#FFD34D,#8B5CF6)",
         backgroundSize: "300% 100%",
@@ -379,7 +379,7 @@ function ReportarModal({ session, tipo, tablaObjetivo, objetivoId, objetivoPerfi
             <textarea value={detalle} onChange={(e) => setDetalle(e.target.value)} placeholder="Detalle (opcional)"
               style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
               className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-3" rows={3} />
-            <button onClick={enviar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="w-full rounded-lg py-2 text-sm font-semibold">
+            <button onClick={enviar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="w-full rounded-lg py-2 text-sm font-semibold">
               {enviando ? "Enviando..." : "Enviar reporte"}
             </button>
           </>
@@ -495,7 +495,7 @@ function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, tipoI
             <p style={{ color: COLORS.muted }} className="text-xs mb-3">
               Le mandaremos un aviso a {comprador.nombre} para que confirme la compra. Cuando confirme, contará como venta completada y podrán calificarse mutuamente.
             </p>
-            <button onClick={confirmar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="w-full rounded-lg py-2 text-sm font-semibold">
+            <button onClick={confirmar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="w-full rounded-lg py-2 text-sm font-semibold">
               {enviando ? "Enviando..." : "Confirmar venta"}
             </button>
           </>
@@ -546,7 +546,7 @@ function SeguirBoton({ session, seguidoPerfilId }) {
   if (siguiendo === null) return null;
   return (
     <button onClick={alternar} disabled={enviando}
-      style={siguiendo ? { color: COLORS.muted, border: `1px solid ${COLORS.surface2}` } : { background: COLORS.azulClaro, color: COLORS.bg }}
+      style={siguiendo ? { color: COLORS.muted, border: `1px solid ${COLORS.surface2}` } : { background: COLORS.azulClaro, color: COLORS.textoOscuro }}
       className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap">
       {siguiendo ? "Siguiendo ✓" : "+ Seguir"}
     </button>
@@ -608,7 +608,7 @@ function CalificarModal({ session, ventaId, objetivoPerfilId, objetivoNombre, on
         <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Comentario (opcional)"
           style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
           className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-3" rows={3} />
-        <button onClick={enviar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="w-full rounded-lg py-2 text-sm font-semibold">
+        <button onClick={enviar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="w-full rounded-lg py-2 text-sm font-semibold">
           {enviando ? "Enviando..." : "Enviar calificación"}
         </button>
       </div>
@@ -1012,7 +1012,7 @@ function AccountModal({ onClose, onAuthed }) {
             {error && <ErrorBox message={error} />}
             {info && <p style={{ color: COLORS.azulPalido }} className="text-xs">{info}</p>}
             <button onClick={handleSignUp} disabled={loading || !email || !password || !nombre}
-              style={{ background: accountType === "tienda" ? COLORS.azulPalido : COLORS.azulClaro, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
+              style={{ background: accountType === "tienda" ? COLORS.azulPalido : COLORS.azulClaro, color: COLORS.textoOscuro, opacity: loading ? 0.6 : 1 }}
               className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
               {loading && <Loader2 size={16} className="animate-spin" />} Crear cuenta
             </button>
@@ -1029,7 +1029,7 @@ function AccountModal({ onClose, onAuthed }) {
               style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
             {error && <ErrorBox message={error} />}
             <button onClick={handleLogin} disabled={loading || !email || !password}
-              style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: loading ? 0.6 : 1 }}
               className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
               {loading && <Loader2 size={16} className="animate-spin" />} Entrar
             </button>
@@ -1092,7 +1092,7 @@ function CompletarPerfilOAuthModal({ session, onCreado, onCancelar }) {
           )}
           {error && <ErrorBox message={error} />}
           <button onClick={confirmar} disabled={loading || !accountType || !nombre.trim()}
-            style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
+            style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: loading ? 0.6 : 1 }}
             className="rounded-lg py-2 font-semibold flex items-center justify-center gap-2">
             {loading && <Loader2 size={16} className="animate-spin" />} Continuar
           </button>
@@ -1359,7 +1359,7 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
             <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSend()}
               placeholder="Escribe un mensaje..." style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
               className="flex-1 rounded-lg px-3 py-2 text-sm outline-none min-w-0" />
-            <button onClick={handleSend} disabled={sending} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg p-2 shrink-0">
+            <button onClick={handleSend} disabled={sending} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg p-2 shrink-0">
               <Send size={16} />
             </button>
           </div>
@@ -1568,7 +1568,7 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda
           </>
         )}
       </div>
-      <button onClick={guardar} disabled={saving} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
+      <button onClick={guardar} disabled={saving} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
         {saving ? "Guardando..." : "Guardar"}
       </button>
       {ok && <p style={{ color: COLORS.azulPalido }} className="text-xs">Guardado.</p>}
@@ -1702,7 +1702,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
       {alLimite && (
         <div style={{ background: `${COLORS.azulPalido}11`, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
           <p style={{ color: COLORS.azulPalido }} className="text-sm">Alcanzaste el límite de tu plan. Mejora a Diamante para publicaciones ilimitadas.</p>
-          <button onClick={onIrAPlanes} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
+          <button onClick={onIrAPlanes} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
         </div>
       )}
 
@@ -1936,7 +1936,7 @@ function CambiarPlanAdmin({ session }) {
       <div className="flex gap-2 mb-4">
         <input placeholder="Busca por nombre o correo..." value={query} onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && buscar()} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1" />
-        <button onClick={buscar} disabled={buscando || !query.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+        <button onClick={buscar} disabled={buscando || !query.trim()} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
           {buscando ? "Buscando..." : "Buscar"}
         </button>
       </div>
@@ -1985,7 +1985,7 @@ function CambiarPlanAdmin({ session }) {
             </label>
           )}
 
-          <button onClick={guardar} disabled={guardando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={guardar} disabled={guardando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
             {guardando ? "Guardando..." : "Guardar cambios"}
           </button>
         </div>
@@ -2905,7 +2905,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
               {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
             </select>
             <button onClick={crearTienda} disabled={creandoTienda || !nuevaTienda.nombre.trim() || !nuevaTienda.direccion.trim()}
-              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
               {creandoTienda ? "Creando..." : "Crear tienda"}
             </button>
           </div>
@@ -2929,7 +2929,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                       {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                     </select>
                     <button onClick={() => vincular(t.id)} disabled={!seleccion[t.id] || vinculando === t.id}
-                      style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: seleccion[t.id] ? 1 : 0.5 }}
+                      style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: seleccion[t.id] ? 1 : 0.5 }}
                       className="rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap">
                       {vinculando === t.id ? "Vinculando..." : "Vincular"}
                     </button>
@@ -3014,7 +3014,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                             <Navigation size={12} /> Mi ubicación
                           </button>
                           <button onClick={() => guardarTiendaEditada(t.id)} disabled={guardandoTienda === t.id || !tiendaEdit.nombre.trim() || !tiendaEdit.direccion.trim()}
-                            style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                            style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                             {guardandoTienda === t.id ? "Guardando..." : "Guardar cambios"}
                           </button>
                         </div>
@@ -3044,7 +3044,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
               <option value="tienda">Tienda</option>
             </select>
             <button onClick={crearSubperfil} disabled={creandoSubperfil || !nombreSubperfil.trim()}
-              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
               {creandoSubperfil ? "Creando..." : "Crear sub-perfil"}
             </button>
           </div>
@@ -3065,7 +3065,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                       {PLAN_ORDER.map((p) => <option key={p} value={p}>{PLAN_INFO[p].nombre}</option>)}
                     </select>
                     <button onClick={() => entrarComoSub(s.id)} disabled={entrandoSub === s.id}
-                      style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                      style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
                       {entrandoSub === s.id ? "Entrando..." : "Entrar como"}
                     </button>
                   </div>
@@ -3115,7 +3115,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
           )}
         </div>
         <button onClick={crearAnuncio} disabled={creandoAnuncio || !tituloAnuncio.trim() || !contenidoAnuncio.trim()}
-          style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
           {creandoAnuncio ? "Guardando..." : modoAnuncio === "programar" ? "Programar anuncio" : "Publicar ahora"}
         </button>
       </div>
@@ -3136,7 +3136,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                 <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => aprobarAnuncio(n)} disabled={procesando === n.id}
-                    style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                     {procesando === n.id ? "..." : "Aprobar y publicar"}
                   </button>
                   <button onClick={() => rechazarAnuncio(n)} disabled={procesando === n.id}
@@ -3196,7 +3196,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => guardarAnuncioEditado(n.id)} disabled={guardandoAnuncio === n.id || !anuncioEdit.titulo.trim() || !anuncioEdit.contenido.trim()}
-                        style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                        style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                         {guardandoAnuncio === n.id ? "Guardando..." : "Guardar cambios"}
                       </button>
                       <button onClick={() => setEditandoAnuncio(null)} style={{ color: COLORS.muted }} className="text-xs px-3 py-1.5">Cancelar</button>
@@ -3241,7 +3241,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
               onChange={(e) => setBuscarPub(e.target.value)} onKeyDown={(e) => e.key === "Enter" && buscarPublicaciones()}
               style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1" />
             <button onClick={buscarPublicaciones} disabled={buscandoPub || !buscarPub.trim()}
-              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
               {buscandoPub ? "Buscando..." : "Buscar"}
             </button>
           </div>
@@ -3807,7 +3807,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
           </div>
           <div className="flex gap-2">
             <button onClick={publicarRevision} disabled={publicando || !idiomaCarpeta || !estadoCarpeta}
-              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">
               {publicando ? "Publicando..." : "Publicar cartas incluidas"}
             </button>
             <button onClick={() => { setRevision(null); setIdiomaCarpeta(""); setEstadoCarpeta(""); }} style={{ color: COLORS.muted }} className="text-sm">Cancelar</button>
@@ -3962,7 +3962,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       {alLimite && (
         <div style={{ background: `${COLORS.azulPalido}11`, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
           <p style={{ color: COLORS.azulPalido }} className="text-sm">Alcanzaste el límite de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.</p>
-          <button onClick={onIrAPlanes} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
+          <button onClick={onIrAPlanes} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
         </div>
       )}
 
@@ -4032,7 +4032,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             onChange={(patch) => setNuevaCarta({ ...nuevaCarta, ...patch })}
           />
         </div>
-        <button onClick={agregarCarta} disabled={savingCarta || alLimite || !nuevaCarta.idioma || !nuevaCarta.condicion} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
+        <button onClick={agregarCarta} disabled={savingCarta || alLimite || !nuevaCarta.idioma || !nuevaCarta.condicion} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
           {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
       </div>
@@ -4108,7 +4108,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         <div className="grid sm:grid-cols-3 gap-2">
           <input placeholder="Precio" type="number" value={nuevoSellado.precio} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nuevoSellado.precio_antes} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregarSellado} disabled={savingSellado || alLimite} style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={agregarSellado} disabled={savingSellado || alLimite} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : savingSellado ? "Guardando..." : "+ Agregar"}
           </button>
         </div>
@@ -4213,7 +4213,7 @@ function ProponerAnuncio({ session, tiendaId }) {
           )}
         </div>
         <button onClick={enviar} disabled={enviando || !titulo.trim() || !contenido.trim()}
-          style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
           {enviando ? "Enviando..." : "Enviar para aprobación"}
         </button>
       </div>
@@ -4423,7 +4423,7 @@ function OnboardingTutorial({ onClose }) {
   return createPortal(
     <div style={{ background: "#00000099" }} className="fixed inset-0 z-[95] flex items-center justify-center p-4">
       <div
-        style={{ background: "rgba(10,19,48,0.92)", border: `1px solid ${COLORS.azulMedio}44`, boxShadow: "0 30px 80px rgba(0,0,0,0.5)", backdropFilter: "blur(18px)" }}
+        style={{ background: conAlpha(COLORS.surface, 0.95), border: `1px solid ${COLORS.azulMedio}44`, boxShadow: "0 30px 80px rgba(0,0,0,0.5)", backdropFilter: "blur(18px)" }}
         className="w-full max-w-md rounded-[28px] relative"
       >
         <button onClick={finalizar} style={{ color: COLORS.muted }} className="absolute top-5 right-5 z-10 text-sm font-semibold">
@@ -4783,7 +4783,7 @@ function ComunidadView({ session, onVerPerfil }) {
           </div>
           <textarea value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Cuéntanos algo (opcional)"
             style={inputStyle} className="w-full rounded-lg px-3 py-2 text-sm outline-none" rows={2} />
-          <button onClick={publicar} disabled={!archivo || publicando} style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: archivo ? 1 : 0.5 }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
+          <button onClick={publicar} disabled={!archivo || publicando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: archivo ? 1 : 0.5 }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
             {publicando ? "Publicando..." : "Publicar"}
           </button>
         </div>
@@ -4944,7 +4944,7 @@ function ArmarMazoView({ session, onAbrirChat, onVerTienda }) {
         </div>
       )}
 
-      <button onClick={buscar} disabled={buscando || !texto.trim()} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold mb-6">
+      <button onClick={buscar} disabled={buscando || !texto.trim()} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold mb-6">
         {buscando ? "Buscando..." : "Buscar en el mercado"}
       </button>
 
@@ -5138,7 +5138,7 @@ function MazosView({ session, perfil, onIrAPlanes }) {
           <div className="flex flex-wrap gap-2 mb-3">
             <input value={nombreEdit} onChange={(e) => setNombreEdit(e.target.value)} placeholder="Nombre del mazo" style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
             <input value={etiquetasEdit} onChange={(e) => setEtiquetasEdit(e.target.value)} placeholder="Etiquetas separadas por coma" style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-            <button onClick={guardarNombreEtiquetas} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-2 text-sm font-semibold">Guardar</button>
+            <button onClick={guardarNombreEtiquetas} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-2 text-sm font-semibold">Guardar</button>
           </div>
         ) : (
           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -5182,7 +5182,7 @@ function MazosView({ session, perfil, onIrAPlanes }) {
                   <div className="flex items-center justify-between gap-1 mt-auto pt-1">
                     <button onClick={() => cambiarCantidad(mc, -1)} style={{ background: COLORS.surface2, color: COLORS.text }} className="w-6 h-6 rounded-md text-sm font-bold">−</button>
                     <span style={{ fontFamily: "'Space Mono', monospace" }} className="text-sm font-semibold">{mc.cantidad}</span>
-                    <button onClick={() => cambiarCantidad(mc, 1)} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="w-6 h-6 rounded-md text-sm font-bold">+</button>
+                    <button onClick={() => cambiarCantidad(mc, 1)} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="w-6 h-6 rounded-md text-sm font-bold">+</button>
                   </div>
                 </div>
               </div>
@@ -5206,7 +5206,7 @@ function MazosView({ session, perfil, onIrAPlanes }) {
         </select>
         <input placeholder="Nombre del mazo (ej. Charizard ex)" value={nombreNuevo} onChange={(e) => setNombreNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
         <input placeholder="Etiquetas (ej. Estándar, Torneo)" value={etiquetasNuevo} onChange={(e) => setEtiquetasNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-        <button onClick={crearMazo} disabled={creando || !nombreNuevo.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+        <button onClick={crearMazo} disabled={creando || !nombreNuevo.trim()} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
           {creando ? "Creando..." : "+ Nuevo mazo"}
         </button>
       </div>
@@ -5570,7 +5570,7 @@ function ComprasVentasView({ session }) {
                 {tab === "compras" && v.estado === "pendiente" && (
                   <>
                     <button onClick={() => resolver(v.id, "confirmada")} disabled={procesando === v.id}
-                      style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap">
+                      style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap">
                       {procesando === v.id ? "..." : "Confirmar compra"}
                     </button>
                     <button onClick={() => resolver(v.id, "rechazada")} disabled={procesando === v.id}
@@ -5980,7 +5980,7 @@ function OfertasPanel({ session, listingTabla, listingId }) {
             style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
           <div className="flex gap-2 items-center flex-wrap">
             <input type="number" placeholder="Tu oferta en $ (opcional)" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[140px]" />
-            <button onClick={publicar} disabled={enviando || (!texto.trim() && !monto)} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+            <button onClick={publicar} disabled={enviando || (!texto.trim() && !monto)} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
               {enviando ? "Enviando..." : "Publicar"}
             </button>
           </div>
@@ -6121,7 +6121,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
               <button
                 onClick={() => onAbrirChat(item.vendedor.perfilId, item.vendedor.nombre, item.contexto, item.vendedor.whatsapp, item.vendedor.facebook, item.vendedor.avatarUrl)}
                 disabled={!item.vendedor.perfilId}
-                style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: item.vendedor.perfilId ? 1 : 0.5 }}
+                style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: item.vendedor.perfilId ? 1 : 0.5 }}
                 className="rounded-xl py-3 text-sm font-bold w-full flex items-center justify-center gap-2">
                 <MessageCircle size={16} /> Contactar vendedor
               </button>
@@ -6220,7 +6220,7 @@ function TorneosView({ session, onRequireLogin }) {
               {t.costo != null && <p style={{ color: COLORS.muted }} className="text-xs mt-1">Costo: ${Number(t.costo).toLocaleString("es-MX")} MXN</p>}
               <div className="flex items-center gap-3 mt-3">
                 <button onClick={() => toggleInteres(t.id)} disabled={marcando === t.id}
-                  style={{ background: interesado ? COLORS.azulPalido : "transparent", border: `1px solid ${COLORS.azul}66`, color: interesado ? COLORS.bg : COLORS.azulPalido }}
+                  style={{ background: interesado ? COLORS.azulPalido : "transparent", border: `1px solid ${COLORS.azul}66`, color: interesado ? COLORS.textoOscuro : COLORS.azulPalido }}
                   className="rounded-lg px-4 py-1.5 text-xs font-semibold">
                   {interesado ? "✓ Me interesa" : "Me interesa"}
                 </button>
@@ -6287,7 +6287,7 @@ function CalendarioPicker({ value, onChange }) {
                   <button key={i} type="button" disabled={esPasado} onClick={() => elegir(d)}
                     style={{
                       background: esSeleccionado ? COLORS.azulPalido : "transparent",
-                      color: esSeleccionado ? COLORS.bg : esPasado ? COLORS.muted : COLORS.text,
+                      color: esSeleccionado ? COLORS.textoOscuro : esPasado ? COLORS.muted : COLORS.text,
                       opacity: esPasado ? 0.35 : 1,
                     }}
                     className="rounded-lg py-1.5 text-xs">
@@ -6370,7 +6370,7 @@ function CrearTorneo({ session, tiendaId }) {
           <input type="number" placeholder="Costo de inscripción (opcional)" value={costo} onChange={(e) => setCosto(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
         </div>
         <button onClick={crear} disabled={enviando || !nombre.trim() || !fechaDia || !fechaHora}
-          style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
           {enviando ? "Publicando..." : "Publicar torneo"}
         </button>
       </div>
@@ -6948,7 +6948,7 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil
             </p>
           )}
 
-          <button onClick={guardar} disabled={saving || !nombre.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: saving ? 0.6 : 1 }} className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
+          <button onClick={guardar} disabled={saving || !nombre.trim()} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: saving ? 0.6 : 1 }} className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
             {saving && <Loader2 size={16} className="animate-spin" />} Guardar cambios
           </button>
         </div>
@@ -7156,7 +7156,7 @@ function NotificationBell({ session, onNavigate }) {
       <button ref={btnRef} onClick={abrir} style={{ color: COLORS.muted }} className="relative p-2 rounded-lg">
         <Bell size={18} />
         {noLeidas > 0 && (
-          <span style={{ background: COLORS.azulPalido, color: COLORS.bg }}
+          <span style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }}
             className="absolute -top-1 -right-1 rounded-full text-[10px] font-bold w-4 h-4 flex items-center justify-center">
             {noLeidas > 9 ? "9+" : noLeidas}
           </span>
@@ -7264,7 +7264,7 @@ function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil
               </button>
             </>
           ) : (
-            <button onClick={onLogin} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="mx-4 rounded-lg px-4 py-2 text-sm font-bold w-[calc(100%-2rem)]">
+            <button onClick={onLogin} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="mx-4 rounded-lg px-4 py-2 text-sm font-bold w-[calc(100%-2rem)]">
               Iniciar sesión / Crear cuenta
             </button>
           )}
@@ -7346,7 +7346,7 @@ function BackgroundField() {
           background: `radial-gradient(60% 50% at 15% 8%, rgba(79,127,209,.28), transparent 60%),
             radial-gradient(50% 45% at 85% 15%, rgba(139,92,246,.16), transparent 60%),
             radial-gradient(70% 60% at 50% 95%, rgba(255,211,77,.08), transparent 60%),
-            linear-gradient(180deg, ${COLORS.bg} 0%, ${COLORS.surface} 45%, #070c1c 100%)`,
+            linear-gradient(180deg, ${COLORS.bg} 0%, ${COLORS.surface} 45%, ${COLORS.fondoProfundo} 100%)`,
         }}
       />
       <div
@@ -7459,7 +7459,7 @@ function CarritoView({ carrito, onQuitar, onRequireLogin, onEnviado, session }) 
     return (
       <div className="text-center py-16">
         <p style={{ color: COLORS.muted }} className="text-sm mb-4">Inicia sesión para usar el carrito.</p>
-        <button onClick={onRequireLogin} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">Iniciar sesión</button>
+        <button onClick={onRequireLogin} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">Iniciar sesión</button>
       </div>
     );
   }
@@ -7541,7 +7541,7 @@ function CarritoView({ carrito, onQuitar, onRequireLogin, onEnviado, session }) 
         style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
         className="rounded-lg px-3 py-2 text-sm w-full outline-none mb-3" placeholder="Escribe tu mensaje..." />
       <button onClick={enviarATodos} disabled={enviando || !mensaje.trim()}
-        style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: enviando ? 0.6 : 1 }}
+        style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: enviando ? 0.6 : 1 }}
         className="rounded-lg py-2.5 px-4 text-sm font-semibold flex items-center gap-2">
         {enviando && <Loader2 size={16} className="animate-spin" />} Enviar mensaje a {listaGrupos.length} vendedor{listaGrupos.length === 1 ? "" : "es"}
       </button>
@@ -7872,7 +7872,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
                         ✅ Tengo
                       </button>
                       <button onClick={() => marcar(c, "quiero")}
-                        style={{ background: estado === "quiero" ? COLORS.azulPalido : "transparent", border: `1px solid ${COLORS.azulPalido}88`, color: estado === "quiero" ? COLORS.bg : COLORS.azulPalido }}
+                        style={{ background: estado === "quiero" ? COLORS.azulPalido : "transparent", border: `1px solid ${COLORS.azulPalido}88`, color: estado === "quiero" ? COLORS.textoOscuro : COLORS.azulPalido }}
                         className="flex-1 rounded-lg py-1 text-[11px] font-semibold">
                         ⭐ Quiero
                       </button>
@@ -8427,7 +8427,7 @@ export default function EncuentraCartas() {
       <style>{FONTS}</style>
       <BackgroundField />
 
-      <header style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: `1px solid ${COLORS.azulClaro}2e`, background: "rgba(5,8,16,0.66)", backdropFilter: "blur(14px)" }}
+      <header style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: `1px solid ${COLORS.azulClaro}2e`, background: conAlpha(COLORS.bg, 0.66), backdropFilter: "blur(14px)" }}
         className="px-4 sm:px-8 py-6">
         <div className="max-w-5xl mx-auto flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-2">
@@ -8450,7 +8450,7 @@ export default function EncuentraCartas() {
             <button onClick={() => setView("carrito")} style={{ color: view === "carrito" ? COLORS.azulPalido : COLORS.muted }} className="relative p-2 rounded-lg">
               <ShoppingCart size={18} />
               {carrito.length > 0 && (
-                <span style={{ background: COLORS.azulPalido, color: COLORS.bg }}
+                <span style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }}
                   className="absolute -top-1 -right-1 rounded-full text-[10px] font-bold w-4 h-4 flex items-center justify-center">
                   {carrito.length > 9 ? "9+" : carrito.length}
                 </span>
@@ -8473,7 +8473,7 @@ export default function EncuentraCartas() {
       </header>
 
       {adminStash && (
-        <div style={{ position: "relative", zIndex: 10, background: COLORS.gold, color: COLORS.bg }}
+        <div style={{ position: "relative", zIndex: 10, background: COLORS.gold, color: COLORS.textoOscuro }}
           className="px-4 py-2 text-sm font-semibold flex items-center justify-center gap-3 flex-wrap text-center">
           <span>🔀 Estás usando el sub-perfil "{perfil?.nombre}"</span>
           <button onClick={volverAMiCuentaAdmin} className="underline whitespace-nowrap">Volver a mi cuenta admin</button>

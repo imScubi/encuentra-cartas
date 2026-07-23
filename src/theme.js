@@ -28,6 +28,14 @@ export const COLORS = {
   azul: "#0B2A66", azulClaro: "#4F7FD1", azulMedio: "#1B4A9E",
   azulPalido: "#9EC0EE", gold: "#FFD34D", violeta: "#8B5CF6",
   text: "#F4F6FB", muted: "#8291B5",
+  // Fijo siempre (no lo toca aplicarTema, ver más abajo): para texto legible
+  // sobre botones/insignias con fondo claro o medio (azulPalido, azulClaro,
+  // gold) sin importar el modo. Antes esos botones usaban COLORS.bg como
+  // "el color oscuro de siempre" -- funcionaba de casualidad en modo noche
+  // (donde bg sí es oscuro) pero en modo día bg es claro, así que el texto
+  // se volvía casi invisible sobre esos mismos botones.
+  textoOscuro: "#0B1220",
+  fondoProfundo: "#070c1c",
 };
 
 // ---- TCG (juego de cartas): Pokémon fue el primero en tener catálogo
@@ -204,9 +212,12 @@ export const conBoostPrimero = (lista) => {
 // Bases deliberadamente neutras (sin tinte azul propio): así, cuando aplicarTema()
 // mezcla el color del tipo de Pokémon encima, el tinte resultante se ve limpio y
 // fiel al tipo elegido, en vez de mezclarse con un azul de fondo que ya traía el modo.
+// fondoProfundo: el tono al que se degrada el fondo animado (BackgroundField)
+// en su punto más profundo -- antes era un oscuro fijo en todos los modos,
+// lo que hacía que el fondo animado se viera negro incluso en modo día.
 export const MODOS_COLOR = {
-  noche: { bg: "#08080B", surface: "#131318", surface2: "#1D1D24", text: "#F4F6FB", muted: "#8B93A8" },
-  dia: { bg: "#F4F4F6", surface: "#FFFFFF", surface2: "#E7E7EC", text: "#0B1220", muted: "#5B6472" },
+  noche: { bg: "#08080B", surface: "#131318", surface2: "#1D1D24", text: "#F4F6FB", muted: "#8B93A8", fondoProfundo: "#070c1c" },
+  dia: { bg: "#F5F5F8", surface: "#FFFFFF", surface2: "#EAECF2", text: "#0B1220", muted: "#5B6472", fondoProfundo: "#D7DEEC" },
 };
 
 export const TIPOS_POKEMON_INFO = {
@@ -271,17 +282,41 @@ function mezclarHex(hexBase, hexTinte, cantidad) {
 export function aplicarTema(modo, tipo) {
   const m = MODOS_COLOR[modo] || MODOS_COLOR.noche;
   const t = TIPOS_POKEMON_COLOR[tipo] || TIPOS_POKEMON_COLOR.default;
+  const esDia = modo === "dia";
   // No solo cambiamos el acento (botones/bordes) — también teñimos el fondo y las
   // superficies con el color del tipo, para que el cambio se note de verdad y no
   // solo en detalles pequeños de texto.
+  //
+  // De noche se tiñe hacia el tono OSCURO del tipo (azul/azulMedio): parte de
+  // un fondo casi negro, así que agregar un oscuro lo aclara un poco y se
+  // nota el tinte. De día pasaría lo contrario: mezclar ese mismo oscuro en
+  // un fondo casi blanco lo apaga, y como "surface" recibe más tinte que
+  // "bg" (28% vs 22%), de día terminaba MÁS oscuro que el fondo -- las
+  // tarjetas se veían más sucias que la página en vez de "flotar" sobre
+  // ella. De día se tiñe hacia el tono CLARO del tipo (azulPalido/azulClaro)
+  // para que el resultado se quede luminoso y la tarjeta sí se vea más
+  // clara que el fondo.
+  const tinteSuperficie = esDia ? t.azulPalido : t.azul;
+  const tinteProfundo = esDia ? t.azulClaro : t.azulMedio;
   Object.assign(COLORS, {
-    bg: mezclarHex(m.bg, t.azul, 0.22),
-    surface: mezclarHex(m.surface, t.azul, 0.28),
-    surface2: mezclarHex(m.surface2, t.azulMedio, 0.34),
+    bg: mezclarHex(m.bg, tinteSuperficie, 0.22),
+    surface: mezclarHex(m.surface, tinteSuperficie, 0.28),
+    surface2: mezclarHex(m.surface2, tinteProfundo, 0.34),
     text: m.text,
     muted: m.muted,
+    fondoProfundo: m.fondoProfundo,
   }, t);
   STORE_COLORS.splice(0, STORE_COLORS.length, COLORS.azul, COLORS.azulClaro, COLORS.azulMedio, COLORS.azulPalido);
+}
+
+// "#RRGGBB" -> "rgba(r, g, b, alpha)": para fondos translúcidos (el header
+// con blur, el modal de bienvenida) que necesitan seguir el modo actual en
+// vez de quedar fijos en un tono oscuro que no cambia de día.
+export function conAlpha(hex, alpha) {
+  const limpio = hex.replace("#", "");
+  const n = parseInt(limpio, 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // Se aplica una sola vez, al cargar el módulo (antes de que React pinte nada),
