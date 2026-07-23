@@ -1691,10 +1691,22 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
 
   const alLimite = limiteAlcanzado(perfil, publicaciones.length);
 
+  // Lista legible de lo que falta para poder publicar -- antes el botón
+  // simplemente se quedaba deshabilitado sin decir por qué (sobre todo
+  // confuso desde que las 2 fotos son obligatorias), así que ahora se le
+  // muestra a la persona exactamente qué le falta en vez de dejarla
+  // adivinando por qué "no pasa nada" al hacer clic.
+  const faltantes = [];
+  if (!nueva.carta) faltantes.push(tipo === "accesorio" ? "el nombre del accesorio" : "elegir la carta/producto");
+  if (!nueva.precio) faltantes.push("el precio");
+  if (!nueva.zona) faltantes.push("la zona");
+  if (tipo === "carta" && !nueva.condicion) faltantes.push("el estado de la carta");
+  if (tipo === "carta" && !nueva.idioma) faltantes.push("el idioma de la carta");
+  if (!nueva.foto_real_url) faltantes.push("la foto de frente");
+  if (!nueva.foto_real_reverso_url) faltantes.push("la foto de atrás");
+
   const agregar = async () => {
-    if (!nueva.carta || !nueva.precio || !nueva.zona) return;
-    if (tipo === "carta" && (!nueva.idioma || !nueva.condicion)) return;
-    if (!nueva.foto_real_url || !nueva.foto_real_reverso_url) return;
+    if (faltantes.length > 0) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante para inventario ilimitado.`); return; }
     setSaving(true);
     try {
@@ -1726,7 +1738,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           ? { gradeada: true, grado_empresa: nueva.grado_empresa || null, grado_empresa_otro: nueva.grado_empresa === "OTRO" ? nueva.grado_empresa_otro || null : null, grado_calificacion: nueva.grado_calificacion || null }
           : {}),
         ...(tipo === "accesorio" ? { descripcion: nueva.descripcion || null, etiquetas: etiquetasArr, etiquetas_texto: etiquetasArr.join(" ") } : {}),
-        ...(nueva.buzon_tienda_id ? { buzon_tienda_id: nueva.buzon_tienda_id } : {}),
+        ...(tipo !== "sellado" && nueva.buzon_tienda_id ? { buzon_tienda_id: nueva.buzon_tienda_id } : {}),
       }, session);
       setNueva({ ...vacio, buzon_tienda_id: buzonDefault });
       cargar();
@@ -1779,7 +1791,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           <button type="button" onClick={() => { setTipo("carta"); setNueva({ ...vacio, buzon_tienda_id: buzonDefault }); }}
             style={{ background: tipo === "carta" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "carta" ? COLORS.azulPalido : COLORS.surface2}`, color: tipo === "carta" ? COLORS.azulPalido : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Carta suelta</button>
-          <button type="button" onClick={() => { setTipo("sellado"); setNueva({ ...vacio, buzon_tienda_id: buzonDefault }); }}
+          <button type="button" onClick={() => { setTipo("sellado"); setNueva({ ...vacio, buzon_tienda_id: "" }); }}
             style={{ background: tipo === "sellado" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "sellado" ? COLORS.azulClaro : COLORS.surface2}`, color: tipo === "sellado" ? COLORS.azulClaro : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Producto sellado</button>
           <button type="button" onClick={() => { setTipo("accesorio"); setNueva({ ...vacio, buzon_tienda_id: buzonDefault }); }}
@@ -1880,7 +1892,11 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           </div>
         )}
 
-        {tiendasAfiliadas.length > 0 && (
+        {/* El buzón es para que un comprador recoja algo pequeño en una tienda
+            afiliada -- no tiene sentido para producto sellado (cajas/booster
+            boxes, más voluminoso), así que esta opción se salta por completo
+            para ese tipo en vez de solo ocultarse en la UI. */}
+        {tiendasAfiliadas.length > 0 && tipo !== "sellado" && (
           <div className="grid gap-2">
             <label className="flex items-center gap-2 text-sm cursor-pointer w-fit" style={{ color: COLORS.muted }}>
               <input type="checkbox" checked={!!nueva.buzon_tienda_id}
@@ -1899,10 +1915,15 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nueva.precio_antes} onChange={(e) => setNueva({ ...nueva, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregar} disabled={saving || alLimite || (tipo === "carta" && (!nueva.idioma || !nueva.condicion)) || !nueva.foto_real_url || !nueva.foto_real_reverso_url} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={agregar} disabled={saving || alLimite || faltantes.length > 0} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
           </button>
         </div>
+        {!alLimite && faltantes.length > 0 && (
+          <p style={{ color: COLORS.azulPalido }} className="text-xs">
+            Para publicar, falta: {faltantes.join(", ")}.
+          </p>
+        )}
       </div>
 
       <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Tus publicaciones</h3>
@@ -4085,9 +4106,18 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const totalActivos = inventario.length + sellado.length;
   const alLimite = limiteAlcanzado(perfil, totalActivos);
 
+  // Ver el comentario equivalente en MyMarketPanel: antes el botón solo se
+  // quedaba deshabilitado sin decir por qué.
+  const faltantesCarta = [];
+  if (!nuevaCarta.carta) faltantesCarta.push("elegir la carta");
+  if (!nuevaCarta.precio) faltantesCarta.push("el precio");
+  if (!nuevaCarta.idioma) faltantesCarta.push("el idioma de la carta");
+  if (!nuevaCarta.condicion) faltantesCarta.push("el estado de la carta");
+  if (!nuevaCarta.foto_real_url) faltantesCarta.push("la foto de frente");
+  if (!nuevaCarta.foto_real_reverso_url) faltantesCarta.push("la foto de atrás");
+
   const agregarCarta = async () => {
-    if (!nuevaCarta.carta || !nuevaCarta.precio || !nuevaCarta.idioma || !nuevaCarta.condicion) return;
-    if (!nuevaCarta.foto_real_url || !nuevaCarta.foto_real_reverso_url) return;
+    if (faltantesCarta.length > 0) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.`); return; }
     setSavingCarta(true);
     try {
@@ -4281,9 +4311,14 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             onChange={(patch) => setNuevaCarta({ ...nuevaCarta, ...patch })}
           />
         </div>
-        <button onClick={agregarCarta} disabled={savingCarta || alLimite || !nuevaCarta.idioma || !nuevaCarta.condicion || !nuevaCarta.foto_real_url || !nuevaCarta.foto_real_reverso_url} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
+        <button onClick={agregarCarta} disabled={savingCarta || alLimite || faltantesCarta.length > 0} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
           {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
+        {!alLimite && faltantesCarta.length > 0 && (
+          <p style={{ color: COLORS.azulPalido }} className="text-xs sm:col-span-6">
+            Para agregar la carta, falta: {faltantesCarta.join(", ")}.
+          </p>
+        )}
       </div>
       <div className="grid gap-2 mb-8">
         {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}

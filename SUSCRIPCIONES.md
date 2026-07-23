@@ -2042,12 +2042,41 @@ lista es deliberadamente específica (son patrones que ya llegaron por
 correo, no una suposición) para no silenciar por accidente algo que sí
 importa.
 
+## 73. Fix: no se podía publicar (sin error visible) + buzón + búsqueda
+
+- **El bug real: el botón de publicar se quedaba deshabilitado en silencio.**
+  Desde que las 2 fotos (frente/atrás) se hicieron obligatorias (sección
+  66), `agregar()`/`agregarCarta()` hacían un `return` mudo si faltaba
+  algo -- sin `setError()`, así que quien no había subido las fotos (o le
+  faltaba idioma/condición/precio/zona) solo veía el botón "+ Publicar"
+  sin reaccionar, sin ninguna pista de por qué. Se reemplazó por una
+  lista (`faltantes`/`faltantesCarta`) que junta en español exactamente
+  lo que falta ("el idioma de la carta", "la foto de atrás", etc.) y se
+  muestra como texto debajo del botón en `MyMarketPanel` y en la sección
+  de "Cartas sueltas" de `MyStorePanel` -- el botón sigue deshabilitado
+  mientras falte algo, pero ahora ya no es un misterio por qué.
+- **Buzón de tienda afiliada ya no aparece al vender producto sellado**:
+  un comprador recoge algo pequeño en el buzón de una tienda, no tiene
+  sentido para cajas/booster boxes. La casilla y el selector desaparecen
+  por completo cuando `tipo === "sellado"` en `MyMarketPanel` (antes
+  salía para los 3 tipos), se limpia `buzon_tienda_id` al cambiar a ese
+  tipo, y el payload de `agregar()` ya no lo manda aunque quedara alguno
+  guardado de antes.
+- **Búsqueda de cartas Pokémon (`buscarCartasVisual` en `pokemonApi.js`)**:
+  encontrado un bug de fondo en `terminoDeCampo()` -- un nombre o set de
+  una sola palabra ya buscaba con comodín parcial ("char*"), pero de dos
+  palabras o más exigía la FRASE EXACTA entre comillas ("Pikachu VMAX").
+  Mientras alguien seguía escribiendo ("Pikachu V", "Journey Toge...") no
+  encontraba nada, como si el buscador estuviera roto. Ahora cada palabra
+  del nombre/set se busca con su propio comodín parcial (`name:Pikachu*
+  name:VMAX*`), sin importar cuántas palabras tenga ni si ya se terminó de
+  escribir la frase completa.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
 - Permitir editar un torneo ya publicado (hoy solo se puede borrar y crear uno nuevo) y adjuntarle una imagen.
 - Mapa de Google en el detalle del torneo (hoy solo muestra la dirección en texto).
-- Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
 - Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
 - La búsqueda de "Armar mazo" hace match de nombre simple (contiene el texto) — si dos cartas distintas comparten parte del nombre (ej. "Pikachu" y "Pikachu VMAX"), puede haber falsos positivos leves; no ata el nombre a un ID exacto de la carta como sí hace el catálogo de TCGdex.

@@ -157,22 +157,26 @@ function generarCombinacionesNombreSet(restante) {
   return combos;
 }
 
-// Una sola palabra: coincidencia parcial con comodín (útil mientras se
-// sigue escribiendo). Varias palabras: frase exacta entre comillas (ya
-// se asume completa, como cuando se termina de escribir el set/nombre).
-function terminoDeCampo(frase) {
+// Coincidencia parcial con comodín en cada palabra por separado (en vez de
+// exigir la frase completa entre comillas cuando hay más de una palabra).
+// Antes, un nombre o set de dos o más palabras ("Pikachu VMAX", "Journey
+// Together") solo encontraba algo si coincidía EXACTO -- mientras alguien
+// seguía escribiendo ("Pikachu V", "Journey Toge...") no salía nada, como si
+// el buscador estuviera roto. Con un comodín por palabra, cada una se busca
+// por separado (con AND implícito entre ellas) y ya no hace falta terminar
+// de escribir la frase completa para empezar a ver resultados.
+function terminoDeCampo(campo, frase) {
   if (!frase) return null;
   const palabras = frase.trim().split(/\s+/).filter(Boolean);
-  if (palabras.length === 1) return `${palabras[0]}*`;
-  return `"${frase.trim()}"`;
+  return palabras.map((p) => `${campo}:${p}*`).join(" ");
 }
 
 function construirQueryPokemonTCG({ nombre, set, numero }) {
   const partes = [];
-  const nombreTerm = terminoDeCampo(nombre);
-  if (nombreTerm) partes.push(`name:${nombreTerm}`);
-  const setTerm = terminoDeCampo(set);
-  if (setTerm) partes.push(`set.name:${setTerm}`);
+  const nombreTerm = terminoDeCampo("name", nombre);
+  if (nombreTerm) partes.push(nombreTerm);
+  const setTerm = terminoDeCampo("set.name", set);
+  if (setTerm) partes.push(setTerm);
   if (numero) partes.push(`number:${numero}`);
   return partes.join(" ");
 }
