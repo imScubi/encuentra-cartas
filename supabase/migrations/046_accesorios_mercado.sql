@@ -17,18 +17,25 @@
 -- Cómo aplicar: copia y pega en Supabase → SQL Editor → Run.
 -- ============================================================
 
+-- Red de seguridad por si ya existe con el nombre "de convención" (Postgres
+-- nombra así solo un check inline tipo "columna type check (...)").
+alter table mercado_listings drop constraint if exists mercado_listings_tipo_check;
+
+-- Por si el check de verdad tiene otro nombre (o hay más de uno que
+-- mencione "tipo"): los busca todos y los tira, uno por uno.
 do $$
 declare
-  con text;
+  con record;
 begin
-  select conname into con
-  from pg_constraint
-  where conrelid = 'public.mercado_listings'::regclass
-    and contype = 'c'
-    and pg_get_constraintdef(oid) ilike '%tipo%';
-  if con is not null then
-    execute format('alter table mercado_listings drop constraint %I', con);
-  end if;
+  for con in
+    select conname
+    from pg_constraint
+    where conrelid = 'public.mercado_listings'::regclass
+      and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%tipo%'
+  loop
+    execute format('alter table mercado_listings drop constraint %I', con.conname);
+  end loop;
 end $$;
 
 alter table mercado_listings add constraint mercado_listings_tipo_check check (tipo in ('carta', 'sellado', 'accesorio'));
@@ -39,18 +46,21 @@ alter table mercado_listings add column if not exists etiquetas_texto text;
 
 -- "Marcar vendida" en un accesorio inserta en ventas con tipo='accesorio' —
 -- amplía el mismo check que migración 043 le puso a esa columna.
+alter table ventas drop constraint if exists ventas_tipo_check;
+
 do $$
 declare
-  con text;
+  con record;
 begin
-  select conname into con
-  from pg_constraint
-  where conrelid = 'public.ventas'::regclass
-    and contype = 'c'
-    and pg_get_constraintdef(oid) ilike '%tipo%';
-  if con is not null then
-    execute format('alter table ventas drop constraint %I', con);
-  end if;
+  for con in
+    select conname
+    from pg_constraint
+    where conrelid = 'public.ventas'::regclass
+      and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%tipo%'
+  loop
+    execute format('alter table ventas drop constraint %I', con.conname);
+  end loop;
 end $$;
 
 alter table ventas add constraint ventas_tipo_check check (tipo in ('carta', 'sellado', 'accesorio'));
