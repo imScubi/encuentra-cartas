@@ -1933,6 +1933,57 @@ formularios de `AccountModal` en `App.jsx`):
   siquiera en la primerísima visita antes de que ocurra el redirect
   automático de Vercel a HTTPS.
 
+## 70. Fix real: inyección en filtros PostgREST + error verboso + clickjacking
+
+El mismo usuario mandó un segundo reporte, este sí con una falla real de
+verdad (no solo una confusión de DevTools): una coma en un nombre/búsqueda
+podía "desmadrar" la consulta, y el mensaje de error que veía de regreso
+traía la consulta completa. Se corrigieron los 3 puntos:
+
+- **Inyección en filtros PostgREST vía coma/paréntesis (la causa real)**:
+  PostgREST usa `,` `.` `(` `)` como caracteres reservados de su propia
+  gramática de filtros (`columna=operador.valor`, y sobre todo dentro de
+  `or=(...)`/`and=(...)`). El bug: `encodeURIComponent()` NO protege contra
+  esto, porque el servidor decodifica la URL *antes* de parsear el filtro
+  — un `,` que un usuario escribe en un nombre vuelve a ser un `,` literal
+  justo cuando PostgREST decide dónde termina una condición y empieza la
+  siguiente, dejando que el resto del texto se cuele como si fuera otra
+  condición. Afectaba sobre todo al buscador público (`filtroPalabrasCartaOSet`,
+  el que arma `and=(or(...),or(...))` a partir de las palabras que escribes
+  en Buscar) y a la búsqueda de usuarios en Admin → Planes
+  (`or=(nombre.ilike...,email.ilike...)`). Fix: nuevo helper `pgValor()` en
+  `lib/supabase.js` que envuelve cualquier texto libre en comillas dobles
+  (escapando `\` y `"` adentro) antes de codificarlo para la URL — la forma
+  que la propia documentación de PostgREST pide para tratar un valor
+  siempre como texto literal, sin importar en qué filtro se use. Se aplicó
+  en las 6 consultas que interpolaban texto de usuario directo en un
+  filtro (buscador público, búsqueda de usuarios en Admin, búsqueda de
+  publicaciones en Admin, búsqueda de sellado, buscador de destinatario de
+  mensaje).
+- **El mensaje de error ya no expone la consulta ni el mensaje crudo de la
+  base de datos**: `sb()`/`sbWrite()` armaban el `Error` con la ruta/query
+  completa y el `message`/`hint` tal cual los mandaba PostgREST, y eso se
+  mostraba directo en pantalla (`ErrorBox`) — un mapa gratis de nombres de
+  tablas/columnas para cualquiera que force un error. Ahora el detalle
+  técnico completo se manda a `reportarError()` (el mismo sistema de
+  "Captura de errores + aviso al admin" de la sección 35, que hasta ahora
+  nunca se enteraba de estos errores porque siempre se atrapaban en un
+  `try/catch` local antes de llegar al listener global) y al usuario se le
+  muestra un mensaje genérico ("No se pudo cargar/guardar. Intenta de
+  nuevo"). El único caso donde el resto de la app necesitaba distinguir el
+  tipo de error (duplicado, para reintentar con otro slug en
+  `crearConSlugUnico`, o para no tratar como error real un
+  `push_subscriptions` repetido) ahora usa `error.code === "23505"`
+  (el código SQLSTATE real de Postgres para unique_violation) en vez de
+  buscar la palabra "duplicate" dentro del mensaje mostrado al usuario.
+- **Clickjacking**: `vercel.json` no mandaba `X-Frame-Options` ni
+  `frame-ancestors`, así que en teoría cualquier sitio podía meter
+  Encuentra Cartas dentro de un `<iframe>` invisible/disfrazado y engañar
+  a alguien para que hiciera clic pensando que interactúa con otra cosa.
+  Se agregó `X-Frame-Options: DENY` y
+  `Content-Security-Policy: frame-ancestors 'none'` (más
+  `X-Content-Type-Options: nosniff` de paso) en `vercel.json`.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

@@ -11,7 +11,7 @@ import {
   setOnSesionRefrescada,
   sb, sbWrite, authSignUp, authSignIn,
   subirAvatar, subirImagenAnuncio, subirImagenABucket, subirImagenCarta, subirImagenMensaje,
-  urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken,
+  urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken, pgValor,
 } from "./lib/supabase.js";
 import { setUidActual } from "./lib/errorReporting.jsx";
 import {
@@ -483,7 +483,7 @@ function BuscadorComprador({ session, excluirId, onSelect }) {
     if (texto.length < 2) { setResultados([]); return; }
     setBuscando(true);
     const t = setTimeout(() => {
-      sb(`perfiles?select=id,nombre,avatar_url,tipo&nombre=ilike.*${encodeURIComponent(texto)}*&id=neq.${excluirId}&limit=8`, session)
+      sb(`perfiles?select=id,nombre,avatar_url,tipo&nombre=ilike.${encodeURIComponent(pgValor(`*${texto}*`))}&id=neq.${excluirId}&limit=8`, session)
         .then(setResultados)
         .catch(() => setResultados([]))
         .finally(() => setBuscando(false));
@@ -716,7 +716,7 @@ async function activarPush(session) {
     }, session);
   } catch (e) {
     // Ya estaba suscrito con este mismo endpoint (navegador/dispositivo): no es un error real.
-    if (!/duplicate key|already exists/i.test(e.message || "")) throw e;
+    if (e.code !== "23505") throw e;
   }
 }
 
@@ -1964,8 +1964,8 @@ function CambiarPlanAdmin({ session }) {
     if (!query.trim()) return;
     setBuscando(true); setError(null); setOk(null);
     try {
-      const q = encodeURIComponent(query.trim());
-      const rows = await sb(`perfiles?select=id,nombre,email,tipo,plan,plan_vence,mp_preapproval_id&or=(nombre.ilike.*${q}*,email.ilike.*${q}*)&limit=15`, session);
+      const q = encodeURIComponent(pgValor(`*${query.trim()}*`));
+      const rows = await sb(`perfiles?select=id,nombre,email,tipo,plan,plan_vence,mp_preapproval_id&or=(nombre.ilike.${q},email.ilike.${q})&limit=15`, session);
       setResultados(rows);
     } catch (e) { setError(e.message); } finally { setBuscando(false); }
   };
@@ -2882,11 +2882,11 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
     if (!buscarPub.trim()) return;
     setBuscandoPub(true); setError(null);
     try {
-      const q = encodeURIComponent(buscarPub.trim());
+      const q = encodeURIComponent(pgValor(`*${buscarPub.trim()}*`));
       const [inv, sel, merc] = await Promise.all([
-        sb(`inventario_tienda?select=*,tiendas(nombre)&carta=ilike.*${q}*&order=carta.asc`, session),
-        sb(`sellado_tienda?select=*,tiendas(nombre)&producto=ilike.*${q}*&order=producto.asc`, session),
-        sb(`mercado_listings?select=*,perfiles(nombre)&carta=ilike.*${q}*&order=carta.asc`, session),
+        sb(`inventario_tienda?select=*,tiendas(nombre)&carta=ilike.${q}&order=carta.asc`, session),
+        sb(`sellado_tienda?select=*,tiendas(nombre)&producto=ilike.${q}&order=producto.asc`, session),
+        sb(`mercado_listings?select=*,perfiles(nombre)&carta=ilike.${q}&order=carta.asc`, session),
       ]);
       setResultadosPub({ inventario: inv, sellado: sel, mercado: merc });
     } catch (e) { setError(e.message); } finally { setBuscandoPub(false); }
@@ -7732,11 +7732,12 @@ function filtroPalabrasCartaOSet(texto, campoExtra) {
     .filter(Boolean);
   if (!palabras.length) return "";
   const grupos = palabras.map((w) => {
-    const campos = [`carta.ilike.*${encodeURIComponent(w)}*`, `set_nombre.ilike.*${encodeURIComponent(w)}*`];
+    const valor = encodeURIComponent(pgValor(`*${w}*`));
+    const campos = [`carta.ilike.${valor}`, `set_nombre.ilike.${valor}`];
     // etiquetas_texto: para que un accesorio (mercado_listings.tipo="accesorio")
     // aparezca al buscar una palabra clave (ej. "sylveon") aunque no sea el
     // nombre del producto ni exista como carta — ver migración 046.
-    if (campoExtra) campos.push(`${campoExtra}.ilike.*${encodeURIComponent(w)}*`);
+    if (campoExtra) campos.push(`${campoExtra}.ilike.${valor}`);
     return `or(${campos.join(",")})`;
   });
   return `and=(${grupos.join(",")})`;
@@ -7777,7 +7778,7 @@ async function crearConSlugUnico(tabla, datosBase, nombreParaSlug, session, fall
     try {
       return await sbWrite("POST", tabla, { ...datosBase, slug }, session);
     } catch (e) {
-      if (!/duplicate key|already exists/i.test(e.message || "") || intento === 20) throw e;
+      if (e.code !== "23505" || intento === 20) throw e;
     }
   }
 }
@@ -8522,7 +8523,7 @@ export default function EncuentraCartas() {
       setSearchResults({ tiendas: [], mercado: [], sellado: [] });
       return;
     }
-    const q = encodeURIComponent(query.trim());
+    const q = encodeURIComponent(pgValor(`*${query.trim()}*`));
     const filtroCartaSet = filtroPalabrasCartaOSet(query);
     // mercado_listings también incluye accesorios (tipo="accesorio") — se buscan
     // además por sus etiquetas_texto, para que "sylveon" encuentre un accesorio
@@ -8534,7 +8535,7 @@ export default function EncuentraCartas() {
       Promise.all([
         sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&${filtroCartaSet}&order=precio.asc`),
         sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&${filtroMercado}&order=precio.asc`),
-        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&producto=ilike.*${q}*&order=precio.asc`),
+        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&producto=ilike.${q}&order=precio.asc`),
       ])
         .then(([inv, merc, sel]) => setSearchResults({ tiendas: conBoostPrimero(inv), mercado: conBoostPrimero(merc), sellado: conBoostPrimero(sel) }))
         .catch((e) => { setSearchResults({ tiendas: [], mercado: [], sellado: [] }); setSearchError(e.message); })

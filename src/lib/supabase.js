@@ -1,3 +1,5 @@
+import { reportarError } from "./errorReporting.jsx";
+
 // ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
 export const SUPABASE_URL = "https://nulypgaaekexlbxbxdwq.supabase.co";
 export const SUPABASE_ANON_KEY =
@@ -5,6 +7,22 @@ export const SUPABASE_ANON_KEY =
 
 // ---- Llave pública VAPID para notificaciones push (la privada vive solo en el servidor) ----
 export const VAPID_PUBLIC_KEY = "BLPUA-CAQihRVApIBjAaOg6Sb83z1j2uLTL-irKRiZ0JW6XlpJ2u9S4pFCqbC15VBOsL4MmlCHUe-_LsychJOs0";
+
+// PostgREST trata , . : ( ) como caracteres reservados de su propia gramática
+// de filtros (columna=operador.valor, y sobre todo dentro de or()/and()) --
+// como el servidor decodifica la URL ANTES de parsear el filtro,
+// encodeURIComponent() por sí solo no protege: un "," que el usuario escribió
+// en un nombre/búsqueda vuelve a ser un "," literal justo cuando PostgREST
+// decide dónde termina una condición y empieza la siguiente, dejando que el
+// resto del texto se cuele como si fuera otra condición del filtro. Envolver
+// el valor en comillas dobles (escapando \ y " adentro) es la forma que
+// documenta PostgREST para que siempre se trate como texto literal, sin
+// importar en qué filtro se use. Se le aplica encodeURIComponent por fuera,
+// ya para que la URL en sí sea válida.
+// https://postgrest.org/en/stable/references/api/tables_views.html#reserved-characters
+export function pgValor(v) {
+  return `"${String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
 
 // El token de sesión de Supabase expira solo (~1 hora). Si una consulta falla
 // por eso, la renovamos con el refresh_token y reintentamos una sola vez.
@@ -58,7 +76,13 @@ export async function sb(path, session) {
   }
   if (!res.ok) {
     const data = await res.clone().json().catch(() => null);
-    throw new Error(`Error consultando la base de datos (${res.status}) en ${path}: ${data?.message || data?.hint || JSON.stringify(data) || "sin detalle"}`);
+    // El detalle completo (ruta, status, mensaje/hint crudo de PostgREST) solo
+    // se manda al reporte de errores para el equipo -- nunca se le muestra al
+    // usuario, para no filtrarle nombres de tablas/columnas ni la consulta.
+    reportarError(`Error consultando (${res.status}) en ${path}: ${data?.message || data?.hint || JSON.stringify(data) || "sin detalle"}`);
+    const error = new Error("No se pudo cargar la información. Intenta de nuevo en un momento.");
+    error.code = data?.code || null;
+    throw error;
   }
   return res.json();
 }
@@ -83,7 +107,17 @@ export async function sbWrite(method, path, body, session) {
     res = await pedir(nueva);
     data = await res.json().catch(() => null);
   }
-  if (!res.ok) throw new Error(data?.message || `Error guardando (${res.status})`);
+  if (!res.ok) {
+    reportarError(`Error en ${method} ${path} (${res.status}): ${data?.message || data?.hint || JSON.stringify(data) || "sin detalle"}`);
+    // "23505" (unique_violation de Postgres) es el único caso donde el resto de
+    // la app necesita distinguir el tipo de error (ver crearConSlugUnico y el
+    // registro de push_subscriptions) -- por eso se guarda en error.code en vez
+    // de tener que volver a exponer el mensaje crudo de la base de datos.
+    const esDuplicado = data?.code === "23505";
+    const error = new Error(esDuplicado ? "Ya existe un registro con ese mismo valor único." : "No se pudo guardar. Intenta de nuevo en un momento.");
+    error.code = data?.code || null;
+    throw error;
+  }
   return data;
 }
 
