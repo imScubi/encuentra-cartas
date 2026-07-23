@@ -4,8 +4,8 @@ import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
   User, Megaphone, Newspaper, ShoppingBag, ShoppingCart, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
-  ArrowUp, ArrowDown, Navigation, Image as ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
-} from "lucide-react";
+  ArrowUp, ArrowDown, Navigation, ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
+} from "./lib/icons.jsx";
 import {
   VAPID_PUBLIC_KEY,
   setOnSesionRefrescada,
