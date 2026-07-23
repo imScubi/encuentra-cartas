@@ -1733,6 +1733,31 @@ el resto de la sesión.
   cache), así que se mantiene actualizado sin necesitar un ticker de fondo
   que solo aumentaría la presión sobre APIs gratis ya limitadas de tasa.
 
+## 64. Reemplazo de iconografía + fix de modo día
+
+- **Iconos propios**: los 38 iconos de botones/nav de `lucide-react` se
+  reemplazaron por un set de marca a la medida (`src/lib/icons.jsx` +
+  fuente en `src/assets/icons/*.svg`). Misma API de props (`size`, `color`,
+  `fill`, `className`) que lucide, así que solo cambió el import en
+  `App.jsx` — ningún uso individual se tocó. Se quitó `lucide-react` de
+  `package.json`.
+- **Modo día — dos bugs de raíz corregidos** (antes se veía "roto"/feo):
+  - ~45 botones usaban `COLORS.bg` como color de su propio texto sobre
+    fondos claros (`azulPalido`, `azulClaro`, `gold`), asumiendo que `bg`
+    siempre es oscuro — cierto de noche, falso de día (`bg` es claro ahí),
+    así que el texto quedaba casi invisible. Se agregó `COLORS.textoOscuro`
+    (fijo en ambos modos, nunca lo toca `aplicarTema`) para ese rol.
+  - El header, el modal de bienvenida y el fondo animado (`BackgroundField`)
+    tenían colores oscuros escritos directo en el código (no derivados de
+    `COLORS`), así que se quedaban oscuros sin importar el modo — de día se
+    veía una mezcla rota de header oscuro sobre contenido claro. Ahora usan
+    `conAlpha(COLORS.bg/surface, alpha)` (helper nuevo en `theme.js`, hex →
+    rgba) y `COLORS.fondoProfundo` (nuevo, un valor por modo).
+  - De paso, `aplicarTema()` ahora tiñe `bg`/`surface` hacia el tono CLARO
+    del tipo de Pokémon en modo día (antes siempre hacia el oscuro, incluso
+    de día) — con el tinte oscuro, "surface" recibía más mezcla que "bg" y
+    terminaba más apagado que la página en vez de "flotar" sobre ella.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
