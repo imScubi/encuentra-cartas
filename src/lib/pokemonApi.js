@@ -383,9 +383,15 @@ export async function obtenerErasYSetsPokemon() {
     // de esa generación) — como los sets llegan ordenados por -releaseDate,
     // el último empujado a cada era es el más viejo. pokemontcg.io no tiene
     // un logo separado "de la era", así que se usa este como el más cercano.
+    // Ojo: los sets de promos ("SWSH Black Star Promos", "Scarlet & Violet
+    // Black Star Promos", etc.) a veces salen desde el día 1 de la era, así
+    // que si no se excluyen terminan "ganando" como si fueran el set base —
+    // se descartan explícitamente para esto.
     _setsPokemonCache = Array.from(porEra, ([era, sets]) => {
-      const base = sets[sets.length - 1];
-      return { era, sets, imagen: base?.imagen || sets.find((s) => s.imagen)?.imagen || null };
+      const noPromo = sets.filter((s) => !/promo/i.test(s.nombre));
+      const candidatos = noPromo.length ? noPromo : sets;
+      const base = candidatos[candidatos.length - 1];
+      return { era, sets, imagen: base?.imagen || candidatos.find((s) => s.imagen)?.imagen || null };
     });
   } catch {
     _setsPokemonCache = [];
