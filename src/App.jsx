@@ -1157,14 +1157,19 @@ function CardPicker({ tcg = "pokemon", onSelect }) {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (!q.trim() || q.trim().length < 3) { setResults([]); return; }
+    if (!q.trim() || q.trim().length < 3) { setResults([]); setError(false); return; }
     setLoading(true);
+    setError(false);
     const t = setTimeout(() => {
       buscarCartasCatalogo(tcg, q.trim())
-        .then(setResults)
-        .catch(() => setResults([]))
+        .then((r) => { setResults(r); setError(false); })
+        // Un error real (falló la conexión con el catálogo, ya con reintentos
+        // agotados) es distinto de "no hay resultados" — si se muestran igual,
+        // el usuario no puede saber si debe reintentar o de plano no existe la carta.
+        .catch(() => { setResults([]); setError(true); })
         .finally(() => setLoading(false));
     }, 400);
     return () => clearTimeout(t);
@@ -1200,7 +1205,10 @@ function CardPicker({ tcg = "pokemon", onSelect }) {
         <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66` }}
           className="absolute z-20 mt-1 w-full max-h-80 overflow-y-auto rounded-lg shadow-xl p-2">
           {loading && <p style={{ color: COLORS.muted }} className="text-xs p-2">Buscando en el catálogo oficial...</p>}
-          {!loading && results.length === 0 && (
+          {!loading && error && (
+            <p style={{ color: COLORS.azulPalido }} className="text-xs p-2">No se pudo conectar con el catálogo. Espera un momento e intenta de nuevo.</p>
+          )}
+          {!loading && !error && results.length === 0 && (
             <p style={{ color: COLORS.muted }} className="text-xs p-2">Sin resultados. Prueba con otro nombre, número o set.</p>
           )}
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -7560,6 +7568,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
   const [coleccion, setColeccion] = useState({}); // card_api_id -> "tengo" | "quiero"
   const [error, setError] = useState(null);
   const [modo, setModo] = useState("explorar"); // explorar | masterSets
+  const [volverAMasterSets, setVolverAMasterSets] = useState(false);
   const [misMazosTcg, setMisMazosTcg] = useState([]);
   const [mazoDestino, setMazoDestino] = useState("");
   const [agregandoMazoId, setAgregandoMazoId] = useState(null);
@@ -7636,6 +7645,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
     const eraDelSet = eras.find((g) => g.sets.some((x) => x.id === s.id))?.era;
     setEraSel(eraDelSet ?? null);
     setModo("explorar");
+    setVolverAMasterSets(true);
     abrirSet(s);
   };
 
@@ -7643,10 +7653,19 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
     setSetSel(set); setLoadingCartas(true); setCartas([]); setError(null);
     try {
       if (tcgSel === "onepiece") {
-        const res = await fetch(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/products`);
-        const data = await res.json();
-        const productos = (data.results || []).filter(looksLikeCard);
-        setCartas(productos.map((p) => ({ id: `tcgcsv-${p.productId}`, name: p.name, localId: "", image: p.imageUrl || null, precioRefMxn: null })));
+        const [dataProd, dataPrecios] = await Promise.all([
+          fetch(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/products`).then((r) => r.json()),
+          fetch(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/prices`).then((r) => r.json()),
+        ]);
+        const productos = (dataProd.results || []).filter(looksLikeCard);
+        const precios = dataPrecios.results || [];
+        setCartas(productos.map((p) => {
+          const precioInfo = precios.find((x) => x.productId === p.productId && x.marketPrice);
+          return {
+            id: `tcgcsv-${p.productId}`, name: p.name, localId: "", image: p.imageUrl || null,
+            precioRefMxn: precioInfo ? Math.round(precioInfo.marketPrice * USD_TO_MXN) : null,
+          };
+        }));
       } else {
         setCartas(await obtenerCartasDeSetCatalogo(tcgSel, set.id));
       }
@@ -7711,10 +7730,10 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
 
       {info.wishlistPremium && (
         <div className="flex gap-2 mb-6">
-          <button onClick={() => setModo("explorar")}
+          <button onClick={() => { setModo("explorar"); setVolverAMasterSets(false); }}
             style={{ background: modo === "explorar" ? COLORS.surface2 : "transparent", border: `1px solid ${modo === "explorar" ? COLORS.azulPalido : COLORS.surface2}`, color: modo === "explorar" ? COLORS.azulPalido : COLORS.muted }}
             className="rounded-lg px-4 py-2 text-sm font-semibold">🔍 Explorar</button>
-          <button onClick={() => setModo("masterSets")}
+          <button onClick={() => { setModo("masterSets"); setVolverAMasterSets(false); setSetSel(null); setCartas([]); }}
             style={{ background: modo === "masterSets" ? COLORS.surface2 : "transparent", border: `1px solid ${modo === "masterSets" ? COLORS.azulPalido : COLORS.surface2}`, color: modo === "masterSets" ? COLORS.azulPalido : COLORS.muted }}
             className="rounded-lg px-4 py-2 text-sm font-semibold">🏆 Master Sets</button>
         </div>
@@ -7801,7 +7820,14 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
 
       {modo === "explorar" && setSel && (
         <div>
-          <button onClick={() => { setSetSel(null); setCartas([]); }} style={{ color: COLORS.muted }} className="text-xs mb-3 flex items-center gap-1"><ChevronLeft size={14} /> Sets</button>
+          <button
+            onClick={() => {
+              setSetSel(null); setCartas([]);
+              if (volverAMasterSets) { setModo("masterSets"); setVolverAMasterSets(false); }
+            }}
+            style={{ color: COLORS.muted }} className="text-xs mb-3 flex items-center gap-1">
+            <ChevronLeft size={14} /> {volverAMasterSets ? "Master Sets" : "Sets"}
+          </button>
           <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
             <h3 className="font-semibold">{setSel.nombre}</h3>
             {session && info.wishlistPremium && cartas.length > 0 && (
@@ -7823,7 +7849,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
           )}
 
           {loadingCartas && <Loading label="Cargando cartas..." />}
-          {!loadingCartas && cartas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin cartas para este set.</p>}
+          {!loadingCartas && !error && cartas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin cartas para este set.</p>}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {cartas.map((c) => {
               const estado = coleccion[c.id];
@@ -7834,6 +7860,11 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
                   </div>
                   <div className="p-2 flex flex-col gap-1">
                     <p className="text-xs font-semibold leading-snug line-clamp-2">{c.name}{c.localId ? ` (${c.localId})` : ""}</p>
+                    {c.precioRefMxn ? (
+                      <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-xs font-bold">~${c.precioRefMxn.toLocaleString("es-MX")} MXN</p>
+                    ) : (
+                      <p style={{ color: COLORS.muted }} className="text-xs">Sin precio de referencia</p>
+                    )}
                     <div className="flex gap-1">
                       <button onClick={() => marcar(c, "tengo")}
                         style={{ background: estado === "tengo" ? "#2E8B57" : "transparent", border: "1px solid #2E8B5788", color: estado === "tengo" ? "#fff" : "#2E8B57" }}

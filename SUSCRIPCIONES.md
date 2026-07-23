@@ -1687,6 +1687,52 @@ nivel que marcar Tengo/Quiero):
   Piece (sin API de "total de cartas por set" verificado) solo muestra el
   conteo de las que marcaste, sin porcentaje, en vez de inventar un total.
 
+## 63. Fix: catálogo flaky (sin cartas intermitente), Master Sets se regresaba a Explorar, precio de referencia por carta
+
+Tres reportes del catálogo, todos con la misma causa raíz: las llamadas a
+las APIs externas sin llave del catálogo (pokemontcg.io, Scryfall,
+YGOPRODeck, lorcana-api.com, TCGCSV) no tenían reintento — cualquier 429
+(límite de tasa) o caída breve de 5xx se atrapaba y se devolvía en
+silencio una lista vacía, que del lado del usuario se veía como "no se
+encontraron cartas para este set" o "sin resultados" de forma
+intermitente ("a veces sí, a veces no"), aunque la carta/set sí existiera.
+Además, varias listas (sets de Pokémon/Magic/Yu-Gi-Oh, categorías de
+TCGplayer, catálogo completo de Lorcana) se guardaban en cache en memoria
+incluso cuando el fetch había fallado, dejando ese catálogo "vacío" para
+el resto de la sesión.
+
+- **`src/lib/pokemonApi.js`**: nuevo helper `fetchConReintento` (3
+  intentos, espera creciente 500ms/1s/1.5s) usado en todas las llamadas a
+  pokemontcg.io, Scryfall, YGOPRODeck, lorcana-api.com y TCGCSV
+  (categorías). `buscarCartasVisual` (buscador de Pokémon) ahora usa
+  `Promise.allSettled` en vez de `Promise.all`: si una combinación de
+  nombre/set de verdad no existe no tumba a las demás, pero si TODAS
+  fallan por conexión se avisa un error real en vez de "sin resultados".
+  Ningún cache en memoria (`_setsPokemonCache`, `_setsMagicCache`,
+  `_setsYugiohCache`, `_lorcanaCache`, `_categoriasTCGplayerCache`) guarda
+  ya un resultado vacío por error — solo cachean cuando el fetch sí llegó
+  bien.
+- **`CardPicker`** (buscador de cartas al publicar): ahora distingue un
+  error real de conexión (ya con reintentos agotados) de "sin resultados"
+  de verdad — antes ambos casos mostraban el mismo mensaje genérico, que
+  es lo que hacía parecer que "agregar o borrar un espacio" arreglaba la
+  búsqueda (en realidad solo disparaba un reintento nuevo del debounce).
+- **Master Sets → "Ver cartas" ya no te deja varado en Explorar**: se
+  agregó un estado `volverAMasterSets` que se activa al entrar a un set
+  desde Master Sets; el botón "atrás" dentro de ese set ahora dice
+  "← Master Sets" y regresa ahí en vez de a la lista genérica de sets de
+  Explorar. Cambiar de pestaña manualmente (Explorar/Master Sets) limpia
+  ese estado.
+- **Precio de referencia por carta en el Catálogo**: cada tarjeta de carta
+  dentro de un set ahora muestra su precio de mercado aproximado en MXN
+  (o "Sin precio de referencia" si esa API no lo trae, como Lorcana). Para
+  Pokémon/Magic/Yu-Gi-Oh ya venía en la misma respuesta de la API; para
+  One Piece se agregó una segunda llamada a TCGCSV (`/prices`, mismo
+  patrón que ya usa `TCGplayerPicker`) que se cruza por `productId`. El
+  precio se vuelve a pedir fresco cada vez que abres un set (no hay
+  cache), así que se mantiene actualizado sin necesitar un ticker de fondo
+  que solo aumentaría la presión sobre APIs gratis ya limitadas de tasa.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

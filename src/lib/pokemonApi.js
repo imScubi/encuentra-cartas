@@ -1,5 +1,33 @@
 import { USD_TO_MXN, EUR_TO_MXN } from "../theme.js";
 
+// ---- Reintentos para llamadas a APIs externas (pokemontcg.io, Scryfall,
+// YGOPRODeck, lorcana-api) ----
+// Ninguna de estas APIs usa llave (para no pedirle una cuenta al usuario),
+// así que están sujetas a límites de tasa (429) o caídas breves (5xx) más
+// seguido que una API con llave paga. Antes, cualquier error en una de
+// estas llamadas se atrapaba y devolvía silenciosamente una lista vacía —
+// eso se veía, del lado del usuario, como "no se encontraron cartas" o
+// "no hay resultados" de forma intermitente, aunque la carta/set sí
+// existiera. Con reintento + espera creciente, la enorme mayoría de esos
+// fallos transitorios se resuelven solos sin que el usuario note nada.
+async function fetchConReintento(url, intentos = 3, esperaBaseMs = 500) {
+  let ultimoError;
+  for (let i = 0; i < intentos; i++) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return res;
+      // Un 429 (límite de tasa) o 5xx vale la pena reintentar; un 4xx normal
+      // (ej. 404 de "sin resultados") no va a cambiar si lo repetimos.
+      if (res.status !== 429 && res.status < 500) return res;
+      ultimoError = new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      ultimoError = e;
+    }
+    if (i < intentos - 1) await new Promise((r) => setTimeout(r, esperaBaseMs * (i + 1)));
+  }
+  throw ultimoError || new Error("No se pudo conectar");
+}
+
 // ---- Foto de perfil: Pokémon (PokeAPI, pública) o foto propia (Supabase Storage) ----
 export const POKEMON_MAX_ID = 1025;
 export const pokemonSpriteUrl = (id) =>
@@ -165,23 +193,29 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
   const { restante, numero } = extraerNumeroDeTexto(q);
   const combos = generarCombinacionesNombreSet(restante);
 
-  const peticiones = combos.map(async ({ nombre, set }) => {
+  // Promise.allSettled (no Promise.all): cada combinación se reintenta sola
+  // (fetchConReintento) si falla por red/límite de tasa, pero si UNA
+  // combinación de verdad no existe (404 normal), no debe tirar abajo a las
+  // demás que sí encontraron algo. Solo se avisa error real si TODAS
+  // fallaron por conexión — así "sin resultados" de verdad no se confunde
+  // con una falla transitoria de la API.
+  const resultados = await Promise.allSettled(combos.map(async ({ nombre, set }) => {
     const query = construirQueryPokemonTCG({ nombre, set, numero });
     if (!query) return [];
-    try {
-      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=${itemsPorCombo}`);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return data?.data || [];
-    } catch {
-      return [];
-    }
-  });
+    const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=${itemsPorCombo}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data?.data || [];
+  }));
 
-  const listas = await Promise.all(peticiones);
+  const listas = resultados.map((r) => (r.status === "fulfilled" ? r.value : null));
+  if (listas.length > 0 && listas.every((l) => l === null)) {
+    throw resultados[0].reason instanceof Error ? resultados[0].reason : new Error("No se pudo conectar con el catálogo de Pokémon.");
+  }
   const vistos = new Set();
   const combinado = [];
   for (const lista of listas) {
+    if (!lista) continue;
     for (const c of lista) {
       if (vistos.has(c.id)) continue;
       vistos.add(c.id);
@@ -227,22 +261,18 @@ function precioRefDeCartaScryfall(c) {
 export async function buscarCartasMagic(texto, limite = 24) {
   const q = (texto || "").trim();
   if (q.length < 3) return [];
-  try {
-    const res = await fetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&order=name&unique=cards`);
-    if (!res.ok) return []; // incluye el 404 de "sin resultados" de Scryfall, no es un error real
-    const data = await res.json();
-    return (data?.data || []).slice(0, limite).map((c) => ({
-      id: c.id,
-      name: c.name,
-      localId: c.collector_number,
-      setName: c.set_name || "",
-      setTotal: "",
-      image: imagenDeCartaScryfall(c),
-      precioRefMxn: precioRefDeCartaScryfall(c),
-    }));
-  } catch {
-    return [];
-  }
+  const res = await fetchConReintento(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&order=name&unique=cards`);
+  if (!res.ok) return []; // incluye el 404 de "sin resultados" de Scryfall, no es un error real
+  const data = await res.json();
+  return (data?.data || []).slice(0, limite).map((c) => ({
+    id: c.id,
+    name: c.name,
+    localId: c.collector_number,
+    setName: c.set_name || "",
+    setTotal: "",
+    image: imagenDeCartaScryfall(c),
+    precioRefMxn: precioRefDeCartaScryfall(c),
+  }));
 }
 
 export async function obtenerPrecioRefActualMagic(cardApiId) {
@@ -277,22 +307,18 @@ function precioRefDeCartaYgoprodeck(c) {
 export async function buscarCartasYugioh(texto, limite = 24) {
   const q = (texto || "").trim();
   if (q.length < 3) return [];
-  try {
-    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
-    if (!res.ok) return []; // YGOPRODeck responde 400 cuando no hay ninguna coincidencia, no es un error real
-    const data = await res.json();
-    return (data?.data || []).slice(0, limite).map((c) => ({
-      id: String(c.id),
-      name: c.name,
-      localId: c.card_sets?.[0]?.set_code || "",
-      setName: c.card_sets?.[0]?.set_name || c.type || "",
-      setTotal: "",
-      image: c.card_images?.[0]?.image_url || null,
-      precioRefMxn: precioRefDeCartaYgoprodeck(c),
-    }));
-  } catch {
-    return [];
-  }
+  const res = await fetchConReintento(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+  if (!res.ok) return []; // YGOPRODeck responde 400 cuando no hay ninguna coincidencia, no es un error real
+  const data = await res.json();
+  return (data?.data || []).slice(0, limite).map((c) => ({
+    id: String(c.id),
+    name: c.name,
+    localId: c.card_sets?.[0]?.set_code || "",
+    setName: c.card_sets?.[0]?.set_name || c.type || "",
+    setTotal: "",
+    image: c.card_images?.[0]?.image_url || null,
+    precioRefMxn: precioRefDeCartaYgoprodeck(c),
+  }));
 }
 
 export async function obtenerPrecioRefActualYugioh(cardApiId) {
@@ -321,13 +347,13 @@ export async function obtenerPrecioRefActualYugioh(cardApiId) {
 let _lorcanaCache = null;
 async function obtenerTodasLasCartasLorcana() {
   if (_lorcanaCache) return _lorcanaCache;
-  try {
-    const res = await fetch("https://api.lorcana-api.com/cards/all");
-    const data = await res.json();
-    _lorcanaCache = Array.isArray(data) ? data : (data?.cards || data?.results || []);
-  } catch {
-    _lorcanaCache = [];
-  }
+  // Ojo: no se cachea un [] por error de red — si se cacheara, un fallo
+  // transitorio dejaría el catálogo de Lorcana "vacío" para el resto de la
+  // sesión sin volver a intentarlo nunca. Solo se guarda en cache un
+  // resultado que sí llegó bien.
+  const res = await fetchConReintento("https://api.lorcana-api.com/cards/all");
+  const data = await res.json();
+  _lorcanaCache = Array.isArray(data) ? data : (data?.cards || data?.results || []);
   return _lorcanaCache;
 }
 
@@ -369,55 +395,50 @@ export async function buscarCartasLorcana(texto, limite = 24) {
 let _setsPokemonCache = null;
 export async function obtenerErasYSetsPokemon() {
   if (_setsPokemonCache) return _setsPokemonCache;
-  try {
-    const res = await fetch("https://api.pokemontcg.io/v2/sets?pageSize=250&orderBy=-releaseDate");
-    const data = await res.json();
-    const sets = data?.data || [];
-    const porEra = new Map();
-    for (const s of sets) {
-      const era = s.series || "Otros";
-      if (!porEra.has(era)) porEra.set(era, []);
-      porEra.get(era).push({ id: s.id, nombre: s.name, cardCount: s.printedTotal, imagen: s.images?.logo || s.images?.symbol || null });
-    }
-    // Logo representativo de la era: el de su set más antiguo (el "set base"
-    // de esa generación) — como los sets llegan ordenados por -releaseDate,
-    // el último empujado a cada era es el más viejo. pokemontcg.io no tiene
-    // un logo separado "de la era", así que se usa este como el más cercano.
-    // Ojo: los sets de promos ("SWSH Black Star Promos", "Scarlet & Violet
-    // Black Star Promos", etc.) a veces salen desde el día 1 de la era, así
-    // que si no se excluyen terminan "ganando" como si fueran el set base —
-    // se descartan explícitamente para esto.
-    _setsPokemonCache = Array.from(porEra, ([era, sets]) => {
-      const noPromo = sets.filter((s) => !/promo/i.test(s.nombre));
-      const candidatos = noPromo.length ? noPromo : sets;
-      const base = candidatos[candidatos.length - 1];
-      return { era, sets, imagen: base?.imagen || candidatos.find((s) => s.imagen)?.imagen || null };
-    });
-  } catch {
-    _setsPokemonCache = [];
+  // No se cachea un [] por error — si el fetch de verdad falla, se deja
+  // _setsPokemonCache sin tocar para que el siguiente intento vuelva a
+  // pedirlo, en vez de quedar "vacío" para siempre en esta sesión.
+  const res = await fetchConReintento("https://api.pokemontcg.io/v2/sets?pageSize=250&orderBy=-releaseDate");
+  const data = await res.json();
+  const sets = data?.data || [];
+  const porEra = new Map();
+  for (const s of sets) {
+    const era = s.series || "Otros";
+    if (!porEra.has(era)) porEra.set(era, []);
+    porEra.get(era).push({ id: s.id, nombre: s.name, cardCount: s.printedTotal, imagen: s.images?.logo || s.images?.symbol || null });
   }
+  // Logo representativo de la era: el de su set más antiguo (el "set base"
+  // de esa generación) — como los sets llegan ordenados por -releaseDate,
+  // el último empujado a cada era es el más viejo. pokemontcg.io no tiene
+  // un logo separado "de la era", así que se usa este como el más cercano.
+  // Ojo: los sets de promos ("SWSH Black Star Promos", "Scarlet & Violet
+  // Black Star Promos", etc.) a veces salen desde el día 1 de la era, así
+  // que si no se excluyen terminan "ganando" como si fueran el set base —
+  // se descartan explícitamente para esto.
+  _setsPokemonCache = Array.from(porEra, ([era, sets]) => {
+    const noPromo = sets.filter((s) => !/promo/i.test(s.nombre));
+    const candidatos = noPromo.length ? noPromo : sets;
+    const base = candidatos[candidatos.length - 1];
+    return { era, sets, imagen: base?.imagen || candidatos.find((s) => s.imagen)?.imagen || null };
+  });
   return _setsPokemonCache;
 }
 
 export async function obtenerCartasDeSetPokemon(setId) {
-  try {
-    const cartas = [];
-    for (let page = 1; page <= 2; page++) {
-      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=set.id:${encodeURIComponent(setId)}&pageSize=250&page=${page}&orderBy=number`);
-      if (!res.ok) break;
-      const data = await res.json();
-      const lote = data?.data || [];
-      cartas.push(...lote);
-      if (lote.length < 250) break;
-    }
-    return cartas.map((c) => ({
-      id: c.id, name: c.name, localId: c.number,
-      image: c.images?.small || c.images?.large || null,
-      precioRefMxn: precioRefDeCartaPokemonTCG(c),
-    }));
-  } catch {
-    return [];
+  const cartas = [];
+  for (let page = 1; page <= 2; page++) {
+    const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=set.id:${encodeURIComponent(setId)}&pageSize=250&page=${page}&orderBy=number`);
+    if (!res.ok) break;
+    const data = await res.json();
+    const lote = data?.data || [];
+    cartas.push(...lote);
+    if (lote.length < 250) break;
   }
+  return cartas.map((c) => ({
+    id: c.id, name: c.name, localId: c.number,
+    image: c.images?.small || c.images?.large || null,
+    precioRefMxn: precioRefDeCartaPokemonTCG(c),
+  }));
 }
 
 // Nombres de set_type de Scryfall en español, para que la agrupación por
@@ -435,78 +456,64 @@ const SET_TYPE_LABEL_MAGIC = {
 let _setsMagicCache = null;
 export async function obtenerErasYSetsMagic() {
   if (_setsMagicCache) return _setsMagicCache;
-  try {
-    const res = await fetch("https://api.scryfall.com/sets");
-    const data = await res.json();
-    const sets = (data?.data || []).filter((s) => !s.digital && s.card_count > 0);
-    const porEra = new Map();
-    for (const s of sets) {
-      const era = SET_TYPE_LABEL_MAGIC[s.set_type] || s.set_type || "Otros";
-      if (!porEra.has(era)) porEra.set(era, []);
-      porEra.get(era).push({ id: s.code, nombre: s.name, cardCount: s.card_count, imagen: s.icon_svg_uri || null });
-    }
-    _setsMagicCache = Array.from(porEra, ([era, sets]) => ({ era, sets }));
-  } catch {
-    _setsMagicCache = [];
+  // No se cachea un [] por error — mismo criterio que obtenerErasYSetsPokemon.
+  const res = await fetchConReintento("https://api.scryfall.com/sets");
+  const data = await res.json();
+  const sets = (data?.data || []).filter((s) => !s.digital && s.card_count > 0);
+  const porEra = new Map();
+  for (const s of sets) {
+    const era = SET_TYPE_LABEL_MAGIC[s.set_type] || s.set_type || "Otros";
+    if (!porEra.has(era)) porEra.set(era, []);
+    porEra.get(era).push({ id: s.code, nombre: s.name, cardCount: s.card_count, imagen: s.icon_svg_uri || null });
   }
+  _setsMagicCache = Array.from(porEra, ([era, sets]) => ({ era, sets }));
   return _setsMagicCache;
 }
 
 export async function obtenerCartasDeSetMagic(code) {
-  try {
-    const cartas = [];
-    let url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`set:${code}`)}&order=set&unique=prints`;
-    for (let page = 1; page <= 3 && url; page++) {
-      const res = await fetch(url);
-      if (!res.ok) break;
-      const data = await res.json();
-      cartas.push(...(data?.data || []));
-      url = data?.has_more ? data.next_page : null;
-    }
-    return cartas.map((c) => ({
-      id: c.id, name: c.name, localId: c.collector_number,
-      image: imagenDeCartaScryfall(c),
-      precioRefMxn: precioRefDeCartaScryfall(c),
-    }));
-  } catch {
-    return [];
+  const cartas = [];
+  let url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`set:${code}`)}&order=set&unique=prints`;
+  for (let page = 1; page <= 3 && url; page++) {
+    const res = await fetchConReintento(url);
+    if (!res.ok) break;
+    const data = await res.json();
+    cartas.push(...(data?.data || []));
+    url = data?.has_more ? data.next_page : null;
   }
+  return cartas.map((c) => ({
+    id: c.id, name: c.name, localId: c.collector_number,
+    image: imagenDeCartaScryfall(c),
+    precioRefMxn: precioRefDeCartaScryfall(c),
+  }));
 }
 
 let _setsYugiohCache = null;
 export async function obtenerErasYSetsYugioh() {
   if (_setsYugiohCache) return _setsYugiohCache;
-  try {
-    const res = await fetch("https://db.ygoprodeck.com/api/v7/cardsets.php");
-    const sets = await res.json();
-    const porAno = new Map();
-    for (const s of Array.isArray(sets) ? sets : []) {
-      const ano = (s.tcg_date || "").slice(0, 4) || "Sin fecha";
-      if (!porAno.has(ano)) porAno.set(ano, []);
-      porAno.get(ano).push({ id: s.set_name, nombre: s.set_name, cardCount: Number(s.num_of_cards) || null, imagen: null });
-    }
-    _setsYugiohCache = Array.from(porAno, ([era, sets]) => ({ era, sets }))
-      .sort((a, b) => (a.era === "Sin fecha" ? 1 : b.era === "Sin fecha" ? -1 : b.era.localeCompare(a.era)));
-  } catch {
-    _setsYugiohCache = [];
+  // No se cachea un [] por error — mismo criterio que obtenerErasYSetsPokemon.
+  const res = await fetchConReintento("https://db.ygoprodeck.com/api/v7/cardsets.php");
+  const sets = await res.json();
+  const porAno = new Map();
+  for (const s of Array.isArray(sets) ? sets : []) {
+    const ano = (s.tcg_date || "").slice(0, 4) || "Sin fecha";
+    if (!porAno.has(ano)) porAno.set(ano, []);
+    porAno.get(ano).push({ id: s.set_name, nombre: s.set_name, cardCount: Number(s.num_of_cards) || null, imagen: null });
   }
+  _setsYugiohCache = Array.from(porAno, ([era, sets]) => ({ era, sets }))
+    .sort((a, b) => (a.era === "Sin fecha" ? 1 : b.era === "Sin fecha" ? -1 : b.era.localeCompare(a.era)));
   return _setsYugiohCache;
 }
 
 export async function obtenerCartasDeSetYugioh(setName) {
-  try {
-    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?cardset=${encodeURIComponent(setName)}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data?.data || []).map((c) => ({
-      id: String(c.id), name: c.name,
-      localId: c.card_sets?.find((s) => s.set_name === setName)?.set_code || "",
-      image: c.card_images?.[0]?.image_url_small || c.card_images?.[0]?.image_url || null,
-      precioRefMxn: precioRefDeCartaYgoprodeck(c),
-    }));
-  } catch {
-    return [];
-  }
+  const res = await fetchConReintento(`https://db.ygoprodeck.com/api/v7/cardinfo.php?cardset=${encodeURIComponent(setName)}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data?.data || []).map((c) => ({
+    id: String(c.id), name: c.name,
+    localId: c.card_sets?.find((s) => s.set_name === setName)?.set_code || "",
+    image: c.card_images?.[0]?.image_url_small || c.card_images?.[0]?.image_url || null,
+    precioRefMxn: precioRefDeCartaYgoprodeck(c),
+  }));
 }
 
 export async function obtenerSetsLorcana() {
@@ -599,13 +606,10 @@ const PATRON_NOMBRE_CATEGORIA_TCGPLAYER = {
 let _categoriasTCGplayerCache = null;
 async function obtenerCategoriasTCGplayer() {
   if (_categoriasTCGplayerCache) return _categoriasTCGplayerCache;
-  try {
-    const res = await fetch("/api/tcgcsv?path=tcgplayer/categories");
-    const data = await res.json();
-    _categoriasTCGplayerCache = data?.results || [];
-  } catch {
-    _categoriasTCGplayerCache = [];
-  }
+  // No se cachea un [] por error — mismo criterio que obtenerErasYSetsPokemon.
+  const res = await fetchConReintento("/api/tcgcsv?path=tcgplayer/categories");
+  const data = await res.json();
+  _categoriasTCGplayerCache = data?.results || [];
   return _categoriasTCGplayerCache;
 }
 
