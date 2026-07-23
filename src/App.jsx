@@ -288,6 +288,73 @@ function VerificadoBadge({ perfil }) {
   );
 }
 
+// Insignia de verificación REAL (trámite con admin, tabla verificaciones_tienda)
+// -- distinta de VerificadoBadge de arriba (esa es automática solo por pagar
+// Zafiro+). Esta requiere que la tienda pida la revisión y un admin la
+// apruebe, así que pesa más como señal de confianza.
+function TiendaVerificadaBadge({ tienda }) {
+  const aprobada = tienda?.verificaciones_tienda?.some((v) => v.estado === "aprobada");
+  if (!aprobada) return null;
+  return (
+    <span
+      title="Verificación de tienda aprobada por el equipo de Encuentra Cartas"
+      style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.gold, boxShadow: `0 0 8px ${COLORS.gold}66` }}
+      className="inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap px-2 py-0.5 text-xs"
+    >
+      🛡️ Verificación de tienda
+    </span>
+  );
+}
+
+// ---- Carrusel de tiendas Aurora en el home del Mercado -- visibilidad real
+// para el plan más caro (a diferencia de un ícono en el perfil, esto sí es
+// tráfico nuevo). Se oculta del todo si no hay ninguna tienda Aurora, en vez
+// de mostrar un carrusel vacío. Rota sola cada 5s si hay más de una. ----
+function TiendasAuroraCarrusel({ onAbrirTienda }) {
+  const [tiendas, setTiendas] = useState([]);
+  const [indice, setIndice] = useState(0);
+
+  useEffect(() => {
+    sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,avatar_url,instagram)&order=nombre.asc`)
+      .then((rows) => setTiendas(rows.filter((t) => planDe(t.perfiles) === PLAN_INFO.enteball)))
+      .catch(() => setTiendas([]));
+  }, []);
+
+  useEffect(() => {
+    if (tiendas.length < 2) return;
+    const t = setInterval(() => setIndice((i) => (i + 1) % tiendas.length), 5000);
+    return () => clearInterval(t);
+  }, [tiendas.length]);
+
+  if (tiendas.length === 0) return null;
+  const store = tiendas[indice % tiendas.length];
+
+  return (
+    <div
+      onClick={() => onAbrirTienda(store)}
+      style={{
+        background: `linear-gradient(120deg, ${COLORS.gold}22, ${COLORS.surface})`,
+        border: `1px solid ${COLORS.gold}66`, boxShadow: `0 0 24px ${COLORS.gold}22`, cursor: "pointer",
+      }}
+      className="rounded-2xl p-5 mb-6 flex items-center gap-4 flex-wrap transition-transform duration-200 hover:-translate-y-0.5"
+    >
+      <span style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap">🔴 Tienda Aurora</span>
+      <AvatarImg url={store.perfiles?.avatar_url} size={40} />
+      <div className="flex-1 min-w-[160px]">
+        <p className="font-bold text-lg">{store.nombre}</p>
+        <p style={{ color: COLORS.muted }} className="text-xs">{store.zona || store.direccion}</p>
+      </div>
+      {tiendas.length > 1 && (
+        <div className="flex gap-1">
+          {tiendas.map((_, i) => (
+            <span key={i} style={{ background: i === indice ? COLORS.gold : COLORS.surface2, width: 6, height: 6, borderRadius: "9999px" }} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- Decoración exclusiva de Diamante: anillo holográfico giratorio detrás del avatar ----
 function HoloAvatar({ perfil, children, ringSize }) {
   const esDiamante = planDe(perfil) === PLAN_INFO.masterball;
@@ -2324,6 +2391,73 @@ function EstadisticasAdmin({ session }) {
   );
 }
 
+// ---- Admin: revisar solicitudes de "Verificación de tienda" (trámite real,
+// distinto del badge automático de plan) -- aprobar/rechazar pega
+// directamente a verificaciones_tienda; la RLS de esa tabla (migración 048)
+// ya exige es_admin=true para poder actualizar, así que no hace falta un
+// endpoint de servidor aparte. ----
+function VerificacionesTiendaAdmin({ session }) {
+  const [pendientes, setPendientes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [resolviendo, setResolviendo] = useState(null);
+  const [notaRechazo, setNotaRechazo] = useState({});
+
+  const cargar = () => {
+    setLoading(true);
+    sb(`verificaciones_tienda?select=*,tiendas(nombre,direccion)&estado=eq.pendiente&order=created_at.asc`, session)
+      .then(setPendientes)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const resolver = async (id, estado) => {
+    setResolviendo(id);
+    try {
+      await sbWrite("PATCH", `verificaciones_tienda?id=eq.${id}`, { estado, nota: estado === "rechazada" ? (notaRechazo[id] || null) : null }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setResolviendo(null); }
+  };
+
+  if (loading) return <Loading label="Cargando solicitudes de verificación..." />;
+
+  return (
+    <div className="mb-8">
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">🛡️ Solicitudes de verificación de tienda</h3>
+      {error && <div className="mb-3"><ErrorBox message={error} /></div>}
+      {pendientes.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm mb-4">No hay solicitudes pendientes.</p>}
+      <div className="grid gap-2 mb-4">
+        {pendientes.map((v) => (
+          <div key={v.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.gold}55` }} className="rounded-lg p-3 grid gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <p className="font-semibold text-sm">{v.tiendas?.nombre || "Tienda"}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">{v.tiendas?.direccion}</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => resolver(v.id, "aprobada")} disabled={resolviendo === v.id}
+                  style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                  Aprobar
+                </button>
+                <button onClick={() => resolver(v.id, "rechazada")} disabled={resolviendo === v.id}
+                  style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                  Rechazar
+                </button>
+              </div>
+            </div>
+            <input placeholder="Motivo si la rechazas (opcional)" value={notaRechazo[v.id] || ""}
+              onChange={(e) => setNotaRechazo({ ...notaRechazo, [v.id]: e.target.value })}
+              style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
+              className="rounded-lg px-2 py-1.5 text-xs" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [tabAdmin, setTabAdmin] = useState("estadisticas");
@@ -2857,6 +2991,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
 
       {tabAdmin === "tiendas" && (
         <div>
+          <VerificacionesTiendaAdmin session={session} />
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Crear tienda</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-4">
             Da de alta una tienda nueva en el directorio con su nombre y dirección (la dirección se muestra sola en el mapa del perfil de la tienda, no requiere nada más). Opcionalmente puedes vincularla de una vez con una cuenta de tipo tienda.
@@ -3818,10 +3953,71 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   );
 }
 
+// ---- "Mis estadísticas" para tiendas (Diamante+, ver info.diamante) --
+// reusa StatTile/MiniAreaChart/serieAcumuladaPorSemana, los mismos
+// componentes que ya construimos para el panel de Admin, pero con las
+// cifras de la propia tienda en vez de las de toda la plataforma. Usa solo
+// datos que ya existen de verdad (ventas, mensajes recibidos, seguidores,
+// reseñas) -- no hay un contador de "vistas de página" en el esquema
+// todavía, así que honestamente no se muestra esa métrica en vez de
+// inventarla.
+function MisEstadisticasTienda({ session, perfil, totalActivos, onIrAPlanes }) {
+  const info = planDe(perfil);
+  const [datos, setDatos] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!info.diamante) return;
+    Promise.all([
+      sb(`ventas?select=id,precio,created_at,confirmada_at,estado&vendedor_perfil_id=eq.${session.user.id}`, session),
+      sb(`mensajes?select=id,created_at,de_perfil_id&para_perfil_id=eq.${session.user.id}`, session).catch(() => []),
+      sb(`resenas?select=estrellas&objetivo_perfil_id=eq.${session.user.id}`, session).catch(() => []),
+      sb(`seguidores?select=id&seguido_perfil_id=eq.${session.user.id}`, session).catch(() => []),
+    ])
+      .then(([ventas, mensajes, resenas, seguidores]) => setDatos({ ventas, mensajes, resenas, seguidores }))
+      .catch((e) => setError(e.message));
+  }, [info.diamante]);
+
+  if (!info.diamante) {
+    return (
+      <div className="mb-6">
+        <UpsellCard requiere={PLAN_INFO.masterball} plan="masterball" onIrAPlanes={onIrAPlanes}>
+          Mira las ventas, contactos y seguidores de tu tienda con gráficas de crecimiento, exclusivo Diamante en adelante.
+        </UpsellCard>
+      </div>
+    );
+  }
+
+  if (error) return <div className="mb-6"><ErrorBox message={error} /></div>;
+  if (!datos) return <div className="mb-6"><Loading label="Cargando tus estadísticas..." /></div>;
+
+  const ventasConfirmadas = datos.ventas.filter((v) => v.estado === "confirmada");
+  const montoTotal = ventasConfirmadas.reduce((s, v) => s + (Number(v.precio) || 0), 0);
+  const contactosUnicos = new Set(datos.mensajes.map((m) => m.de_perfil_id)).size;
+  const promedioEstrellas = datos.resenas.length ? datos.resenas.reduce((s, r) => s + r.estrellas, 0) / datos.resenas.length : 0;
+  const serieVentas = serieAcumuladaPorSemana(ventasConfirmadas.map((v) => v.confirmada_at || v.created_at));
+
+  return (
+    <div className="mb-8">
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">📊 Mis estadísticas</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <StatTile label="Inventario activo" value={totalActivos.toLocaleString("es-MX")} color={COLORS.azulPalido} />
+        <StatTile label="Ventas confirmadas" value={ventasConfirmadas.length.toLocaleString("es-MX")} sub={`$${montoTotal.toLocaleString("es-MX")} MXN`} color={COLORS.gold} />
+        <StatTile label="Contactos recibidos" value={contactosUnicos.toLocaleString("es-MX")} sub={`${datos.mensajes.length} mensajes`} color={COLORS.azulClaro} />
+        <StatTile label="Seguidores" value={datos.seguidores.length.toLocaleString("es-MX")} sub={datos.resenas.length ? `${promedioEstrellas.toFixed(1)} ★ (${datos.resenas.length})` : "Sin reseñas"} color={COLORS.violeta} />
+      </div>
+      <p className="text-sm font-semibold mb-2">Ventas confirmadas (acumulado, por semana)</p>
+      <MiniAreaChart puntos={serieVentas} color={COLORS.gold} />
+    </div>
+  );
+}
+
 function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
   const [inventario, setInventario] = useState([]);
   const [sellado, setSellado] = useState([]);
+  const [verificacion, setVerificacion] = useState(null); // solicitud de verificación más reciente, o null
+  const [solicitandoVerificacion, setSolicitandoVerificacion] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -3841,12 +4037,14 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         const t = rows[0] || null;
         setTienda(t);
         if (t) {
-          const [inv, sel] = await Promise.all([
+          const [inv, sel, verif] = await Promise.all([
             sb(`inventario_tienda?select=*&tienda_id=eq.${t.id}&order=carta.asc`, session),
             sb(`sellado_tienda?select=*&tienda_id=eq.${t.id}&order=producto.asc`, session),
+            sb(`verificaciones_tienda?select=*&tienda_id=eq.${t.id}&order=created_at.desc&limit=1`, session),
           ]);
           setInventario(inv);
           setSellado(sel);
+          setVerificacion(verif[0] || null);
         }
       })
       .catch((e) => setError(e.message))
@@ -3854,6 +4052,15 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   };
 
   useEffect(() => { cargar(); }, []);
+
+  const solicitarVerificacion = async () => {
+    if (!tienda) return;
+    setSolicitandoVerificacion(true);
+    try {
+      await sbWrite("POST", "verificaciones_tienda", { tienda_id: tienda.id, solicitada_por: session.user.id }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setSolicitandoVerificacion(false); }
+  };
 
   const totalActivos = inventario.length + sellado.length;
   const alLimite = limiteAlcanzado(perfil, totalActivos);
@@ -3953,6 +4160,25 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       </div>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Administra tu inventario y producto sellado.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <MisEstadisticasTienda session={session} perfil={perfil} totalActivos={totalActivos} onIrAPlanes={onIrAPlanes} />
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <p className="font-semibold text-sm flex items-center gap-2">🛡️ Verificación de tienda <TiendaVerificadaBadge tienda={{ verificaciones_tienda: verificacion ? [verificacion] : [] }} /></p>
+          <p style={{ color: COLORS.muted }} className="text-xs mt-1">
+            {!verificacion && "Pide que el equipo de Encuentra Cartas revise tu tienda para ganar esta insignia extra de confianza."}
+            {verificacion?.estado === "pendiente" && "Tu solicitud está en revisión."}
+            {verificacion?.estado === "aprobada" && "¡Tu tienda ya está verificada!"}
+            {verificacion?.estado === "rechazada" && `Tu solicitud fue rechazada${verificacion.nota ? `: ${verificacion.nota}` : "."} Puedes volver a intentarlo.`}
+          </p>
+        </div>
+        {(!verificacion || verificacion.estado === "rechazada") && (
+          <button onClick={solicitarVerificacion} disabled={solicitandoVerificacion} style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+            {solicitandoVerificacion ? "Enviando..." : "Solicitar verificación"}
+          </button>
+        )}
+      </div>
 
       <RedesSocialesEditor session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} esTienda />
 
@@ -5418,17 +5644,9 @@ function AparienciaView({ perfil, onCambio, onIrAPlanes }) {
   const [modo, setModo] = useState(() => localStorage.getItem(TEMA_MODO_KEY) || "noche");
   const [tipo, setTipo] = useState(() => localStorage.getItem(TEMA_TIPO_KEY) || "default");
 
-  if (!info.redesExtra) {
-    return (
-      <div>
-        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">🎨 Apariencia</h2>
-        <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
-          Elige entre modo día y modo noche, y desde Amatista también puedes cambiar los colores de la página según tipos de Pokémon.
-        </UpsellCard>
-      </div>
-    );
-  }
-
+  // Modo día/noche es gratis para todos los planes (ya no exclusivo Zafiro+)
+  // -- es cosmético y no le quita empuje real a los planes de pago. Solo el
+  // color según tipo de Pokémon (más abajo) se queda exclusivo Amatista+.
   const cambiarModo = (nuevo) => {
     setModo(nuevo);
     localStorage.setItem(TEMA_MODO_KEY, nuevo);
@@ -6419,6 +6637,27 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
   const vacio = { tcg: "pokemon", carta: "", precio_max: "", zona: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null };
   const [nueva, setNueva] = useState(vacio);
 
+  // "Mi Wishlist" (tabla wishlist, cartas marcadas "quiero" desde el Catálogo)
+  // es gratis para cualquiera con sesión -- distinto de las alertas de precio
+  // con push de más abajo, que siguen siendo exclusivas Amatista+.
+  const [misDeseos, setMisDeseos] = useState([]);
+  const [loadingDeseos, setLoadingDeseos] = useState(true);
+
+  const cargarDeseos = () => {
+    setLoadingDeseos(true);
+    sb(`wishlist?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
+      .then(setMisDeseos)
+      .catch(() => setMisDeseos([]))
+      .finally(() => setLoadingDeseos(false));
+  };
+
+  useEffect(() => { cargarDeseos(); }, []);
+
+  const borrarDeseo = async (id) => {
+    setMisDeseos((prev) => prev.filter((d) => d.id !== id));
+    try { await sbWrite("DELETE", `wishlist?id=eq.${id}`, {}, session); } catch (e) { setError(e.message); }
+  };
+
   const cargar = () => {
     setLoading(true); setError(null);
     sb(`alertas?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
@@ -6428,17 +6667,6 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
   };
 
   useEffect(() => { if (info.wishlistPremium) cargar(); }, []);
-
-  if (!info.wishlistPremium) {
-    return (
-      <div>
-        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">Wishlist Premium</h2>
-        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
-          Configura alertas como "avísame si sale Charizard a menos de $500" y recibe una notificación push apenas alguien lo publique.
-        </UpsellCard>
-      </div>
-    );
-  }
 
   const agregar = async () => {
     if (!nueva.carta.trim()) return;
@@ -6477,10 +6705,37 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Wishlist Premium</h2>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Te avisamos apenas alguien publique lo que buscas.</p>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Wishlist</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Cartas que marcaste como "quiero" en el Catálogo, y tus alertas de precio.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Mi Wishlist</h3>
+      {loadingDeseos ? <Loading label="Cargando tu wishlist..." /> : (
+        <div className="grid gap-2 mb-8">
+          {misDeseos.length === 0 && (
+            <p style={{ color: COLORS.muted }} className="text-sm">
+              Aún no has marcado ninguna carta como "quiero". Hazlo desde el Catálogo para verla aquí.
+            </p>
+          )}
+          {misDeseos.map((d) => (
+            <div key={d.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+              <div className="flex-1 min-w-[140px]">
+                <p className="font-medium text-sm">{d.carta}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">{TCG_LABEL[d.tcg] || d.tcg}</p>
+              </div>
+              <button onClick={() => borrarDeseo(d.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Alertas de precio con notificación push</h3>
+      {!info.wishlistPremium ? (
+        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
+          Configura alertas como "avísame si sale Charizard a menos de $500" y recibe una notificación push apenas alguien lo publique.
+        </UpsellCard>
+      ) : (
+        <>
       {!pushOk && (
         <div style={{ background: `${COLORS.azulMedio}11`, border: `1px solid ${COLORS.azulMedio}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
           <p className="text-sm">Activa las notificaciones push en este navegador para recibir tus alertas.</p>
@@ -6548,6 +6803,8 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
             </div>
           ))}
         </div>
+      )}
+        </>
       )}
     </div>
   );
@@ -7674,7 +7931,10 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
 
   const marcar = async (carta, estado) => {
     if (!session) { onIrAPlanes?.(); return; }
-    if (!info.wishlistPremium) { onIrAPlanes?.(); return; }
+    // "Quiero" (wishlist básica) es gratis para todos los que tengan sesión;
+    // "Tengo" (para llevar el progreso real en Master Sets) sigue exclusivo
+    // Amatista+, ver info.wishlistPremium.
+    if (estado === "tengo" && !info.wishlistPremium) { onIrAPlanes?.(); return; }
     const actual = coleccion[carta.id];
     const nuevoEstado = actual === estado ? null : estado;
     setColeccion((prev) => {
@@ -7723,7 +7983,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
 
       {!info.wishlistPremium && (
         <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
-          <p style={{ color: COLORS.muted }} className="text-sm">🔒 Marcar cartas como Tengo/Quiero y ver Master Sets es exclusivo de Amatista en adelante.</p>
+          <p style={{ color: COLORS.muted }} className="text-sm">🔒 Marcar "Tengo" y llevar tu progreso en Master Sets es exclusivo de Amatista en adelante — marcar "Quiero" ya es gratis para todos.</p>
           <button onClick={onIrAPlanes} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">Ver planes</button>
         </div>
       )}
@@ -8149,7 +8409,7 @@ export default function EncuentraCartas() {
   // Carga inicial: lista de tiendas reales
   useEffect(() => {
     setLoadingTiendas(true);
-    sb("tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&order=nombre.asc")
+    sb("tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&order=nombre.asc")
       .then(setTiendas)
       .catch((e) => setErrorTiendas(e.message))
       .finally(() => setLoadingTiendas(false));
@@ -8362,14 +8622,14 @@ export default function EncuentraCartas() {
         .then((rows) => { if (rows[0]) verPerfil(rows[0].id); })
         .catch(() => {});
     } else if (tiendaSlug) {
-      sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
+      sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
         .then((rows) => { if (rows[0]) openStore(rows[0]); })
         .catch(() => {});
     }
   }, []);
 
   const verTiendaDesdePerfil = (tiendaId) => {
-    sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&id=eq.${tiendaId}`)
+    sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&id=eq.${tiendaId}`)
       .then((rows) => { if (rows[0]) openStore(rows[0]); });
   };
 
@@ -8859,6 +9119,7 @@ export default function EncuentraCartas() {
                       <p className="font-semibold text-lg">{store.nombre}</p>
                       <PlanBadge perfil={store.perfiles} />
                       <VerificadoBadge perfil={store.perfiles} />
+                      <TiendaVerificadaBadge tienda={store} />
                     </button>
                     <div className="flex items-center gap-1 flex-wrap">
                       {store._distanciaKm != null && <Badge color={COLORS.gold}>📍 {formatoDistancia(store._distanciaKm)}</Badge>}
@@ -8878,6 +9139,7 @@ export default function EncuentraCartas() {
         {view === "market" && (
           <div>
             <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-4">Mercado entre usuarios</h2>
+            <TiendasAuroraCarrusel onAbrirTienda={openStore} />
             <div className="flex gap-2 flex-wrap mb-6">
               {[{ id: "todos", label: "Todo" }, { id: "carta", label: "Cartas" }, { id: "sellado", label: "Sellado" }, { id: "accesorio", label: "Accesorios" }].map((t) => (
                 <button key={t.id} onClick={() => setTipoMercadoTab(t.id)}
@@ -9188,6 +9450,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-2 pb-1.5">
                     <PlanBadge perfil={selectedStore.perfiles} size="lg" />
                     <VerificadoBadge perfil={selectedStore.perfiles} />
+                    <TiendaVerificadaBadge tienda={selectedStore} />
                     <NivelBadge total={storeDestellos} />
                     <VendedorBadge ventasCompletadas={storeVentasCompletadas} resenas={storeResenas} />
                     <CopiarLinkBoton param="tienda" slug={selectedStore.slug} />

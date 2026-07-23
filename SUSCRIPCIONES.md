@@ -1758,6 +1758,50 @@ el resto de la sesión.
     de día) — con el tinte oscuro, "surface" recibía más mezcla que "bg" y
     terminaba más apagado que la página en vez de "flotar" sobre ella.
 
+## 65. Nuevos beneficios de plan (todos menos "acceso anticipado")
+
+- **Modo día/noche gratis para todos los planes** (antes exclusivo Zafiro+):
+  `AparienciaView` ya no bloquea esa sección detrás de `info.redesExtra` —
+  solo el color según tipo de Pokémon se queda Amatista+.
+- **Wishlist básica gratis para todos**: marcar "Quiero" en el Catálogo ya
+  no exige `info.wishlistPremium` (solo "Tengo", que alimenta Master Sets,
+  se queda Amatista+). La vista "Wishlist" (antes "Wishlist Premium") ahora
+  siempre muestra arriba "Mi Wishlist" (tabla `wishlist`, gratis) y abajo,
+  aparte, las alertas de precio con push (siguen Amatista+).
+- **Boost gratis mensual escalonado**: Amatista 1/mes, Diamante 2/mes,
+  Aurora 3/mes, como Destellos (150/300/450 — el mismo costo que cobra
+  `api/recompensas/canjear.js` por 1/2/3 boosts de 3 días). Se otorga desde
+  `api/cron/recordatorios.js` (el cron diario ya existente, con un `if
+  (ahora.getDate() === 1)` adentro) en vez de un archivo de cron nuevo —
+  el proyecto ya estaba en el límite de 12 funciones serverless de Vercel
+  Hobby, así que sumar un archivo aparte lo hubiera roto.
+- **"Mis estadísticas" para tiendas** (Diamante+, `info.diamante` — se le
+  agregó ese flag también a Aurora, que antes no lo tenía a pesar de decir
+  "Todo lo de Diamante" en su texto): panel nuevo en `MyStorePanel` con
+  inventario activo, ventas confirmadas (monto + gráfica de crecimiento por
+  semana), contactos (mensajes recibidos) y seguidores/reseñas — reusa
+  `StatTile`/`MiniAreaChart`/`serieAcumuladaPorSemana`, los mismos
+  componentes del panel de Estadísticas de Admin. No incluye "vistas de
+  página" porque esa métrica no existe en el esquema — se omitió en vez de
+  inventar un número falso.
+- **Carrusel de tiendas Aurora** en el home del Mercado: se oculta solo si
+  no hay ninguna tienda Aurora, rota cada 5s si hay más de una.
+- **Insignia "Tienda verificada" con trámite real**: migración 048 agrega
+  la tabla `verificaciones_tienda` (pendiente/aprobada/rechazada), separada
+  de `tiendas` a propósito para no necesitar ni una función serverless ni
+  un trigger que reviente si la tabla `tiendas` gana columnas — la RLS de
+  esta tabla nueva ya impide que una tienda se apruebe a sí misma (solo
+  puede insertar en 'pendiente'; solo un admin puede resolver a
+  'aprobada'/'rechazada'). Nueva sección en `MyStorePanel` para solicitarla
+  y una nueva pestaña dentro de Admin → Tiendas para aprobar/rechazar. La
+  insignia (`TiendaVerificadaBadge`, ícono 🛡️ dorado) es distinta de
+  "✓ Verificado" (ese sigue siendo automático solo por plan Zafiro+).
+
+### Ya aplicado en Supabase
+La migración `048_tienda_verificacion.sql` ya se aplicó directo a la base
+de datos real vía el conector MCP de Supabase — no hace falta copiarla a
+mano en el SQL Editor.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
