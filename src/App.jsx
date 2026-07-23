@@ -6082,7 +6082,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
           ),
           wishlist: vis.wishlist !== false && wishlist.length > 0 && (
             <div key="wishlist" className="mb-8">
-              <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">Wishlist</h3>
+              <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">Lista de deseos</h3>
               <div className="grid gap-2">
                 {wishlist.map((a) => (
                   <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3">
@@ -6754,11 +6754,11 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Wishlist</h2>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Lista de deseos</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Cartas que marcaste como "quiero" en el Catálogo, y tus alertas de precio.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
-      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Mi Wishlist</h3>
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Mi lista de deseos</h3>
       {loadingDeseos ? <Loading label="Cargando tu wishlist..." /> : (
         <div className="grid gap-2 mb-8">
           {misDeseos.length === 0 && (
@@ -7019,7 +7019,7 @@ function MisPagosPanel({ session }) {
 
 const SECCIONES_PERFIL_LABEL = {
   publicaciones: "Mis cartas y producto sellado en venta",
-  wishlist: "Mi Wishlist",
+  wishlist: "Mi lista de deseos",
   carpetas: "Mis carpetas",
 };
 const SECCIONES_PERFIL_ORDEN_DEFAULT = ["publicaciones", "wishlist", "carpetas"];
@@ -7196,7 +7196,7 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil
             <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-1">Qué se ve en tu perfil público</p>
             {[
               { key: "publicaciones", label: "Mis cartas y producto sellado en venta" },
-              { key: "wishlist", label: "Mi Wishlist" },
+              { key: "wishlist", label: "Mi lista de deseos" },
               { key: "favoritos", label: "Mis Pokémon favoritos" },
               { key: "carpetas", label: "Mis carpetas" },
             ].map((op) => (
@@ -7519,7 +7519,17 @@ function NotificationBell({ session, onNavigate }) {
   );
 }
 
-function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil, onVerTutorial, onLogout, onLogin, onClose }) {
+// Menú lateral: todo lo que no cupo en el encabezado, organizado en pestañas
+// claras (Vender / Comunidad / Mi cuenta / Ayuda) en vez de una lista larga
+// sin agrupar -- así nadie tiene que hacer scroll adivinando dónde está algo.
+// El perfil (editar/cerrar sesión) queda fuera de las pestañas, siempre
+// visible abajo, porque no pertenece a ninguna categoría de navegación.
+function Drawer({ session, perfil, grupos, view, onNavigate, onEditarPerfil, onVerTutorial, onLogout, onLogin, onClose }) {
+  const [tabActiva, setTabActiva] = useState(
+    () => grupos.find((g) => g.items.some((it) => it.id === view))?.id || grupos[0]?.id
+  );
+  const grupo = grupos.find((g) => g.id === tabActiva) || grupos[0];
+
   const renglon = (id, label, Icon, onClick) => (
     <button
       key={id}
@@ -7534,9 +7544,9 @@ function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil
   return (
     <div className="fixed inset-0 z-50">
       <div style={{ background: "#00000099" }} className="absolute inset-0" onClick={onClose} />
-      <div style={{ background: COLORS.surface, borderLeft: `1px solid ${COLORS.azulMedio}66` }}
-        className="absolute right-0 top-0 bottom-0 w-72 max-w-[85vw] overflow-y-auto">
-        <div className="flex items-center justify-between p-4" style={{ borderBottom: `1px solid ${COLORS.surface2}` }}>
+      <div style={{ background: COLORS.surface, color: COLORS.text, borderLeft: `1px solid ${COLORS.azulMedio}66` }}
+        className="absolute right-0 top-0 bottom-0 w-80 max-w-[85vw] overflow-y-auto flex flex-col">
+        <div className="flex items-center justify-between p-4 shrink-0" style={{ borderBottom: `1px solid ${COLORS.surface2}` }}>
           {session ? (
             <div className="flex items-center gap-2 min-w-0">
               <AvatarImg url={perfil?.avatar_url} size={36} />
@@ -7551,17 +7561,36 @@ function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil
           <button onClick={onClose} style={{ color: COLORS.muted }}><X size={20} /></button>
         </div>
 
-        <div className="py-2">
-          {secundarios.map((item) => renglon(item.id, item.label, item.icon, () => onNavigate(item.id)))}
+        <div className="flex gap-1.5 p-3 flex-wrap shrink-0" style={{ borderBottom: `1px solid ${COLORS.surface2}` }}>
+          {grupos.map((g) => {
+            const GIcon = g.icon;
+            const activa = g.id === tabActiva;
+            return (
+              <button key={g.id} onClick={() => setTabActiva(g.id)}
+                style={{ background: activa ? COLORS.surface2 : "transparent", border: `1px solid ${activa ? COLORS.azulPalido : COLORS.surface2}`, color: activa ? COLORS.azulPalido : COLORS.muted }}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap">
+                <GIcon size={13} /> {g.label}
+              </button>
+            );
+          })}
         </div>
 
-        <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="py-2">
-          <button onClick={onVerTutorial} style={{ color: COLORS.text }} className="flex items-center gap-3 w-full text-left px-4 py-3 text-sm font-medium hover:brightness-125">
-            <Sparkles size={18} /> Ver tutorial
-          </button>
+        <div className="py-2 flex-1">
+          {grupo.items.length === 0 ? (
+            <div className="px-4 py-8 text-center">
+              <p style={{ color: COLORS.muted }} className="text-sm mb-4">Inicia sesión para ver esta sección.</p>
+              <button onClick={onLogin} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-bold">
+                Iniciar sesión / Crear cuenta
+              </button>
+            </div>
+          ) : (
+            grupo.items.map((item) =>
+              renglon(item.id, item.label, item.icon, item.accion === "tutorial" ? onVerTutorial : () => onNavigate(item.id))
+            )
+          )}
         </div>
 
-        <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="py-2">
+        <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="py-2 shrink-0">
           {session ? (
             <>
               {renglon("editarPerfil", "Editar perfil", User, onEditarPerfil)}
@@ -8016,10 +8045,11 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
     <div>
       <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">📚 Catálogo</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">
-        Explora los sets de cada TCG y marca qué cartas ya tienes y cuáles deseas.
+        Paso 1: elige el juego. Paso 2: elige una era y un set. Paso 3: marca cada carta con ✅ Tengo o ⭐ Quiero.
       </p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
+      <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 1 · Elige el juego</p>
       <div className="flex gap-2 flex-wrap mb-6">
         {TCG_OPCIONES.map((o) => (
           <button key={o.key} onClick={() => setTcgSel(o.key)}
@@ -8032,24 +8062,34 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
 
       {!info.wishlistPremium && (
         <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
-          <p style={{ color: COLORS.muted }} className="text-sm">🔒 Marcar "Tengo" y llevar tu progreso en Master Sets es exclusivo de Amatista en adelante — marcar "Quiero" ya es gratis para todos.</p>
+          <p style={{ color: COLORS.muted }} className="text-sm">🔒 Marcar ✅ "Tengo" (y ver tu progreso en "Mi progreso por set") es exclusivo del plan Amatista en adelante — marcar ⭐ "Quiero" ya es gratis para todos.</p>
           <button onClick={onIrAPlanes} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">Ver planes</button>
         </div>
       )}
 
       {info.wishlistPremium && (
-        <div className="flex gap-2 mb-6">
-          <button onClick={() => { setModo("explorar"); setVolverAMasterSets(false); }}
-            style={{ background: modo === "explorar" ? COLORS.surface2 : "transparent", border: `1px solid ${modo === "explorar" ? COLORS.azulPalido : COLORS.surface2}`, color: modo === "explorar" ? COLORS.azulPalido : COLORS.muted }}
-            className="rounded-lg px-4 py-2 text-sm font-semibold">🔍 Explorar</button>
-          <button onClick={() => { setModo("masterSets"); setVolverAMasterSets(false); setSetSel(null); setCartas([]); }}
-            style={{ background: modo === "masterSets" ? COLORS.surface2 : "transparent", border: `1px solid ${modo === "masterSets" ? COLORS.azulPalido : COLORS.surface2}`, color: modo === "masterSets" ? COLORS.azulPalido : COLORS.muted }}
-            className="rounded-lg px-4 py-2 text-sm font-semibold">🏆 Master Sets</button>
+        <div className="mb-6">
+          <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">¿Qué quieres hacer?</p>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => { setModo("explorar"); setVolverAMasterSets(false); }}
+              style={{ background: modo === "explorar" ? COLORS.surface2 : "transparent", border: `1px solid ${modo === "explorar" ? COLORS.azulPalido : COLORS.surface2}`, color: modo === "explorar" ? COLORS.azulPalido : COLORS.muted }}
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-left">
+              📖 Ver cartas y marcar<br />
+              <span style={{ color: COLORS.muted, fontWeight: 400 }} className="text-xs">Buscar un set y marcar Tengo/Quiero</span>
+            </button>
+            <button onClick={() => { setModo("masterSets"); setVolverAMasterSets(false); setSetSel(null); setCartas([]); }}
+              style={{ background: modo === "masterSets" ? COLORS.surface2 : "transparent", border: `1px solid ${modo === "masterSets" ? COLORS.azulPalido : COLORS.surface2}`, color: modo === "masterSets" ? COLORS.azulPalido : COLORS.muted }}
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-left">
+              🏆 Mi progreso por set<br />
+              <span style={{ color: COLORS.muted, fontWeight: 400 }} className="text-xs">Ver qué tan completa tienes cada colección</span>
+            </button>
+          </div>
         </div>
       )}
 
       {modo === "masterSets" && info.wishlistPremium && (
         <div className="grid gap-3">
+          <p style={{ color: COLORS.muted }} className="text-sm -mt-2 mb-1">Qué tan completa tienes cada colección, según las cartas que marcaste ✅ Tengo.</p>
           {loadingEras && <Loading label="Cargando sets..." />}
           {!loadingEras && eras.flatMap((g) => g.sets).length === 0 && (
             <p style={{ color: COLORS.muted }} className="text-sm">No pudimos cargar los sets de {TCG_LABEL[tcgSel]} en este momento.</p>
@@ -8083,32 +8123,43 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
         </div>
       )}
 
+      {modo === "explorar" && !grupoUnico && (eraSel || setSel) && (
+        <div className="flex items-center gap-1 flex-wrap text-xs mb-4" style={{ color: COLORS.muted }}>
+          <span>📍</span>
+          <button onClick={() => { setEraSel(null); setSetSel(null); setCartas([]); }} style={{ color: COLORS.azulPalido }} className="hover:underline">{TCG_LABEL[tcgSel]}</button>
+          <span>›</span>
+          <button onClick={() => { setSetSel(null); setCartas([]); }} style={{ color: setSel ? COLORS.azulPalido : COLORS.text }} className={setSel ? "hover:underline" : "font-semibold"}>{eraSel}</button>
+          {setSel && (<><span>›</span><span style={{ color: COLORS.text }} className="font-semibold">{setSel.nombre}</span></>)}
+        </div>
+      )}
+
       {modo === "explorar" && loadingEras && <Loading label="Cargando sets..." />}
 
       {modo === "explorar" && !loadingEras && !setSel && (
         <>
           {!grupoUnico && !eraSel && (
-            <div className="grid sm:grid-cols-2 gap-3">
-              {eras.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">No pudimos cargar el catálogo de {TCG_LABEL[tcgSel]} en este momento.</p>}
-              {eras.map((g) => (
-                <button key={g.era} onClick={() => setEraSel(g.era)}
-                  style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
-                  className="rounded-xl p-4 text-left hover:brightness-125 flex items-center gap-3">
-                  {g.imagen && <img src={g.imagen} alt="" style={{ maxHeight: 36, maxWidth: 90, objectFit: "contain" }} />}
-                  <div>
-                    <p className="font-semibold">{g.era}</p>
-                    <p style={{ color: COLORS.muted }} className="text-xs">{g.sets.length} set{g.sets.length === 1 ? "" : "s"}</p>
-                  </div>
-                </button>
-              ))}
+            <div>
+              <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 2 · Elige una era (agrupa varios sets de esa etapa del juego)</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {eras.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">No pudimos cargar el catálogo de {TCG_LABEL[tcgSel]} en este momento.</p>}
+                {eras.map((g) => (
+                  <button key={g.era} onClick={() => setEraSel(g.era)}
+                    style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                    className="rounded-xl p-4 text-left hover:brightness-125 flex items-center gap-3">
+                    {g.imagen && <img src={g.imagen} alt="" style={{ maxHeight: 36, maxWidth: 90, objectFit: "contain" }} />}
+                    <div>
+                      <p className="font-semibold">{g.era}</p>
+                      <p style={{ color: COLORS.muted }} className="text-xs">{g.sets.length} set{g.sets.length === 1 ? "" : "s"}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
           {(grupoUnico || eraSel) && (
             <div>
-              {!grupoUnico && (
-                <button onClick={() => setEraSel(null)} style={{ color: COLORS.muted }} className="text-xs mb-3 flex items-center gap-1"><ChevronLeft size={14} /> Eras</button>
-              )}
+              <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 2 · Elige un set</p>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {(grupoUnico || eras.find((g) => g.era === eraSel))?.sets.map((s) => (
                   <button key={s.id} onClick={() => abrirSet(s)}
@@ -8135,8 +8186,9 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
               if (volverAMasterSets) { setModo("masterSets"); setVolverAMasterSets(false); }
             }}
             style={{ color: COLORS.muted }} className="text-xs mb-3 flex items-center gap-1">
-            <ChevronLeft size={14} /> {volverAMasterSets ? "Master Sets" : "Sets"}
+            <ChevronLeft size={14} /> {volverAMasterSets ? "Volver a Mi progreso" : "Volver a todos los sets"}
           </button>
+          <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 3 · Marca cada carta</p>
           <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
             <h3 className="font-semibold">{setSel.nombre}</h3>
             {session && info.wishlistPremium && cartas.length > 0 && (
@@ -8682,32 +8734,60 @@ export default function EncuentraCartas() {
       .then((rows) => { if (rows[0]) openStore(rows[0]); });
   };
 
-  // Esenciales: siempre visibles, en cualquier tamaño de pantalla.
+  // Esenciales: siempre visibles arriba, máximo 5 para no saturar el
+  // encabezado -- las mismas 4 para cualquier persona (comprar es lo que
+  // hace todo el mundo) más "Mensajes" si ya inició sesión. Todo lo demás
+  // vive en el menú lateral, organizado por pestañas (ver navGrupos) para
+  // que siga siendo fácil de encontrar sin ocupar espacio arriba.
   const navEsenciales = [
     { id: "search", label: "Buscar", icon: Search },
-    { id: "directory", label: "Tiendas", icon: Store },
     { id: "market", label: "Mercado", icon: ShoppingBag },
+    { id: "directory", label: "Tiendas", icon: Store },
     { id: "catalogo", label: "Catálogo", icon: BookOpen },
-    { id: "news", label: "Anuncios y noticias", icon: Megaphone },
     ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
-    ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
-    ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
-    ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: Tag }] : []),
   ];
-  // El resto vive en el menú lateral (Drawer) — se mantiene ahí para no saturar
-  // el encabezado con cosas que se usan poco (Wishlist, Recompensas, Apariencia, etc.).
-  const navSecundarios = [
-    { id: "torneos", label: "Torneos", icon: Calendar },
-    { id: "armarMazo", label: "Armar mazo", icon: Layers },
-    { id: "comunidad", label: "Comunidad", icon: Newspaper },
-    ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
-    ...(session ? [{ id: "siguiendo", label: "Siguiendo", icon: User }] : []),
-    ...(session ? [{ id: "recompensas", label: "Recompensas", icon: Sparkles }] : []),
-    ...(session ? [{ id: "apariencia", label: "Apariencia", icon: Palette }] : []),
-    { id: "planes", label: "Planes", icon: Shield },
-    ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
-    { id: "ayuda", label: "Ayuda", icon: HelpCircle },
-    ...(perfil?.es_admin ? [{ id: "admin", label: "Admin", icon: Shield }] : []),
+  // El resto vive en el menú lateral (Drawer), agrupado en pestañas claras
+  // (ver Drawer) para que nada se sienta "perdido" ni sature al usuario:
+  // "Vender" (acciones de vendedor), "Comunidad" (torneos, mazos, noticias),
+  // "Mi cuenta" (beneficios de plan) y "Ayuda". El perfil (editar/cerrar
+  // sesión) se queda fuera de las pestañas, siempre visible abajo del todo.
+  const navGrupos = [
+    {
+      id: "vender", label: "Vender", icon: Tag,
+      items: [
+        ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
+        ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: Tag }] : []),
+        ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
+      ],
+    },
+    {
+      id: "comunidad", label: "Comunidad", icon: Newspaper,
+      items: [
+        { id: "torneos", label: "Torneos", icon: Calendar },
+        { id: "armarMazo", label: "Armar mazo", icon: Layers },
+        { id: "comunidad", label: "Comunidad", icon: Newspaper },
+        { id: "news", label: "Noticias", icon: Megaphone },
+        ...(session ? [{ id: "siguiendo", label: "Tiendas que sigo", icon: User }] : []),
+      ],
+    },
+    {
+      id: "cuenta", label: "Mi cuenta", icon: Sparkles,
+      items: [
+        ...(session ? [{ id: "alertas", label: "Lista de deseos", icon: Sparkles }] : []),
+        ...(session ? [{ id: "recompensas", label: "Recompensas", icon: Sparkles }] : []),
+        ...(session ? [{ id: "apariencia", label: "Apariencia", icon: Palette }] : []),
+        ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
+        { id: "planes", label: "Planes y precios", icon: Shield },
+      ],
+    },
+    {
+      id: "ayuda", label: "Ayuda", icon: HelpCircle,
+      items: [
+        { id: "ayuda", label: "Centro de ayuda", icon: HelpCircle },
+        { id: "tutorial", label: "Ver el tutorial de bienvenida", icon: Sparkles, accion: "tutorial" },
+        ...(perfil?.es_admin ? [{ id: "admin", label: "Admin", icon: Shield }] : []),
+      ],
+    },
   ];
   const navButton = (item) => {
     const Icon = item.icon;
@@ -8793,7 +8873,7 @@ export default function EncuentraCartas() {
         <Drawer
           session={session}
           perfil={perfil}
-          secundarios={navSecundarios}
+          grupos={navGrupos}
           view={view}
           onNavigate={(id) => { setView(id); setShowDrawer(false); }}
           onEditarPerfil={() => { setShowEditarPerfil(true); setShowDrawer(false); }}

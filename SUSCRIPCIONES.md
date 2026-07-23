@@ -1862,6 +1862,48 @@ usar esta función en producción.
   ningún botón de acción. Se agregó el mismo botón "Borrar" a esas dos
   secciones.
 
+## 68. Navegación a prueba de tontos: máximo 5 botones arriba + pestañas + Catálogo más claro
+
+- **Encabezado reducido a máximo 5 botones** (antes hasta 9, según plan y
+  tipo de cuenta, y se sentía saturado): ahora siempre son los mismos 4
+  para cualquiera (Buscar, Mercado, Tiendas, Catálogo) más "Mensajes" si
+  ya iniciaste sesión. Todo lo demás (Mi tienda/Vender en el Mercado, Mis
+  compras y ventas, Torneos, Armar mazo, Comunidad, Noticias, Lista de
+  deseos, Recompensas, Apariencia, Mis pagos, Planes, Ayuda, Admin) se
+  movió al menú lateral.
+- **Menú lateral con pestañas** en vez de una lista larga sin agrupar:
+  `Drawer` ahora recibe `navGrupos` (antes `navSecundarios`, una lista
+  plana) y muestra 4 pestañas con nombres que no requieren explicación —
+  **Vender** (acciones de vendedor: Mi tienda/Vender en el Mercado, Mis
+  compras y ventas), **Comunidad** (Torneos, Armar mazo, Comunidad,
+  Noticias, Tiendas que sigo), **Mi cuenta** (Lista de deseos,
+  Recompensas, Apariencia, Mis pagos, Planes y precios) y **Ayuda**
+  (Centro de ayuda, Ver el tutorial de bienvenida, Admin). Si una pestaña
+  queda vacía por no tener sesión (ej. "Vender" para un invitado), en vez
+  de verse en blanco muestra "Inicia sesión para ver esta sección" con un
+  botón directo. El perfil (editar/cerrar sesión) se queda fuera de las
+  pestañas, siempre visible abajo, tal como antes.
+- **Renombres para quitar anglicismos y jerga confusa**: "Wishlist" →
+  "Lista de deseos" (en el nav, el h2 de la vista, el selector de
+  visibilidad del perfil y el editor de orden de secciones). "Anuncios y
+  noticias" → "Noticias" en el nav (la vista conserva su título completo).
+  "Planes" → "Planes y precios".
+- **Catálogo reestructurado para que nadie se pierda**: antes el flujo
+  (TCG → Era → Set → Cartas) no tenía ninguna señal de "dónde estoy", y
+  el modo "🏆 Master Sets" usaba jerga sin explicar qué hacía. Ahora:
+  - El subtítulo de arriba explica los 3 pasos de una sola vez ("Paso 1:
+    elige el juego. Paso 2: elige una era y un set. Paso 3: marca cada
+    carta...").
+  - Cada sección trae su propia etiqueta "Paso 1 · Elige el juego",
+    "Paso 2 · Elige una era/set", "Paso 3 · Marca cada carta".
+  - "🔍 Explorar" y "🏆 Master Sets" se renombraron a "📖 Ver cartas y
+    marcar" y "🏆 Mi progreso por set", cada uno con una línea corta
+    debajo explicando qué hace.
+  - Nueva migaja de pan (breadcrumb) siempre visible mientras navegas
+    dentro de un TCG: `📍 Pokémon › Escarlata y Púrpura › 151`, con cada
+    segmento anterior clicable para saltar directo ahí, en vez de solo un
+    botón "← Eras"/"← Sets" ambiguo sobre a dónde regresa.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
