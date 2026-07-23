@@ -2,21 +2,23 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
-  User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
+  User, Megaphone, Newspaper, ShoppingBag, ShoppingCart, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
-  ArrowUp, ArrowDown, Navigation, Image as ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check,
+  ArrowUp, ArrowDown, Navigation, Image as ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
 } from "lucide-react";
 import {
   VAPID_PUBLIC_KEY,
   setOnSesionRefrescada,
   sb, sbWrite, authSignUp, authSignIn,
   subirAvatar, subirImagenAnuncio, subirImagenABucket, subirImagenCarta, subirImagenMensaje,
+  urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken,
 } from "./lib/supabase.js";
 import { setUidActual } from "./lib/errorReporting.jsx";
 import {
   pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
   parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
   buscarCartasCatalogo, obtenerPrecioRefActualPorTcg, categoriaIdTCGplayer,
+  obtenerErasYSetsCatalogo, obtenerCartasDeSetCatalogo,
 } from "./lib/pokemonApi.js";
 import {
   FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
@@ -832,12 +834,41 @@ function ErrorBox({ message }) {
   );
 }
 
+// Botones de "Continuar con Google/Facebook": simplemente redirigen a Supabase
+// Auth, que habla con el proveedor y nos regresa con la sesión en la URL (ver
+// leerSesionDeUrl en el componente raíz). No hay botón de Instagram: Meta dio
+// de baja en 2024 la API pública que permitía "iniciar sesión con Instagram"
+// para cuentas normales — su enlace de perfil (ya existente, en Editar perfil)
+// sigue siendo la forma de mostrarlo, solo que no sirve para autenticarse.
+function BotonesLoginSocial() {
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center gap-2 my-1">
+        <div style={{ flex: 1, height: 1, background: COLORS.surface2 }} />
+        <p style={{ color: COLORS.muted }} className="text-xs">o continúa con</p>
+        <div style={{ flex: 1, height: 1, background: COLORS.surface2 }} />
+      </div>
+      <a href={urlLoginSocial("google")}
+        style={{ background: COLORS.surface2, border: `1px solid ${COLORS.surface2}`, color: COLORS.text }}
+        className="rounded-xl p-3 text-sm font-semibold flex items-center justify-center gap-2">
+        Google
+      </a>
+      <a href={urlLoginSocial("facebook")}
+        style={{ background: COLORS.surface2, border: `1px solid ${COLORS.surface2}`, color: COLORS.text }}
+        className="rounded-xl p-3 text-sm font-semibold flex items-center justify-center gap-2">
+        Facebook
+      </a>
+    </div>
+  );
+}
+
 function AccountModal({ onClose, onAuthed }) {
   const [mode, setMode] = useState("choose"); // choose | signupForm | login
   const [accountType, setAccountType] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [nombre, setNombre] = useState("");
+  const [telefono, setTelefono] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [facebook, setFacebook] = useState("");
   const [avatarFile, setAvatarFile] = useState(null);
@@ -868,7 +899,7 @@ function AccountModal({ onClose, onAuthed }) {
     try {
       const avatarUrlPokemonFinal = avatarFile ? null : avatarPokemonUrl || randomPokemonAvatar();
       const auth = await authSignUp(email, password, {
-        tipo: accountType, nombre, whatsapp: whatsapp || null, facebook: facebook || null,
+        tipo: accountType, nombre, telefono: telefono || null, whatsapp: whatsapp || null, facebook: facebook || null,
         avatar_url: avatarUrlPokemonFinal,
       });
       if (!auth.access_token) {
@@ -880,7 +911,7 @@ function AccountModal({ onClose, onAuthed }) {
       const avatarUrl = avatarFile ? await subirAvatar(avatarFile, session) : avatarUrlPokemonFinal;
       await sbWrite("POST", "perfiles", {
         id: auth.user.id, tipo: accountType, nombre, email: auth.user.email,
-        whatsapp: whatsapp || null, facebook: facebook || null, avatar_url: avatarUrl,
+        telefono: telefono || null, whatsapp: whatsapp || null, facebook: facebook || null, avatar_url: avatarUrl,
       }, session);
       localStorage.setItem("ec_session", JSON.stringify(session));
       onAuthed(session, { esNuevo: true });
@@ -930,6 +961,7 @@ function AccountModal({ onClose, onAuthed }) {
               <button onClick={() => setMode("login")} style={{ color: COLORS.azulPalido }} className="text-sm mt-2">
                 Ya tengo cuenta, iniciar sesión
               </button>
+              <BotonesLoginSocial />
             </div>
           </>
         )}
@@ -971,6 +1003,8 @@ function AccountModal({ onClose, onAuthed }) {
               style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
             {accountType === "individual" && (
               <>
+                <input placeholder="Teléfono (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)}
+                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
                 <input placeholder="WhatsApp (opcional)" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)}
                   style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
                 <input placeholder="Enlace de Facebook (opcional)" value={facebook} onChange={(e) => setFacebook(e.target.value)}
@@ -1002,8 +1036,70 @@ function AccountModal({ onClose, onAuthed }) {
               {loading && <Loader2 size={16} className="animate-spin" />} Entrar
             </button>
             <button onClick={() => setMode("choose")} style={{ color: COLORS.muted }} className="text-xs">← Volver</button>
+            <BotonesLoginSocial />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Tras un login social exitoso puede que todavía no exista perfiles (nadie
+// eligió tipo de cuenta ni nombre — Google/Facebook no preguntan eso). Este
+// modal completa esos datos una sola vez, usando lo que el proveedor ya nos
+// dio (nombre y foto) como valor inicial.
+function CompletarPerfilOAuthModal({ session, onCreado, onCancelar }) {
+  const meta = session.user.user_metadata || {};
+  const [accountType, setAccountType] = useState(null);
+  const [nombre, setNombre] = useState(meta.full_name || meta.name || "");
+  const [telefono, setTelefono] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const confirmar = async () => {
+    if (!accountType || !nombre.trim()) return;
+    setLoading(true); setError(null);
+    try {
+      const creado = await crearConSlugUnico("perfiles", {
+        id: session.user.id, tipo: accountType, nombre: nombre.trim(), email: session.user.email || null,
+        telefono: telefono || null, avatar_url: meta.avatar_url || meta.picture || randomPokemonAvatar(),
+      }, nombre.trim(), session, "usuario");
+      onCreado(Array.isArray(creado) ? creado[0] : creado);
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 40px ${COLORS.azulMedio}33` }} className="w-full max-w-md rounded-2xl p-6">
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Completa tu registro</h2>
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">Ya iniciaste sesión. Solo nos falta esto para terminar de crear tu cuenta.</p>
+        <div className="grid gap-3">
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setAccountType("tienda")}
+              style={{ background: accountType === "tienda" ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${accountType === "tienda" ? COLORS.azulPalido : COLORS.surface2}` }}
+              className="rounded-xl p-3 text-sm font-semibold flex flex-col items-center gap-1">
+              <Store size={20} color={COLORS.azulPalido} /> Tienda
+            </button>
+            <button onClick={() => setAccountType("individual")}
+              style={{ background: accountType === "individual" ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${accountType === "individual" ? COLORS.azulClaro : COLORS.surface2}` }}
+              className="rounded-xl p-3 text-sm font-semibold flex flex-col items-center gap-1">
+              <User size={20} color={COLORS.azulClaro} /> Individual
+            </button>
+          </div>
+          <input placeholder={accountType === "tienda" ? "Nombre de la tienda" : "Nombre de usuario"} value={nombre} onChange={(e) => setNombre(e.target.value)}
+            style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+          {accountType === "individual" && (
+            <input placeholder="Teléfono (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)}
+              style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+          )}
+          {error && <ErrorBox message={error} />}
+          <button onClick={confirmar} disabled={loading || !accountType || !nombre.trim()}
+            style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
+            className="rounded-lg py-2 font-semibold flex items-center justify-center gap-2">
+            {loading && <Loader2 size={16} className="animate-spin" />} Continuar
+          </button>
+          <button onClick={onCancelar} style={{ color: COLORS.muted }} className="text-xs">Cancelar e iniciar sesión con otra cuenta</button>
+        </div>
       </div>
     </div>
   );
@@ -1420,6 +1516,7 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda
   const info = planDe(perfil);
   const [instagram, setInstagram] = useState(perfil?.instagram || "");
   const [maps, setMaps] = useState(perfil?.google_maps_url || "");
+  const [telefono, setTelefono] = useState(perfil?.telefono || "");
   const [whatsapp, setWhatsapp] = useState(perfil?.whatsapp || "");
   const [facebook, setFacebook] = useState(perfil?.facebook || "");
   const [saving, setSaving] = useState(false);
@@ -1442,7 +1539,7 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda
     try {
       const cambios = esTienda
         ? { instagram: instagram || null, google_maps_url: maps || null }
-        : { instagram: instagram || null, whatsapp: whatsapp || null, facebook: facebook || null };
+        : { instagram: instagram || null, telefono: telefono || null, whatsapp: whatsapp || null, facebook: facebook || null };
       await sbWrite("PATCH", `perfiles?id=eq.${session.user.id}`, cambios, session);
       setOk(true);
       onUpdated?.();
@@ -1459,6 +1556,7 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda
           <input placeholder="Enlace de Google Maps" value={maps} onChange={(e) => setMaps(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
         ) : (
           <>
+            <input placeholder="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
             <input placeholder="WhatsApp (con código de país)" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
             <input placeholder="Enlace de Facebook" value={facebook} onChange={(e) => setFacebook(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           </>
@@ -1851,6 +1949,127 @@ function CambiarPlanAdmin({ session }) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---- Admin: lista completa de todos los usuarios registrados (sin contar
+// sub-perfiles, que ya tienen su propia pestaña), con cambio de plan y borrado. ----
+function UsuariosAdmin({ session }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [query, setQuery] = useState("");
+  const [mostrarSubperfiles, setMostrarSubperfiles] = useState(false);
+  const [cambiandoPlan, setCambiandoPlan] = useState(null);
+  const [confirmando, setConfirmando] = useState(null);
+  const [borrando, setBorrando] = useState(null);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`perfiles?select=id,nombre,email,tipo,plan,plan_vence,created_at,es_admin,gestionado_por,telefono,avatar_url&order=created_at.desc`, session)
+      .then(setUsuarios)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const cambiarPlan = async (id, nuevoPlan) => {
+    setCambiandoPlan(id); setError(null);
+    try {
+      await sbWrite("PATCH", `perfiles?id=eq.${id}`, { plan: nuevoPlan, plan_vence: null }, session);
+      setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, plan: nuevoPlan, plan_vence: null } : u)));
+    } catch (e) { setError(e.message); } finally { setCambiandoPlan(null); }
+  };
+
+  const borrar = async (u) => {
+    setBorrando(u.id); setError(null);
+    try {
+      const res = await fetch("/api/admin/usuarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ accion: "borrar", perfilId: u.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo borrar la cuenta");
+      setUsuarios((prev) => prev.filter((x) => x.id !== u.id));
+      setConfirmando(null);
+    } catch (e) { setError(e.message); } finally { setBorrando(null); }
+  };
+
+  const visibles = usuarios
+    .filter((u) => mostrarSubperfiles || !u.gestionado_por)
+    .filter((u) => {
+      const q = query.trim().toLowerCase();
+      if (!q) return true;
+      return u.nombre?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q);
+    });
+
+  if (loading) return <Loading label="Cargando usuarios..." />;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">👥 Todos los usuarios</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+        {visibles.length} de {usuarios.length} cuentas registradas. Cambia el plan o borra una cuenta por completo (borra también su tienda, publicaciones, mensajes, etc.).
+      </p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div className="flex gap-3 items-center mb-4 flex-wrap">
+        <input placeholder="Busca por nombre o correo..." value={query} onChange={(e) => setQuery(e.target.value)}
+          style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" />
+        <label className="flex items-center gap-2 text-xs whitespace-nowrap" style={{ color: COLORS.muted }}>
+          <input type="checkbox" checked={mostrarSubperfiles} onChange={(e) => setMostrarSubperfiles(e.target.checked)} />
+          Mostrar sub-perfiles
+        </label>
+      </div>
+
+      <div className="grid gap-2">
+        {visibles.map((u) => (
+          <div key={u.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
+              <AvatarImg url={u.avatar_url} size={32} />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-sm truncate">{u.nombre}</p>
+                  {u.es_admin && <Badge color={COLORS.gold}>Admin</Badge>}
+                  {u.gestionado_por && <Badge color={COLORS.muted}>Sub-perfil</Badge>}
+                </div>
+                <p style={{ color: COLORS.muted }} className="text-xs truncate">
+                  {u.email || "(sin correo)"} · {u.tipo}{u.telefono ? ` · ${u.telefono}` : ""}
+                </p>
+                <p style={{ color: COLORS.muted }} className="text-[11px]">Desde {new Date(u.created_at).toLocaleDateString("es-MX")}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <select value={u.plan} disabled={cambiandoPlan === u.id} onChange={(e) => cambiarPlan(u.id, e.target.value)}
+                style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs">
+                {PLAN_ORDER.map((p) => <option key={p} value={p}>{PLAN_INFO[p].nombre}</option>)}
+              </select>
+
+              {confirmando === u.id ? (
+                <div className="flex items-center gap-1">
+                  <span style={{ color: COLORS.muted }} className="text-xs">¿Seguro?</span>
+                  <button onClick={() => borrar(u)} disabled={borrando === u.id} style={{ background: "#C24444", color: "#fff" }} className="rounded-lg px-2 py-1.5 text-xs font-semibold">
+                    {borrando === u.id ? "Borrando..." : "Sí, borrar"}
+                  </button>
+                  <button onClick={() => setConfirmando(null)} style={{ color: COLORS.muted }} className="text-xs px-2">Cancelar</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmando(u.id)} disabled={u.es_admin}
+                  style={{ color: u.es_admin ? COLORS.muted : "#C24444", border: `1px solid ${u.es_admin ? COLORS.surface2 : "#C2444488"}`, opacity: u.es_admin ? 0.5 : 1 }}
+                  className="rounded-lg px-2 py-1.5 text-xs font-semibold whitespace-nowrap">
+                  🗑 Borrar
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        {visibles.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm text-center py-8">Sin resultados.</p>}
+      </div>
     </div>
   );
 }
@@ -2522,7 +2741,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
     if (!nombreSubperfil.trim()) return;
     setCreandoSubperfil(true); setErrorSubperfil(null);
     try {
-      const res = await fetch("/api/admin/subperfiles", {
+      const res = await fetch("/api/admin/usuarios", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ accion: "crear", nombre: nombreSubperfil.trim(), tipo: tipoSubperfil }),
@@ -2545,7 +2764,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const entrarComoSub = async (subperfilId) => {
     setEntrandoSub(subperfilId); setErrorSubperfil(null);
     try {
-      const res = await fetch("/api/admin/subperfiles", {
+      const res = await fetch("/api/admin/usuarios", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ accion: "entrar", subperfilId }),
@@ -2560,6 +2779,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
 
   const tabs = [
     { id: "estadisticas", label: "Estadísticas" },
+    { id: "usuarios", label: "Usuarios" },
     { id: "planes", label: "Planes" },
     { id: "tiendas", label: "Tiendas" },
     { id: "subperfiles", label: "Sub-perfiles" },
@@ -2591,6 +2811,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
 
       {tabAdmin === "estadisticas" && <EstadisticasAdmin session={session} />}
 
+      {tabAdmin === "usuarios" && <UsuariosAdmin session={session} />}
       {tabAdmin === "planes" && <CambiarPlanAdmin session={session} />}
 
       {tabAdmin === "tiendas" && (
@@ -5457,12 +5678,18 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
           )}
         </div>
 
-        {perfil.tipo === "individual" && (perfil.instagram || perfil.whatsapp || perfil.facebook) && (
+        {perfil.tipo === "individual" && (perfil.instagram || perfil.telefono || perfil.whatsapp || perfil.facebook) && (
           <div className="flex gap-2 mt-4 flex-wrap">
             {perfil.instagram && (
               <a href={perfil.instagram} target="_blank" rel="noreferrer"
                 style={{ border: `1px solid ${COLORS.azulMedio}88`, color: COLORS.azulMedio }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
                 Instagram <ExternalLink size={12} />
+              </a>
+            )}
+            {perfil.telefono && (
+              <a href={`tel:${perfil.telefono.replace(/\s+/g, "")}`}
+                style={{ border: `1px solid ${COLORS.azulClaro}88`, color: COLORS.azulClaro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                <Phone size={12} /> {perfil.telefono}
               </a>
             )}
             {perfil.whatsapp && (
@@ -5700,7 +5927,7 @@ function OfertasPanel({ session, listingTabla, listingId }) {
 // pokemontcg.io), vendedor, botón de contacto y comentarios/ofertas. Se
 // llega por click en cualquier tarjeta o por un link compartido
 // (?listing=<id>&tabla=<tabla>, ver abrirDetalle en el componente raíz).
-function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerfil }) {
+function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerfil, onAgregarCarrito, enCarrito }) {
   const [item, setItem] = useState(undefined); // undefined = cargando, null = no encontrada
   const [precioVivo, setPrecioVivo] = useState(null);
   const [cargandoPrecio, setCargandoPrecio] = useState(false);
@@ -5789,13 +6016,22 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
           </button>
 
           {!esMio && (
-            <button
-              onClick={() => onAbrirChat(item.vendedor.perfilId, item.vendedor.nombre, item.contexto, item.vendedor.whatsapp, item.vendedor.facebook, item.vendedor.avatarUrl)}
-              disabled={!item.vendedor.perfilId}
-              style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: item.vendedor.perfilId ? 1 : 0.5 }}
-              className="rounded-xl py-3 text-sm font-bold w-full flex items-center justify-center gap-2 mb-8">
-              <MessageCircle size={16} /> Contactar vendedor
-            </button>
+            <div className="grid grid-cols-[1fr_auto] gap-2 mb-8">
+              <button
+                onClick={() => onAbrirChat(item.vendedor.perfilId, item.vendedor.nombre, item.contexto, item.vendedor.whatsapp, item.vendedor.facebook, item.vendedor.avatarUrl)}
+                disabled={!item.vendedor.perfilId}
+                style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: item.vendedor.perfilId ? 1 : 0.5 }}
+                className="rounded-xl py-3 text-sm font-bold w-full flex items-center justify-center gap-2">
+                <MessageCircle size={16} /> Contactar vendedor
+              </button>
+              <button
+                onClick={() => onAgregarCarrito({ tabla, id, nombre: item.nombre, precio: item.precio, imagen_url: item.imagen, contexto: item.contexto, vendedorId: item.vendedor.perfilId, vendedorNombre: item.vendedor.nombre, vendedorAvatar: item.vendedor.avatarUrl, vendedorWhatsapp: item.vendedor.whatsapp, vendedorFacebook: item.vendedor.facebook })}
+                disabled={!item.vendedor.perfilId || enCarrito}
+                style={{ background: COLORS.surface2, color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: item.vendedor.perfilId ? 1 : 0.5 }}
+                className="rounded-xl px-4 text-sm font-bold flex items-center justify-center gap-2">
+                {enCarrito ? <Check size={16} /> : <ShoppingCart size={16} />}
+              </button>
+            </div>
           )}
 
           <OfertasPanel session={session} listingTabla={tabla} listingId={id} />
@@ -7103,6 +7339,315 @@ async function crearConSlugUnico(tabla, datosBase, nombreParaSlug, session, fall
   }
 }
 
+// ---- Carrito: agrupa lo agregado por vendedor y manda un solo mensaje por
+// vendedor (con la lista de lo que le interesa) en vez de chatear uno por uno. ----
+function CarritoView({ carrito, onQuitar, onRequireLogin, onEnviado, session }) {
+  const [mensaje, setMensaje] = useState("Hola, me interesa lo siguiente que tienes publicado, ¿sigue disponible?");
+  const [enviando, setEnviando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [error, setError] = useState(null);
+
+  if (!session) {
+    return (
+      <div className="text-center py-16">
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">Inicia sesión para usar el carrito.</p>
+        <button onClick={onRequireLogin} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">Iniciar sesión</button>
+      </div>
+    );
+  }
+
+  if (resultado) {
+    return <p style={{ color: COLORS.azulPalido }} className="text-sm text-center py-16">{resultado}</p>;
+  }
+
+  if (carrito.length === 0) {
+    return <p style={{ color: COLORS.muted }} className="text-center py-16 text-sm">Tu carrito está vacío. Agrega cartas o producto sellado desde Buscar, Mercado o el directorio de tiendas con el botón 🛒.</p>;
+  }
+
+  const grupos = {};
+  for (const it of carrito) {
+    const key = it.vendedorId || "sin-vendedor";
+    if (!grupos[key]) grupos[key] = { vendedorId: it.vendedorId, nombre: it.vendedorNombre, avatar: it.vendedorAvatar, whatsapp: it.vendedorWhatsapp, facebook: it.vendedorFacebook, items: [] };
+    grupos[key].items.push(it);
+  }
+  const listaGrupos = Object.values(grupos);
+  const total = carrito.reduce((s, it) => s + Number(it.precio || 0), 0);
+
+  const enviarATodos = async () => {
+    if (!mensaje.trim()) return;
+    setEnviando(true); setError(null);
+    try {
+      for (const g of listaGrupos) {
+        if (!g.vendedorId) continue;
+        const listado = g.items.map((it) => `• ${it.nombre}${it.precio ? ` — $${Number(it.precio).toLocaleString("es-MX")}` : ""}`).join("\n");
+        await sbWrite("POST", "mensajes", {
+          de_perfil_id: session.user.id,
+          para_perfil_id: g.vendedorId,
+          texto: `${mensaje.trim()}\n\n${listado}`,
+          contexto: "Carrito",
+          listing_id: g.items[0].tabla === "mercado_listings" ? g.items[0].id : null,
+        }, session);
+      }
+      setResultado(`Listo: mandamos tu mensaje a ${listaGrupos.length} vendedor${listaGrupos.length === 1 ? "" : "es"}.`);
+      onEnviado();
+    } catch (e) { setError(e.message); } finally { setEnviando(false); }
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🛒 Carrito</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+        Un mensaje por vendedor, con todo lo que te interesa de él, en vez de escribirle uno por uno.
+      </p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div className="grid gap-4 mb-6">
+        {listaGrupos.map((g) => (
+          <div key={g.vendedorId || "sin-vendedor"} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <AvatarImg url={g.avatar} size={24} />
+              <p className="text-sm font-semibold">{g.nombre || "Vendedor"}</p>
+            </div>
+            <div className="grid gap-1">
+              {g.items.map((it) => (
+                <div key={`${it.tabla}-${it.id}`} className="flex items-center justify-between gap-2 text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 32, height: 44, objectFit: "contain" }} />}
+                    <p className="truncate">{it.nombre}</p>
+                  </div>
+                  <div className="flex items-center gap-2 whitespace-nowrap">
+                    {it.precio != null && <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }}>${Number(it.precio).toLocaleString("es-MX")}</p>}
+                    <button onClick={() => onQuitar(it.tabla, it.id)} style={{ color: "#C24444" }}><X size={14} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p style={{ color: COLORS.muted }} className="text-sm mb-3">
+        Total aproximado: <span style={{ color: COLORS.gold, fontFamily: "'Space Mono', monospace" }}>${total.toLocaleString("es-MX")}</span>
+      </p>
+      <textarea value={mensaje} onChange={(e) => setMensaje(e.target.value)} rows={3}
+        style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
+        className="rounded-lg px-3 py-2 text-sm w-full outline-none mb-3" placeholder="Escribe tu mensaje..." />
+      <button onClick={enviarATodos} disabled={enviando || !mensaje.trim()}
+        style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: enviando ? 0.6 : 1 }}
+        className="rounded-lg py-2.5 px-4 text-sm font-semibold flex items-center gap-2">
+        {enviando && <Loader2 size={16} className="animate-spin" />} Enviar mensaje a {listaGrupos.length} vendedor{listaGrupos.length === 1 ? "" : "es"}
+      </button>
+    </div>
+  );
+}
+
+// ---- Catálogo: era > set > cartas, con marcado Tengo/Quiero (Amatista+).
+// Navega en 3 niveles con el mismo state (eraSel/setSel null = nivel
+// anterior) en vez de un router — mismo patrón que el resto de la app
+// (view/selectedX en el componente raíz). One Piece no usa
+// obtenerErasYSetsCatalogo (no tiene buscador de texto libre todavía, ver
+// TCG_CON_CATALOGO) — sus sets salen de TCGCSV, igual que TCGplayerPicker.
+function CatalogoView({ session, perfil, onIrAPlanes }) {
+  const info = planDe(perfil);
+  const [tcgSel, setTcgSel] = useState("pokemon");
+  const [eras, setEras] = useState([]);
+  const [loadingEras, setLoadingEras] = useState(true);
+  const [eraSel, setEraSel] = useState(null);
+  const [setSel, setSetSel] = useState(null);
+  const [cartas, setCartas] = useState([]);
+  const [loadingCartas, setLoadingCartas] = useState(false);
+  const [categoriaIdOP, setCategoriaIdOP] = useState(null);
+  const [coleccion, setColeccion] = useState({}); // card_api_id -> "tengo" | "quiero"
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setEraSel(null); setSetSel(null); setCartas([]); setError(null);
+    setLoadingEras(true);
+    (async () => {
+      if (tcgSel === "onepiece") {
+        const catId = await categoriaIdTCGplayer("onepiece");
+        setCategoriaIdOP(catId);
+        if (!catId) { setEras([]); setLoadingEras(false); return; }
+        try {
+          const res = await fetch(`/api/tcgcsv?path=tcgplayer/${catId}/groups`);
+          const data = await res.json();
+          const sets = (data.results || [])
+            .slice()
+            .sort((a, b) => (b.publishedOn || "").localeCompare(a.publishedOn || ""))
+            .map((g) => ({ id: g.groupId, nombre: g.name, cardCount: null, imagen: null }));
+          setEras([{ era: null, sets }]);
+        } catch { setEras([]); }
+        setLoadingEras(false);
+        return;
+      }
+      const data = await obtenerErasYSetsCatalogo(tcgSel);
+      setEras(data);
+      setLoadingEras(false);
+    })();
+  }, [tcgSel]);
+
+  useEffect(() => {
+    if (!session) { setColeccion({}); return; }
+    sb(`coleccion_usuario?select=card_api_id,estado&perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}`, session)
+      .then((rows) => setColeccion(Object.fromEntries(rows.map((r) => [r.card_api_id, r.estado]))))
+      .catch(() => setColeccion({}));
+  }, [tcgSel, session]);
+
+  const abrirSet = async (set) => {
+    setSetSel(set); setLoadingCartas(true); setCartas([]); setError(null);
+    try {
+      if (tcgSel === "onepiece") {
+        const res = await fetch(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/products`);
+        const data = await res.json();
+        const productos = (data.results || []).filter(looksLikeCard);
+        setCartas(productos.map((p) => ({ id: `tcgcsv-${p.productId}`, name: p.name, localId: "", image: p.imageUrl || null, precioRefMxn: null })));
+      } else {
+        setCartas(await obtenerCartasDeSetCatalogo(tcgSel, set.id));
+      }
+    } catch (e) { setError(e.message); } finally { setLoadingCartas(false); }
+  };
+
+  const marcar = async (carta, estado) => {
+    if (!session) { onIrAPlanes?.(); return; }
+    if (!info.wishlistPremium) { onIrAPlanes?.(); return; }
+    const actual = coleccion[carta.id];
+    const nuevoEstado = actual === estado ? null : estado;
+    setColeccion((prev) => {
+      const n = { ...prev };
+      if (nuevoEstado) n[carta.id] = nuevoEstado; else delete n[carta.id];
+      return n;
+    });
+    try {
+      if (actual) {
+        await sbWrite("DELETE", `coleccion_usuario?perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}&card_api_id=eq.${encodeURIComponent(carta.id)}`, {}, session);
+      }
+      if (nuevoEstado) {
+        await sbWrite("POST", "coleccion_usuario", {
+          perfil_id: session.user.id, tcg: tcgSel, card_api_id: carta.id, carta: carta.name,
+          set_nombre: setSel?.nombre || null, imagen_url: carta.image || null, estado: nuevoEstado,
+        }, session);
+        if (nuevoEstado === "quiero") {
+          const existe = await sb(`wishlist?select=id&perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}&carta=eq.${encodeURIComponent(carta.name)}`, session);
+          if (!existe.length) await sbWrite("POST", "wishlist", { perfil_id: session.user.id, tcg: tcgSel, carta: carta.name }, session);
+        }
+      }
+    } catch (e) { setError(e.message); }
+  };
+
+  const grupoUnico = eras.length === 1 && eras[0].era === null ? eras[0] : null;
+  const tengoCount = cartas.filter((c) => coleccion[c.id] === "tengo").length;
+  const quieroCount = cartas.filter((c) => coleccion[c.id] === "quiero").length;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">📚 Catálogo</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+        Explora los sets de cada TCG y marca qué cartas ya tienes y cuáles deseas.
+      </p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div className="flex gap-2 flex-wrap mb-6">
+        {TCG_OPCIONES.map((o) => (
+          <button key={o.key} onClick={() => setTcgSel(o.key)}
+            style={{ background: tcgSel === o.key ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${tcgSel === o.key ? COLORS.azulPalido : COLORS.surface2}`, color: tcgSel === o.key ? COLORS.azulPalido : COLORS.muted }}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      {!info.wishlistPremium && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+          <p style={{ color: COLORS.muted }} className="text-sm">🔒 Marcar cartas como Tengo/Quiero es exclusivo de Amatista en adelante.</p>
+          <button onClick={onIrAPlanes} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">Ver planes</button>
+        </div>
+      )}
+
+      {loadingEras && <Loading label="Cargando sets..." />}
+
+      {!loadingEras && !setSel && (
+        <>
+          {!grupoUnico && !eraSel && (
+            <div className="grid sm:grid-cols-2 gap-3">
+              {eras.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">No pudimos cargar el catálogo de {TCG_LABEL[tcgSel]} en este momento.</p>}
+              {eras.map((g) => (
+                <button key={g.era} onClick={() => setEraSel(g.era)}
+                  style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                  className="rounded-xl p-4 text-left hover:brightness-125">
+                  <p className="font-semibold">{g.era}</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs">{g.sets.length} set{g.sets.length === 1 ? "" : "s"}</p>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {(grupoUnico || eraSel) && (
+            <div>
+              {!grupoUnico && (
+                <button onClick={() => setEraSel(null)} style={{ color: COLORS.muted }} className="text-xs mb-3 flex items-center gap-1"><ChevronLeft size={14} /> Eras</button>
+              )}
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {(grupoUnico || eras.find((g) => g.era === eraSel))?.sets.map((s) => (
+                  <button key={s.id} onClick={() => abrirSet(s)}
+                    style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                    className="rounded-xl p-4 text-left hover:brightness-125 flex items-center gap-3">
+                    {s.imagen && <img src={s.imagen} alt="" style={{ maxHeight: 32, maxWidth: 80, objectFit: "contain" }} />}
+                    <div>
+                      <p className="font-semibold text-sm">{s.nombre}</p>
+                      {s.cardCount && <p style={{ color: COLORS.muted }} className="text-xs">{s.cardCount} cartas</p>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {setSel && (
+        <div>
+          <button onClick={() => { setSetSel(null); setCartas([]); }} style={{ color: COLORS.muted }} className="text-xs mb-3 flex items-center gap-1"><ChevronLeft size={14} /> Sets</button>
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+            <h3 className="font-semibold">{setSel.nombre}</h3>
+            {session && info.wishlistPremium && cartas.length > 0 && (
+              <p style={{ color: COLORS.muted }} className="text-xs">✅ Tengo: {tengoCount} · ⭐ Quiero: {quieroCount} de {cartas.length}</p>
+            )}
+          </div>
+          {loadingCartas && <Loading label="Cargando cartas..." />}
+          {!loadingCartas && cartas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin cartas para este set.</p>}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {cartas.map((c) => {
+              const estado = coleccion[c.id];
+              return (
+                <div key={c.id} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estado === "tengo" ? "#2E8B5766" : estado === "quiero" ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}` }} className="rounded-xl overflow-hidden flex flex-col">
+                  <div style={{ background: COLORS.surface2 }} className="aspect-[3/4] flex items-center justify-center p-2">
+                    {c.image ? <img src={c.image} alt={c.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={32} color={COLORS.muted} />}
+                  </div>
+                  <div className="p-2 flex flex-col gap-1">
+                    <p className="text-xs font-semibold leading-snug line-clamp-2">{c.name}{c.localId ? ` (${c.localId})` : ""}</p>
+                    <div className="flex gap-1">
+                      <button onClick={() => marcar(c, "tengo")}
+                        style={{ background: estado === "tengo" ? "#2E8B57" : "transparent", border: "1px solid #2E8B5788", color: estado === "tengo" ? "#fff" : "#2E8B57" }}
+                        className="flex-1 rounded-lg py-1 text-[11px] font-semibold">
+                        ✅ Tengo
+                      </button>
+                      <button onClick={() => marcar(c, "quiero")}
+                        style={{ background: estado === "quiero" ? COLORS.azulPalido : "transparent", border: `1px solid ${COLORS.azulPalido}88`, color: estado === "quiero" ? COLORS.bg : COLORS.azulPalido }}
+                        className="flex-1 rounded-lg py-1 text-[11px] font-semibold">
+                        ⭐ Quiero
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
@@ -7114,6 +7659,11 @@ export default function EncuentraCartas() {
   const pasaFiltroTcg = (item) => tcgFiltro === "todos" || item.tcg === tcgFiltro;
   const [session, setSession] = useState(null);
   const [perfil, setPerfil] = useState(null);
+  // Se pone en true cuando ya terminamos de buscar/crear el perfil de la sesión
+  // actual — así distinguimos "todavía cargando" de "de verdad no tiene perfil"
+  // (este segundo caso pasa tras un login social nuevo) sin mostrar el modal
+  // de completar registro de más.
+  const [perfilChecked, setPerfilChecked] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showEditarPerfil, setShowEditarPerfil] = useState(false);
   const [logoError, setLogoError] = useState(false);
@@ -7125,6 +7675,24 @@ export default function EncuentraCartas() {
     const s = localStorage.getItem("ec_session_admin_stash");
     return s ? JSON.parse(s) : null;
   });
+
+  // ---- Carrito: guarda las cartas/sellado que alguien quiere pedir, para
+  // luego mandar un solo mensaje a cada vendedor en vez de uno por uno. Vive
+  // solo en este dispositivo (localStorage), como el tema o el filtro de TCG —
+  // no necesita sincronizarse entre dispositivos ni sobrevivir en el servidor.
+  const [carrito, setCarrito] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ec_carrito") || "[]"); } catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem("ec_carrito", JSON.stringify(carrito)); }, [carrito]);
+
+  const enElCarrito = (tabla, id) => carrito.some((it) => it.tabla === tabla && it.id === id);
+
+  const agregarAlCarrito = (item) => {
+    if (!session) { setShowAccountModal(true); return; }
+    setCarrito((prev) => (prev.some((it) => it.tabla === item.tabla && it.id === item.id) ? prev : [...prev, item]));
+  };
+
+  const quitarDelCarrito = (tabla, id) => setCarrito((prev) => prev.filter((it) => !(it.tabla === tabla && it.id === id)));
 
   // Cuando sb()/sbWrite() renuevan la sesión sola (el token expiró), nos enteramos aquí.
   useEffect(() => {
@@ -7162,6 +7730,22 @@ export default function EncuentraCartas() {
     }
   }, []);
 
+  // Si venimos de vuelta de un login social (Google/Facebook), Supabase nos
+  // regresa aquí con los tokens en el fragmento de la URL en vez de una sesión
+  // guardada. Los leemos una sola vez (leerSesionDeUrl limpia el hash).
+  useEffect(() => {
+    const tokens = leerSesionDeUrl();
+    if (!tokens) return;
+    obtenerUsuarioDeToken(tokens.access_token)
+      .then((user) => {
+        const s = { access_token: tokens.access_token, refresh_token: tokens.refresh_token, user };
+        localStorage.setItem("ec_session", JSON.stringify(s));
+        setSession(s);
+        cargarOCrearPerfil(s);
+      })
+      .catch(() => {});
+  }, []);
+
   // Tutorial de bienvenida: se muestra una sola vez, la primera vez que alguien
   // abre la web (con o sin cuenta); se puede volver a ver desde el menú lateral.
   useEffect(() => {
@@ -7181,6 +7765,7 @@ export default function EncuentraCartas() {
           id: s.user.id,
           tipo: s.user.user_metadata.tipo,
           nombre: s.user.user_metadata.nombre,
+          telefono: s.user.user_metadata.telefono || null,
           whatsapp: s.user.user_metadata.whatsapp || null,
           facebook: s.user.user_metadata.facebook || null,
           avatar_url: s.user.user_metadata.avatar_url || randomPokemonAvatar(),
@@ -7191,6 +7776,8 @@ export default function EncuentraCartas() {
       setPerfil(p || null);
     } catch {
       setPerfil(null);
+    } finally {
+      setPerfilChecked(true);
     }
   };
 
@@ -7207,6 +7794,7 @@ export default function EncuentraCartas() {
     setAdminStash(null);
     setSession(null);
     setPerfil(null);
+    setPerfilChecked(false);
   };
 
   // Un admin puede "entrar" a un sub-perfil que administra (ver AdminPanel > Sub-perfiles):
@@ -7544,6 +8132,7 @@ export default function EncuentraCartas() {
   const navSecundarios = [
     { id: "news", label: "Anuncios y noticias", icon: Megaphone },
     { id: "torneos", label: "Torneos", icon: Calendar },
+    { id: "catalogo", label: "Catálogo", icon: BookOpen },
     { id: "armarMazo", label: "Armar mazo", icon: Layers },
     { id: "comunidad", label: "Comunidad", icon: Newspaper },
     ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
@@ -7605,6 +8194,16 @@ export default function EncuentraCartas() {
 
             <NotificationBell session={session} onNavigate={setView} />
 
+            <button onClick={() => setView("carrito")} style={{ color: view === "carrito" ? COLORS.azulPalido : COLORS.muted }} className="relative p-2 rounded-lg">
+              <ShoppingCart size={18} />
+              {carrito.length > 0 && (
+                <span style={{ background: COLORS.azulPalido, color: COLORS.bg }}
+                  className="absolute -top-1 -right-1 rounded-full text-[10px] font-bold w-4 h-4 flex items-center justify-center">
+                  {carrito.length > 9 ? "9+" : carrito.length}
+                </span>
+              )}
+            </button>
+
             {/* Todo lo demás (Anuncios, Torneos, Wishlist, Planes, Mis pagos, Mi
                 tienda/Vender, Ayuda, Admin, Editar perfil, Cerrar sesión) vive en
                 el menú lateral, para no saturar el encabezado con botones. */}
@@ -7641,6 +8240,9 @@ export default function EncuentraCartas() {
       {showOnboarding && <OnboardingTutorial onClose={() => setShowOnboarding(false)} />}
 
       {showAccountModal && <AccountModal onClose={() => setShowAccountModal(false)} onAuthed={handleAuthed} />}
+      {session && perfilChecked && !perfil && (
+        <CompletarPerfilOAuthModal session={session} onCreado={(p) => setPerfil(p)} onCancelar={handleLogout} />
+      )}
       {showEditarPerfil && session && (
         <EditarPerfilModal
           session={session}
@@ -7831,13 +8433,22 @@ export default function EncuentraCartas() {
                   <div className="text-right">
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
-                      disabled={!r.tiendas?.perfil_id}
-                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
-                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
-                      <MessageCircle size={12} /> Contactar
-                    </button>
+                    <div className="flex gap-1 mt-2 justify-end">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
+                        disabled={!r.tiendas?.perfil_id}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
+                        className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                        <MessageCircle size={12} /> Contactar
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "inventario_tienda", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: r.foto_real_url || r.imagen_url, contexto: `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, vendedorId: r.tiendas?.perfil_id, vendedorNombre: r.tiendas?.nombre, vendedorAvatar: r.tiendas?.perfiles?.avatar_url }); }}
+                        disabled={!r.tiendas?.perfil_id || enElCarrito("inventario_tienda", r.id)}
+                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.3 }}
+                        className="text-xs px-2 py-1.5 rounded-lg flex items-center">
+                        {enElCarrito("inventario_tienda", r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -7859,12 +8470,21 @@ export default function EncuentraCartas() {
                   <div className="text-right">
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
-                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
-                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
-                      <MessageCircle size={12} /> Contactar
-                    </button>
+                    <div className="flex gap-1 mt-2 justify-end">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                        className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                        <MessageCircle size={12} /> Contactar
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "mercado_listings", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: r.foto_real_url || r.imagen_url, contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r.perfil_id, vendedorNombre: r.perfiles?.nombre, vendedorAvatar: r.perfiles?.avatar_url, vendedorWhatsapp: r.perfiles?.whatsapp, vendedorFacebook: r.perfiles?.facebook }); }}
+                        disabled={!r.perfil_id || r.perfil_id === session?.user?.id || enElCarrito("mercado_listings", r.id)}
+                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: (!r.perfil_id || r.perfil_id === session?.user?.id) ? 0.3 : 1 }}
+                        className="text-xs px-2 py-1.5 rounded-lg flex items-center">
+                        {enElCarrito("mercado_listings", r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -7884,13 +8504,22 @@ export default function EncuentraCartas() {
                   <div className="text-right">
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
-                      disabled={!r.tiendas?.perfil_id}
-                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
-                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
-                      <MessageCircle size={12} /> Contactar
-                    </button>
+                    <div className="flex gap-1 mt-2 justify-end">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
+                        disabled={!r.tiendas?.perfil_id}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
+                        className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                        <MessageCircle size={12} /> Contactar
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "sellado_tienda", id: r.id, nombre: r.producto, precio: r.precio, imagen_url: r.imagen_url, contexto: `${r.producto} en ${r.tiendas?.nombre}`, vendedorId: r.tiendas?.perfil_id, vendedorNombre: r.tiendas?.nombre, vendedorAvatar: r.tiendas?.perfiles?.avatar_url }); }}
+                        disabled={!r.tiendas?.perfil_id || enElCarrito("sellado_tienda", r.id)}
+                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.3 }}
+                        className="text-xs px-2 py-1.5 rounded-lg flex items-center">
+                        {enElCarrito("sellado_tienda", r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -8025,18 +8654,38 @@ export default function EncuentraCartas() {
                       <AvatarImg url={r.perfiles?.avatar_url} size={20} />
                       <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.perfiles?.nombre || "Usuario"}</p>
                     </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
-                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
-                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center justify-center gap-1 w-full"
-                    >
-                      <MessageCircle size={12} /> Contactar
-                    </button>
+                    <div className="flex gap-1 mt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                        className="text-xs px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 flex-1"
+                      >
+                        <MessageCircle size={12} /> Contactar
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "mercado_listings", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: r.foto_real_url || r.imagen_url, contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r.perfil_id, vendedorNombre: r.perfiles?.nombre, vendedorAvatar: r.perfiles?.avatar_url, vendedorWhatsapp: r.perfiles?.whatsapp, vendedorFacebook: r.perfiles?.facebook }); }}
+                        disabled={!r.perfil_id || r.perfil_id === session?.user?.id || enElCarrito("mercado_listings", r.id)}
+                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: (!r.perfil_id || r.perfil_id === session?.user?.id) ? 0.3 : 1 }}
+                        className="text-xs px-2 py-1.5 rounded-lg flex items-center justify-center">
+                        {enElCarrito("mercado_listings", r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
+        )}
+
+        {/* CARRITO */}
+        {view === "carrito" && (
+          <CarritoView
+            carrito={carrito}
+            onQuitar={quitarDelCarrito}
+            onRequireLogin={() => setShowAccountModal(true)}
+            onEnviado={() => setCarrito([])}
+            session={session}
+          />
         )}
 
         {/* NEWS */}
@@ -8223,6 +8872,11 @@ export default function EncuentraCartas() {
           <TorneosView session={session} onRequireLogin={() => setShowAccountModal(true)} />
         )}
 
+        {/* CATÁLOGO */}
+        {view === "catalogo" && (
+          <CatalogoView session={session} perfil={perfil} onIrAPlanes={() => (session ? setView("planes") : setShowAccountModal(true))} />
+        )}
+
         {/* MIS PAGOS */}
         {view === "misPagos" && session && <MisPagosPanel session={session} />}
 
@@ -8344,13 +8998,22 @@ export default function EncuentraCartas() {
                       <div className="text-right">
                         <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
-                          disabled={!selectedStore.perfil_id}
-                          style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
-                          className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
-                          <MessageCircle size={12} /> Contactar
-                        </button>
+                        <div className="flex gap-1 mt-1 justify-end">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
+                            disabled={!selectedStore.perfil_id}
+                            style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
+                            className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                            <MessageCircle size={12} /> Contactar
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "inventario_tienda", id: item.id, nombre: item.carta, precio: item.precio, imagen_url: item.foto_real_url || item.imagen_url, contexto: `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, vendedorId: selectedStore.perfil_id, vendedorNombre: selectedStore.nombre, vendedorAvatar: selectedStore.perfiles?.avatar_url }); }}
+                            disabled={!selectedStore.perfil_id || enElCarrito("inventario_tienda", item.id)}
+                            style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: selectedStore.perfil_id ? 1 : 0.3 }}
+                            className="text-xs px-2 py-1.5 rounded-lg flex items-center">
+                            {enElCarrito("inventario_tienda", item.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -8370,13 +9033,22 @@ export default function EncuentraCartas() {
                       <div className="text-right">
                         <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
-                          disabled={!selectedStore.perfil_id}
-                          style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
-                          className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
-                          <MessageCircle size={12} /> Contactar
-                        </button>
+                        <div className="flex gap-1 mt-1 justify-end">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
+                            disabled={!selectedStore.perfil_id}
+                            style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
+                            className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                            <MessageCircle size={12} /> Contactar
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "sellado_tienda", id: item.id, nombre: item.producto, precio: item.precio, imagen_url: item.imagen_url, contexto: `${item.producto} en ${selectedStore.nombre}`, vendedorId: selectedStore.perfil_id, vendedorNombre: selectedStore.nombre, vendedorAvatar: selectedStore.perfiles?.avatar_url }); }}
+                            disabled={!selectedStore.perfil_id || enElCarrito("sellado_tienda", item.id)}
+                            style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: selectedStore.perfil_id ? 1 : 0.3 }}
+                            className="text-xs px-2 py-1.5 rounded-lg flex items-center">
+                            {enElCarrito("sellado_tienda", item.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -8406,6 +9078,8 @@ export default function EncuentraCartas() {
             onVolver={cerrarDetalle}
             onAbrirChat={abrirChat}
             onVerPerfil={verPerfil}
+            onAgregarCarrito={agregarAlCarrito}
+            enCarrito={enElCarrito(selectedListing.tabla, selectedListing.id)}
           />
         )}
 

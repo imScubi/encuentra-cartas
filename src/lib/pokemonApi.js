@@ -349,6 +349,202 @@ export async function buscarCartasLorcana(texto, limite = 24) {
     }));
 }
 
+// ---- Catálogo por era > set > cartas (para la vista "Catálogo", Amatista+) ----
+// Cada TCG organiza sus sets de forma distinta (o de plano no tiene el
+// concepto de "era" en su API), así que cada función agrupa como mejor
+// corresponde a su propia fuente en vez de forzar una sola forma:
+// - Pokémon: pokemontcg.io ya trae "series" (Scarlet & Violet, Sword &
+//   Shield, etc.) — eso es la era.
+// - Magic: Scryfall no tiene "era" como tal — se usa "set_type" (expansión,
+//   commander, master, etc.) como agrupador equivalente.
+// - Yu-Gi-Oh: YGOPRODeck tampoco tiene "era" oficial — se agrupa por año de
+//   lanzamiento (tcg_date), que es un dato real de la API, en vez de
+//   inventar nombres de era no oficiales.
+// - Lorcana: son pocos sets (menos de una decena) — no hace falta agrupar
+//   por era, se listan todos directo.
+// Todas devuelven la misma forma [{ era, sets: [{ id, nombre, cardCount,
+// imagen }] }] para que la pantalla de Catálogo use un solo componente sin
+// importar el TCG (si era es null, la pantalla no dibuja encabezado de era).
+
+let _setsPokemonCache = null;
+export async function obtenerErasYSetsPokemon() {
+  if (_setsPokemonCache) return _setsPokemonCache;
+  try {
+    const res = await fetch("https://api.pokemontcg.io/v2/sets?pageSize=250&orderBy=-releaseDate");
+    const data = await res.json();
+    const sets = data?.data || [];
+    const porEra = new Map();
+    for (const s of sets) {
+      const era = s.series || "Otros";
+      if (!porEra.has(era)) porEra.set(era, []);
+      porEra.get(era).push({ id: s.id, nombre: s.name, cardCount: s.printedTotal, imagen: s.images?.logo || s.images?.symbol || null });
+    }
+    _setsPokemonCache = Array.from(porEra, ([era, sets]) => ({ era, sets }));
+  } catch {
+    _setsPokemonCache = [];
+  }
+  return _setsPokemonCache;
+}
+
+export async function obtenerCartasDeSetPokemon(setId) {
+  try {
+    const cartas = [];
+    for (let page = 1; page <= 2; page++) {
+      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=set.id:${encodeURIComponent(setId)}&pageSize=250&page=${page}&orderBy=number`);
+      if (!res.ok) break;
+      const data = await res.json();
+      const lote = data?.data || [];
+      cartas.push(...lote);
+      if (lote.length < 250) break;
+    }
+    return cartas.map((c) => ({
+      id: c.id, name: c.name, localId: c.number,
+      image: c.images?.small || c.images?.large || null,
+      precioRefMxn: precioRefDeCartaPokemonTCG(c),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// Nombres de set_type de Scryfall en español, para que la agrupación por
+// "era" de Magic no se vea en inglés crudo. Los que no están en esta lista
+// simplemente se muestran tal cual los manda Scryfall.
+const SET_TYPE_LABEL_MAGIC = {
+  core: "Set núcleo", expansion: "Expansión", masters: "Masters", commander: "Commander",
+  draft_innovation: "Draft especial", funny: "Un-sets", starter: "Iniciación",
+  duel_deck: "Duel Decks", premium_deck: "Premium Deck", from_the_vault: "From the Vault",
+  archenemy: "Archenemy", planechase: "Planechase", vanguard: "Vanguard", box: "Caja especial",
+  promo: "Promocionales", token: "Tokens", memorabilia: "Memorabilia", arsenal: "Arsenal",
+  spellbook: "Spellbook", treasure_chest: "Treasure Chest", minigame: "Minijuego", alchemy: "Alchemy",
+};
+
+let _setsMagicCache = null;
+export async function obtenerErasYSetsMagic() {
+  if (_setsMagicCache) return _setsMagicCache;
+  try {
+    const res = await fetch("https://api.scryfall.com/sets");
+    const data = await res.json();
+    const sets = (data?.data || []).filter((s) => !s.digital && s.card_count > 0);
+    const porEra = new Map();
+    for (const s of sets) {
+      const era = SET_TYPE_LABEL_MAGIC[s.set_type] || s.set_type || "Otros";
+      if (!porEra.has(era)) porEra.set(era, []);
+      porEra.get(era).push({ id: s.code, nombre: s.name, cardCount: s.card_count, imagen: s.icon_svg_uri || null });
+    }
+    _setsMagicCache = Array.from(porEra, ([era, sets]) => ({ era, sets }));
+  } catch {
+    _setsMagicCache = [];
+  }
+  return _setsMagicCache;
+}
+
+export async function obtenerCartasDeSetMagic(code) {
+  try {
+    const cartas = [];
+    let url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`set:${code}`)}&order=set&unique=prints`;
+    for (let page = 1; page <= 3 && url; page++) {
+      const res = await fetch(url);
+      if (!res.ok) break;
+      const data = await res.json();
+      cartas.push(...(data?.data || []));
+      url = data?.has_more ? data.next_page : null;
+    }
+    return cartas.map((c) => ({
+      id: c.id, name: c.name, localId: c.collector_number,
+      image: imagenDeCartaScryfall(c),
+      precioRefMxn: precioRefDeCartaScryfall(c),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+let _setsYugiohCache = null;
+export async function obtenerErasYSetsYugioh() {
+  if (_setsYugiohCache) return _setsYugiohCache;
+  try {
+    const res = await fetch("https://db.ygoprodeck.com/api/v7/cardsets.php");
+    const sets = await res.json();
+    const porAno = new Map();
+    for (const s of Array.isArray(sets) ? sets : []) {
+      const ano = (s.tcg_date || "").slice(0, 4) || "Sin fecha";
+      if (!porAno.has(ano)) porAno.set(ano, []);
+      porAno.get(ano).push({ id: s.set_name, nombre: s.set_name, cardCount: Number(s.num_of_cards) || null, imagen: null });
+    }
+    _setsYugiohCache = Array.from(porAno, ([era, sets]) => ({ era, sets }))
+      .sort((a, b) => (a.era === "Sin fecha" ? 1 : b.era === "Sin fecha" ? -1 : b.era.localeCompare(a.era)));
+  } catch {
+    _setsYugiohCache = [];
+  }
+  return _setsYugiohCache;
+}
+
+export async function obtenerCartasDeSetYugioh(setName) {
+  try {
+    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?cardset=${encodeURIComponent(setName)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data?.data || []).map((c) => ({
+      id: String(c.id), name: c.name,
+      localId: c.card_sets?.find((s) => s.set_name === setName)?.set_code || "",
+      image: c.card_images?.[0]?.image_url_small || c.card_images?.[0]?.image_url || null,
+      precioRefMxn: precioRefDeCartaYgoprodeck(c),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function obtenerSetsLorcana() {
+  const todas = await obtenerTodasLasCartasLorcana();
+  const nombres = [];
+  const vistos = new Set();
+  for (const c of todas) {
+    const set = c.Set_Name || c.set_name || c.set;
+    if (!set || vistos.has(set)) continue;
+    vistos.add(set);
+    nombres.push(set);
+  }
+  const sets = nombres.map((nombre) => ({
+    id: nombre, nombre, cardCount: todas.filter((c) => (c.Set_Name || c.set_name || c.set) === nombre).length, imagen: null,
+  }));
+  return [{ era: null, sets }];
+}
+
+export async function obtenerCartasDeSetLorcana(setNombre) {
+  const todas = await obtenerTodasLasCartasLorcana();
+  return todas
+    .filter((c) => (c.Set_Name || c.set_name || c.set) === setNombre)
+    .map((c) => ({
+      id: String(c.Unique_ID || c.id || c.Name || c.name),
+      name: c.Name || c.name || "",
+      localId: c.Card_Num || c.card_num || c.number || "",
+      image: c.Image || c.image || c.Image_URL || null,
+      precioRefMxn: null,
+    }));
+}
+
+// Despachador único para las 4 TCG con catálogo (ver TCG_CON_CATALOGO en
+// theme.js). One Piece no entra aquí — su catálogo de "sets" sale de
+// TCGCSV (categoriaIdTCGplayer + /groups), igual que TCGplayerPicker, ver
+// App.jsx.
+export async function obtenerErasYSetsCatalogo(tcg) {
+  if (tcg === "pokemon") return obtenerErasYSetsPokemon();
+  if (tcg === "magic") return obtenerErasYSetsMagic();
+  if (tcg === "yugioh") return obtenerErasYSetsYugioh();
+  if (tcg === "lorcana") return obtenerSetsLorcana();
+  return [];
+}
+
+export async function obtenerCartasDeSetCatalogo(tcg, setId) {
+  if (tcg === "pokemon") return obtenerCartasDeSetPokemon(setId);
+  if (tcg === "magic") return obtenerCartasDeSetMagic(setId);
+  if (tcg === "yugioh") return obtenerCartasDeSetYugioh(setId);
+  if (tcg === "lorcana") return obtenerCartasDeSetLorcana(setId);
+  return [];
+}
+
 // Elige el catálogo correcto según el TCG de la publicación (ver
 // TCG_CON_CATALOGO en theme.js: qué TCG ya tienen buscador de texto libre).
 // One Piece todavía no tiene una fuente gratis confiable de texto libre —

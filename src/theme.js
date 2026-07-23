@@ -134,27 +134,28 @@ export const PLAN_INFO = {
     nombre: "Zafiro", emoji: "🔵", precio: 49, color: COLORS.azulClaro,
     resumen: "Insignia verificado + redes directas",
     beneficios: [
-      "Todo lo de Cuarzo", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)",
+      "Publica hasta 50 cartas/productos activos", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)",
       "Personaliza tu perfil público: biografía, color de acento y el orden de tus secciones",
       "Modo día/noche",
       "Filtra tiendas por zona y encuentra la más cercana con tu ubicación",
     ],
-    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false,
+    limiteCartas: 50, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false,
   },
   ultraball: {
     nombre: "Amatista", emoji: "🟣", precio: 89, color: COLORS.violeta,
     resumen: "Todo Zafiro + Wishlist Premium",
     beneficios: [
-      "Todo lo de Zafiro", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente",
+      "Todo lo de Zafiro", "Publicaciones ilimitadas", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente",
       "Cambia los colores de la página según tipos de Pokémon (agua, fuego, psíquico, etc.)",
       "Deck Builder visual: arma varios mazos con selector de cartas, cantidad, nombre y etiquetas",
+      "Catálogo de sets: marca qué cartas ya tienes y cuáles deseas (se agregan solas a tu wishlist)",
     ],
-    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true,
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true,
   },
   masterball: {
     nombre: "Diamante", emoji: "🟡", precio: 149, color: COLORS.azulPalido,
     resumen: "Todos los beneficios, inventario ilimitado",
-    beneficios: ["Todo lo de Amatista", "Publicaciones ilimitadas (una por una)", "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante"],
+    beneficios: ["Todo lo de Amatista", "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante"],
     limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true, ubicacion: true, mazoBuilder: true,
   },
   enteball: {

@@ -1491,6 +1491,126 @@ Copiar y pegar en el SQL Editor: `044_sellado_multi_tcg.sql`. Hasta
 entonces, elegir un TCG distinto de Pokémon al publicar producto sellado
 va a fallar con "la columna tcg no existe" en `sellado_tienda`.
 
+## 55. Admin: pestaña "Usuarios" (lista completa, cambiar plan, borrar cuentas)
+
+Antes solo existía "Cambiar plan de un usuario" (buscador). Ahora hay una
+pestaña "Usuarios" con la lista completa de todas las cuentas registradas
+(oculta sub-perfiles por default, con casilla para mostrarlos), buscador por
+nombre/correo, cambio de plan al vuelo y botón de borrado.
+
+**Borrar una cuenta borra todo lo asociado.** Se revisaron las llaves
+foráneas reales de la base de datos: casi todas las tablas que dependen de
+`perfiles` son `ON DELETE CASCADE` (tienda, publicaciones, mensajes*,
+wishlist, alertas, ventas, reseñas, destellos, seguidores, mazos, ofertas,
+notificaciones, pagos, boosts, carpetas, reportes...), así que borrar el
+usuario de Supabase Auth se lleva todo lo demás solo. La única excepción es
+`mensajes` (su FK es `NO ACTION`, no cascada) — el endpoint borra esos
+mensajes a mano antes de borrar la cuenta, si no la base de datos rechazaría
+el borrado. No se puede borrar a otro administrador ni a la propia cuenta
+desde este panel (por seguridad, para no perder acceso de admin por error).
+
+- `api/admin/usuarios.js` (antes `subperfiles.js`, se renombró y se le
+  agregó la acción `"borrar"` — seguía usando el mismo archivo por el límite
+  de 12 funciones serverless del plan Hobby de Vercel).
+- `UsuariosAdmin` (App.jsx): la lista, el buscador, el cambio de plan y el
+  borrado con confirmación de dos pasos.
+
+## 56. Login con Google/Facebook + teléfono de contacto
+
+**Login social.** Botones "Continuar con Google" y "Continuar con Facebook"
+en el modal de cuenta (tanto al crear cuenta como al iniciar sesión). Como la
+app no usa el SDK de supabase-js (habla directo con la API REST de
+Supabase Auth), el flujo se hizo a mano: el botón redirige a
+`/auth/v1/authorize?provider=...`, Supabase habla con Google/Facebook y
+regresa a la página con los tokens en el fragmento de la URL
+(`#access_token=...`) — `leerSesionDeUrl()` (lib/supabase.js) los lee una
+sola vez y limpia la URL.
+
+Si es la primera vez que esa persona entra por Google/Facebook, todavía no
+existe su fila en `perfiles` (Google no pregunta "¿tienda o individual?").
+En ese caso aparece un modal nuevo, `CompletarPerfilOAuthModal`, que pide
+tipo de cuenta + nombre (ya viene precargado desde Google/Facebook si está
+disponible) + teléfono opcional, y crea el perfil.
+
+**Por qué no hay botón de Instagram:** Meta dio de baja en diciembre de 2024
+la API pública que permitía "iniciar sesión con Instagram" para cuentas
+normales — hoy Instagram Login solo aplica a cuentas de negocio/creador para
+publicar contenido, no sirve como método de autenticación de un usuario
+cualquiera, y Supabase Auth tampoco lo lista como proveedor soportado. El
+enlace de perfil a Instagram (ya existente, en "Editar perfil", Zafiro+)
+se queda igual — solo no puede usarse para iniciar sesión.
+
+**Importante — falta un paso manual:** para que los botones de Google/
+Facebook funcionen de verdad hace falta ir a **Supabase → Authentication →
+Providers** y activar Google y Facebook, cada uno con su Client ID/Secret
+(se obtienen creando una app en Google Cloud Console y en Meta for
+Developers respectivamente, con la URL de callback que Supabase indica en
+esa misma pantalla). Esto no se puede hacer desde aquí porque requiere tus
+propias cuentas de desarrollador — el código ya está listo para cuando los
+actives.
+
+**Teléfono de contacto.** `perfiles.telefono` ya existía en la base de datos
+pero no se usaba en ningún lado — ahora se pide (opcional) al crear cuenta
+individual, se puede agregar/editar después en "Tus redes" (mismo bloque de
+WhatsApp/Facebook, mismo candado de Zafiro+), y se muestra en el perfil
+público como enlace `tel:` para que un comprador pueda llamar o mandar SMS
+directo.
+
+## 57. Carrito: agregar cartas y mandar un solo mensaje a cada vendedor
+
+Botón 🛒 junto a "Contactar" en los resultados de Buscar, en el tab Mercado,
+en el detalle de una tienda y en el detalle de una publicación. El carrito
+vive solo en este dispositivo (localStorage, igual que el tema o el filtro
+de TCG) — no hace falta tabla nueva ni sincronizarlo entre dispositivos.
+
+En la nueva vista Carrito (ícono junto a la campana de notificaciones), lo
+agregado se agrupa por vendedor. Se escribe un solo mensaje y, al enviar, se
+manda **una vez por cada vendedor distinto** (no una vez por carta) con la
+lista de lo que le interesa de él — en vez de tener que abrir cada chat uno
+por uno para preguntar lo mismo.
+
+## 58. Catálogo por TCG: eras, sets y marcar Tengo/Quiero (Amatista+)
+
+Nueva vista "Catálogo" (menú lateral): elige un TCG, luego una era, luego un
+set, y ve la cuadrícula de cartas de ese set. Cada TCG se agrupa según lo
+que su propia API realmente ofrece — no se inventó una estructura de "era"
+donde la fuente no la tiene:
+
+- **Pokémon** (pokemontcg.io): la era es `series` (Scarlet & Violet, Sword &
+  Shield, Sun & Moon, etc.), tal como TCGplayer/Pokellector la organizan.
+- **Magic** (Scryfall): no tiene "era" como tal — se agrupa por `set_type`
+  (Expansión, Commander, Masters, etc.) como equivalente más cercano.
+- **Yu-Gi-Oh** (YGOPRODeck): tampoco hay era oficial — se agrupa por año de
+  lanzamiento (dato real de la API), en vez de usar nombres de era no
+  oficiales que inventan algunos fans.
+- **Lorcana**: son menos de una decena de sets — se listan todos directo,
+  sin agrupar por era.
+- **One Piece**: no entra por el buscador de texto libre (ver sección 54,
+  sigue sin haber una API confiable para eso) — sus "sets" salen de TCGCSV
+  (los mismos grupos que ya usa `TCGplayerPicker` para el producto sellado).
+
+**Marcar Tengo/Quiero es exclusivo de Amatista en adelante** (mismo nivel
+que la Wishlist Premium) — cualquiera puede *navegar* el catálogo gratis,
+pero los botones de marcar están bloqueados con un aviso "Ver planes" si el
+plan no alcanza. Marcar una carta como "Quiero" además la agrega
+automáticamente a la Wishlist (si no estaba ya), tal como se pidió — así no
+hay que agregarla otra vez a mano ahí.
+
+- Migración `045_coleccion_usuario.sql` (ya aplicada directo a Supabase
+  desde aquí, con el conector MCP — no hace falta pegarla a mano): tabla
+  `coleccion_usuario` (perfil_id, tcg, card_api_id, carta, set_nombre,
+  imagen_url, estado `tengo`/`quiero`), única por perfil+tcg+carta.
+- `pokemonApi.js`: `obtenerErasYSetsCatalogo`/`obtenerCartasDeSetCatalogo`
+  (despachador para los 4 TCG con catálogo) + una función por TCG.
+- `CatalogoView` (App.jsx): navega los 3 niveles con el mismo patrón
+  view/selectedX que el resto de la app (sin librería de router).
+
+### Cambio de límites de plan
+Se ajustó lo pedido sobre los planes: **Zafiro** ahora publica hasta **50**
+cartas/productos (antes 20, igual que Cuarzo) y **Amatista en adelante** ya
+no tiene límite de publicaciones (antes también 20 — el límite ilimitado
+empezaba hasta Diamante). Diamante y Aurora se quedan igual (ilimitado).
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

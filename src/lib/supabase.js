@@ -98,6 +98,37 @@ export async function authSignUp(email, password, metadata) {
   return data; // incluye access_token si la confirmación por correo está desactivada
 }
 
+// ---- Login social (Google/Facebook) ----
+// La app no usa el SDK de supabase-js, así que hacemos el flujo "implícito" a
+// mano: redirigimos a /auth/v1/authorize, Supabase habla con el proveedor y
+// nos regresa aquí con los tokens en el fragmento de la URL (#access_token=...).
+export function urlLoginSocial(provider) {
+  const redirectTo = `${window.location.origin}${window.location.pathname}`;
+  return `${SUPABASE_URL}/auth/v1/authorize?provider=${provider}&redirect_to=${encodeURIComponent(redirectTo)}`;
+}
+
+// Si venimos de vuelta de un login social, el navegador trae los tokens en
+// el hash (#access_token=...&refresh_token=...). Los leemos una sola vez y
+// limpiamos la URL para no dejarlos visibles ni que se reprocesen al recargar.
+export function leerSesionDeUrl() {
+  if (!window.location.hash.includes("access_token")) return null;
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const access_token = params.get("access_token");
+  const refresh_token = params.get("refresh_token");
+  if (!access_token) return null;
+  window.history.replaceState({}, "", window.location.pathname + window.location.search);
+  return { access_token, refresh_token };
+}
+
+export async function obtenerUsuarioDeToken(access_token) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${access_token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.msg || "No se pudo leer la sesión");
+  return data;
+}
+
 export async function authSignIn(email, password) {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
