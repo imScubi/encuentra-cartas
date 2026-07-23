@@ -23,7 +23,7 @@ import {
 import {
   FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre, conAlpha,
   PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
-  BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero,
+  BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero, miniaturaListing,
   MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, aplicarTema,
   IDIOMA_OPCIONES, IDIOMA_LABEL,
   CONDICION_OPCIONES, CONDICION_LABEL, CONDICION_DESC, normalizarCondicion,
@@ -1660,7 +1660,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   }, []);
 
   const vacio = {
-    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
+    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
     gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "", buzon_tienda_id: "",
     descripcion: "", etiquetas: "",
   };
@@ -1694,7 +1694,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const agregar = async () => {
     if (!nueva.carta || !nueva.precio || !nueva.zona) return;
     if (tipo === "carta" && (!nueva.idioma || !nueva.condicion)) return;
-    if (tipo === "accesorio" && !nueva.foto_real_url) return;
+    if (!nueva.foto_real_url || !nueva.foto_real_reverso_url) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante para inventario ilimitado.`); return; }
     setSaving(true);
     try {
@@ -1716,11 +1716,12 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nueva.card_api_id || null,
         imagen_url: nueva.imagen_url || null,
         precio_ref_mxn: nueva.precio_ref_mxn || null,
-        // foto_real_url, los campos de gradeo y el buzón solo se mandan si de
-        // verdad aplican: así publicar sigue funcionando aunque las
-        // migraciones que agregan esas columnas (036, 040, 042) todavía no
-        // se hayan corrido.
-        ...((tipo === "carta" || tipo === "accesorio") && nueva.foto_real_url ? { foto_real_url: nueva.foto_real_url } : {}),
+        // Las fotos reales (frente/reverso) son obligatorias para las tres
+        // publicaciones; el gradeo y el buzón solo se mandan si de verdad
+        // aplican, así publicar sigue funcionando aunque esas migraciones
+        // (040, 042) todavía no hayan corrido.
+        foto_real_url: nueva.foto_real_url,
+        foto_real_reverso_url: nueva.foto_real_reverso_url,
         ...(tipo === "carta" && nueva.gradeada
           ? { gradeada: true, grado_empresa: nueva.grado_empresa || null, grado_empresa_otro: nueva.grado_empresa === "OTRO" ? nueva.grado_empresa_otro || null : null, grado_calificacion: nueva.grado_calificacion || null }
           : {}),
@@ -1816,8 +1817,10 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               <p style={{ color: COLORS.muted }} className="text-xs mt-1">Con estas palabras clave, tu accesorio aparece en Buscar aunque alguien no busque "accesorios" — por ejemplo, si pones "sylveon" aparece al buscar Sylveon.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto subida" : "📷 Foto del producto (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
               {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} />
+              {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
           </>
         ) : tipo === "carta" ? (
@@ -1844,8 +1847,10 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               <IdiomaSelector value={nueva.idioma} onChange={(v) => setNueva({ ...nueva, idioma: v })} />
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto real subida" : "📷 Foto real de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
               {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} />
+              {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
             <GradeoFields
               gradeada={nueva.gradeada} empresa={nueva.grado_empresa} empresaOtro={nueva.grado_empresa_otro} calificacion={nueva.grado_calificacion}
@@ -1853,7 +1858,15 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             />
           </>
         ) : (
-          <CardPickerUniversal tcg={nueva.tcg} soloSellado onSelect={(p) => setNueva({ ...nueva, carta: p.producto, set_nombre: p.set_nombre, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
+          <>
+            <CardPickerUniversal tcg={nueva.tcg} soloSellado onSelect={(p) => setNueva({ ...nueva, carta: p.producto, set_nombre: p.set_nombre, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
+            <div className="flex items-center gap-2 flex-wrap">
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} />
+              {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+            </div>
+          </>
         )}
 
         {tipo === "sellado" && nueva.card_api_id && (
@@ -1886,7 +1899,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nueva.precio_antes} onChange={(e) => setNueva({ ...nueva, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregar} disabled={saving || alLimite || (tipo === "carta" && (!nueva.idioma || !nueva.condicion)) || (tipo === "accesorio" && !nueva.foto_real_url)} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={agregar} disabled={saving || alLimite || (tipo === "carta" && (!nueva.idioma || !nueva.condicion)) || !nueva.foto_real_url || !nueva.foto_real_reverso_url} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
           </button>
         </div>
@@ -1897,7 +1910,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         {publicaciones.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has publicado nada en el mercado.</p>}
         {publicaciones.map((item) => (
           <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
-            {(item.foto_real_url || item.imagen_url) && <img src={item.foto_real_url || item.imagen_url} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
+            {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
@@ -1922,9 +1935,8 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             {item.tipo !== "accesorio" && (
               <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
             )}
-            {item.tipo !== "sellado" && (
-              <SubirFotoManual session={session} label={item.foto_real_url ? (item.tipo === "accesorio" ? "Cambiar foto" : "Cambiar foto real") : (item.tipo === "accesorio" ? "📷 Foto" : "📷 Foto real")} onSubido={async (url) => { await actualizar(item.id, "foto_real_url", url); cargar(); }} />
-            )}
+            <SubirFotoManual session={session} label={item.foto_real_url ? (item.tipo === "accesorio" ? "Cambiar frente" : "Cambiar foto real (frente)") : (item.tipo === "accesorio" ? "📷 Foto de frente" : "📷 Foto real (frente)")} onSubido={async (url) => { await actualizar(item.id, "foto_real_url", url); cargar(); }} />
+            <SubirFotoManual session={session} label={item.foto_real_reverso_url ? (item.tipo === "accesorio" ? "Cambiar atrás" : "Cambiar foto real (atrás)") : (item.tipo === "accesorio" ? "📷 Foto de atrás" : "📷 Foto real (atrás)")} onSubido={async (url) => { await actualizar(item.id, "foto_real_reverso_url", url); cargar(); }} />
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
             <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} tipoItem={item.tipo} onVendida={cargar} />
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
@@ -4022,7 +4034,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const [error, setError] = useState(null);
 
   const [nuevaCarta, setNuevaCarta] = useState({
-    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
+    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
     gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
   });
   const [nuevoSellado, setNuevoSellado] = useState({ tcg: "pokemon", producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
@@ -4067,10 +4079,11 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
 
   const agregarCarta = async () => {
     if (!nuevaCarta.carta || !nuevaCarta.precio || !nuevaCarta.idioma || !nuevaCarta.condicion) return;
+    if (!nuevaCarta.foto_real_url || !nuevaCarta.foto_real_reverso_url) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.`); return; }
     setSavingCarta(true);
     try {
-      const { foto_real_url, gradeada, grado_empresa, grado_empresa_otro, grado_calificacion, ...nuevaCartaBase } = nuevaCarta;
+      const { gradeada, grado_empresa, grado_empresa_otro, grado_calificacion, ...nuevaCartaBase } = nuevaCarta;
       await sbWrite("POST", "inventario_tienda", {
         ...nuevaCartaBase,
         precio: Number(nuevaCarta.precio),
@@ -4080,14 +4093,14 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nuevaCarta.card_api_id || null,
         imagen_url: nuevaCarta.imagen_url || null,
         precio_ref_mxn: nuevaCarta.precio_ref_mxn || null,
-        // foto_real_url y los campos de gradeo solo se mandan si de verdad
-        // aplican: así seguir agregando cartas no se rompe si las migraciones
-        // que agregan esas columnas (036, 040) aún no han corrido.
-        ...(foto_real_url ? { foto_real_url } : {}),
+        // Los campos de gradeo solo se mandan si de verdad aplican: así
+        // seguir agregando cartas no se rompe si la migración que los
+        // agrega (040) aún no ha corrido. Las fotos reales van siempre --
+        // son obligatorias desde la migración 036/049.
         ...(gradeada ? { gradeada: true, grado_empresa: grado_empresa || null, grado_empresa_otro: grado_empresa === "OTRO" ? grado_empresa_otro || null : null, grado_calificacion: grado_calificacion || null } : {}),
       }, session);
       setNuevaCarta({
-        tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
+        tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
         gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
       });
       cargar();
@@ -4249,8 +4262,10 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
           <IdiomaSelector value={nuevaCarta.idioma} onChange={(v) => setNuevaCarta({ ...nuevaCarta, idioma: v })} />
         </div>
         <div className="sm:col-span-6 flex items-center gap-2 flex-wrap">
-          <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Foto real subida" : "📷 Foto real de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} />
+          <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (obligatoria)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} />
           {nuevaCarta.foto_real_url && <img src={nuevaCarta.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+          <SubirFotoManual session={session} label={nuevaCarta.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (obligatoria)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_reverso_url: url })} />
+          {nuevaCarta.foto_real_reverso_url && <img src={nuevaCarta.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
         </div>
         <div className="sm:col-span-6">
           <GradeoFields
@@ -4258,7 +4273,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             onChange={(patch) => setNuevaCarta({ ...nuevaCarta, ...patch })}
           />
         </div>
-        <button onClick={agregarCarta} disabled={savingCarta || alLimite || !nuevaCarta.idioma || !nuevaCarta.condicion} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
+        <button onClick={agregarCarta} disabled={savingCarta || alLimite || !nuevaCarta.idioma || !nuevaCarta.condicion || !nuevaCarta.foto_real_url || !nuevaCarta.foto_real_reverso_url} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
           {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
       </div>
@@ -4266,7 +4281,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
         {inventario.map((item) => (
           <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
-            {(item.foto_real_url || item.imagen_url) && <img src={item.foto_real_url || item.imagen_url} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
+            {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
@@ -4285,6 +4300,8 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
               style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
             {!item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />}
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />
+            <SubirFotoManual session={session} label={item.foto_real_url ? "Cambiar foto real (frente)" : "📷 Foto real (frente)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_url", url); cargar(); }} />
+            <SubirFotoManual session={session} label={item.foto_real_reverso_url ? "Cambiar foto real (atrás)" : "📷 Foto real (atrás)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_reverso_url", url); cargar(); }} />
             <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
             <MarcarVendidaBoton session={session} tabla="inventario_tienda" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} onVendida={cargar} />
             <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
@@ -6036,7 +6053,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
                 {[...cartas, ...sellado].map((r) => (
                   <div key={r.id} onClick={() => onAbrirDetalle?.(r.id, "mercado_listings")} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}`, cursor: onAbrirDetalle ? "pointer" : "default" }} className="rounded-xl overflow-hidden flex flex-col">
                     <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
-                      {(r.foto_real_url || r.imagen_url) ? <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
+                      {miniaturaListing(r) ? <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
                     </div>
                     <div className="p-2">
                       <div className="flex items-center gap-1 flex-wrap mb-1">
@@ -6112,7 +6129,8 @@ async function cargarDetalleListing(tabla, id) {
       nombre: r.carta, setNombre: r.set_nombre, tipo: r.tipo, condicion: r.condicion, idioma: r.idioma,
       gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.zona,
-      imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
+      imagen: miniaturaListing(r), fotoRealFrente: r.foto_real_url || null, fotoRealReverso: r.foto_real_reverso_url || null,
+      cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
       buzonTienda: r.buzon_tienda || null, descripcion: r.descripcion || null, etiquetas: r.etiquetas || [],
       vendedor: { perfilId: r.perfil_id, nombre: r.perfiles?.nombre || "Usuario", avatarUrl: r.perfiles?.avatar_url, whatsapp: r.perfiles?.whatsapp, facebook: r.perfiles?.facebook, perfil: r.perfiles, esTienda: false },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""}`,
@@ -6127,7 +6145,8 @@ async function cargarDetalleListing(tabla, id) {
       nombre: r.carta, setNombre: r.set_nombre, tipo: "carta", condicion: r.condicion, idioma: r.idioma,
       gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
-      imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
+      imagen: miniaturaListing(r), fotoRealFrente: r.foto_real_url || null, fotoRealReverso: r.foto_real_reverso_url || null,
+      cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
       vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""} en ${r.tiendas?.nombre}`,
     };
@@ -6270,11 +6289,33 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
     <div>
       {volver}
       <div className="grid sm:grid-cols-[minmax(0,340px)_1fr] gap-6">
-        <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4 sm:sticky sm:top-24 self-start">
-          {item.imagen ? (
-            <img src={item.imagen} alt={item.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-          ) : (
-            <Package size={64} color={COLORS.muted} />
+        <div className="grid gap-3 sm:sticky sm:top-24 self-start">
+          <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
+            {item.imagen ? (
+              <img src={item.imagen} alt={item.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            ) : (
+              <Package size={64} color={COLORS.muted} />
+            )}
+          </div>
+          {(item.fotoRealFrente || item.fotoRealReverso) && (
+            <div className="grid grid-cols-2 gap-3">
+              {item.fotoRealFrente && (
+                <div>
+                  <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
+                    <img src={item.fotoRealFrente} alt={`${item.nombre} (foto real, frente)`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  </div>
+                  <p style={{ color: COLORS.muted }} className="text-xs text-center mt-1">Foto real (frente)</p>
+                </div>
+              )}
+              {item.fotoRealReverso && (
+                <div>
+                  <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
+                    <img src={item.fotoRealReverso} alt={`${item.nombre} (foto real, atrás)`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  </div>
+                  <p style={{ color: COLORS.muted }} className="text-xs text-center mt-1">Foto real (atrás)</p>
+                </div>
+              )}
+            </div>
           )}
         </div>
         <div>
@@ -8895,8 +8936,8 @@ export default function EncuentraCartas() {
                             style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}` }}
                             className="text-left rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                             <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
-                              {(r.foto_real_url || r.imagen_url) ? (
-                                <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                              {miniaturaListing(r) ? (
+                                <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                               ) : (
                                 <Package size={28} color={COLORS.muted} />
                               )}
@@ -8938,7 +8979,7 @@ export default function EncuentraCartas() {
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
-                    {(r.foto_real_url || r.imagen_url) && <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                    {miniaturaListing(r) && <img src={miniaturaListing(r)} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
                       <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><IdiomaBadge idioma={r.idioma} /><EstadoCartaBadge condicion={r.condicion} /><GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} /><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
@@ -8960,7 +9001,7 @@ export default function EncuentraCartas() {
                         <MessageCircle size={12} /> Contactar
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "inventario_tienda", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: r.foto_real_url || r.imagen_url, contexto: `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, vendedorId: r.tiendas?.perfil_id, vendedorNombre: r.tiendas?.nombre, vendedorAvatar: r.tiendas?.perfiles?.avatar_url }); }}
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "inventario_tienda", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: miniaturaListing(r), contexto: `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, vendedorId: r.tiendas?.perfil_id, vendedorNombre: r.tiendas?.nombre, vendedorAvatar: r.tiendas?.perfiles?.avatar_url }); }}
                         disabled={!r.tiendas?.perfil_id || enElCarrito("inventario_tienda", r.id)}
                         style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.3 }}
                         className="text-xs px-2 py-1.5 rounded-lg flex items-center">
@@ -8974,7 +9015,7 @@ export default function EncuentraCartas() {
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
-                    {(r.foto_real_url || r.imagen_url) && <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                    {miniaturaListing(r) && <img src={miniaturaListing(r)} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
                       <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}{r.tipo === "accesorio" && <Badge color={COLORS.gold}>Accesorio</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo === "carta" && <IdiomaBadge idioma={r.idioma} />}{r.tipo === "carta" && <EstadoCartaBadge condicion={r.condicion} />}{r.tipo === "carta" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}<BuzonBadge tienda={r.buzon_tienda} /><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       {r.tipo === "accesorio" ? (
@@ -9000,7 +9041,7 @@ export default function EncuentraCartas() {
                         <MessageCircle size={12} /> Contactar
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "mercado_listings", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: r.foto_real_url || r.imagen_url, contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r.perfil_id, vendedorNombre: r.perfiles?.nombre, vendedorAvatar: r.perfiles?.avatar_url, vendedorWhatsapp: r.perfiles?.whatsapp, vendedorFacebook: r.perfiles?.facebook }); }}
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "mercado_listings", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: miniaturaListing(r), contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r.perfil_id, vendedorNombre: r.perfiles?.nombre, vendedorAvatar: r.perfiles?.avatar_url, vendedorWhatsapp: r.perfiles?.whatsapp, vendedorFacebook: r.perfiles?.facebook }); }}
                         disabled={!r.perfil_id || r.perfil_id === session?.user?.id || enElCarrito("mercado_listings", r.id)}
                         style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: (!r.perfil_id || r.perfil_id === session?.user?.id) ? 0.3 : 1 }}
                         className="text-xs px-2 py-1.5 rounded-lg flex items-center">
@@ -9161,8 +9202,8 @@ export default function EncuentraCartas() {
               {market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).map((r) => (
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                   <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
-                    {(r.foto_real_url || r.imagen_url) ? (
-                      <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    {miniaturaListing(r) ? (
+                      <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                     ) : (
                       <Package size={40} color={COLORS.muted} />
                     )}
@@ -9201,7 +9242,7 @@ export default function EncuentraCartas() {
                         <MessageCircle size={12} /> Contactar
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "mercado_listings", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: r.foto_real_url || r.imagen_url, contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r.perfil_id, vendedorNombre: r.perfiles?.nombre, vendedorAvatar: r.perfiles?.avatar_url, vendedorWhatsapp: r.perfiles?.whatsapp, vendedorFacebook: r.perfiles?.facebook }); }}
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "mercado_listings", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: miniaturaListing(r), contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r.perfil_id, vendedorNombre: r.perfiles?.nombre, vendedorAvatar: r.perfiles?.avatar_url, vendedorWhatsapp: r.perfiles?.whatsapp, vendedorFacebook: r.perfiles?.facebook }); }}
                         disabled={!r.perfil_id || r.perfil_id === session?.user?.id || enElCarrito("mercado_listings", r.id)}
                         style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: (!r.perfil_id || r.perfil_id === session?.user?.id) ? 0.3 : 1 }}
                         className="text-xs px-2 py-1.5 rounded-lg flex items-center justify-center">
@@ -9522,7 +9563,7 @@ export default function EncuentraCartas() {
                   {storeInventory.filter(pasaFiltroTcg).map((item) => (
                     <div key={item.id} onClick={() => abrirDetalle(item.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
                       <div className="flex items-center gap-3">
-                        {(item.foto_real_url || item.imagen_url) && <img src={item.foto_real_url || item.imagen_url} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                        {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium">{item.carta}</p>
@@ -9546,7 +9587,7 @@ export default function EncuentraCartas() {
                             <MessageCircle size={12} /> Contactar
                           </button>
                           <button
-                            onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "inventario_tienda", id: item.id, nombre: item.carta, precio: item.precio, imagen_url: item.foto_real_url || item.imagen_url, contexto: `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, vendedorId: selectedStore.perfil_id, vendedorNombre: selectedStore.nombre, vendedorAvatar: selectedStore.perfiles?.avatar_url }); }}
+                            onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "inventario_tienda", id: item.id, nombre: item.carta, precio: item.precio, imagen_url: miniaturaListing(item), contexto: `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, vendedorId: selectedStore.perfil_id, vendedorNombre: selectedStore.nombre, vendedorAvatar: selectedStore.perfiles?.avatar_url }); }}
                             disabled={!selectedStore.perfil_id || enElCarrito("inventario_tienda", item.id)}
                             style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: selectedStore.perfil_id ? 1 : 0.3 }}
                             className="text-xs px-2 py-1.5 rounded-lg flex items-center">

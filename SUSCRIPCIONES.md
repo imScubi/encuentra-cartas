@@ -1802,6 +1802,43 @@ La migración `048_tienda_verificacion.sql` ya se aplicó directo a la base
 de datos real vía el conector MCP de Supabase — no hace falta copiarla a
 mano en el SQL Editor.
 
+## 66. Foto real de frente y de atrás obligatorias al publicar
+
+- **Qué cambia**: al publicar una carta, producto sellado o accesorio en
+  el Mercado (vendedor individual) o al agregar una carta suelta al
+  inventario de una tienda, ahora hay que subir **2 fotos reales**
+  (frente y atrás) de manera obligatoria — antes `foto_real_url` (frente)
+  era opcional para cartas y obligatoria solo para accesorios, y no
+  existía ningún campo de reverso. Migración `049_foto_real_reverso.sql`
+  agrega `foto_real_reverso_url` a `mercado_listings` e
+  `inventario_tienda`.
+- **Excepciones (solo para tiendas)**: el producto sellado de tienda
+  (`sellado_tienda`) sigue sin pedir ninguna foto real — esa tabla nunca
+  tuvo la columna, a propósito. El Importador Masivo (Ente Ball) tampoco
+  pide fotos — es un código separado (`importar()` en `ImportadorMasivo`)
+  que nunca pasó por `agregarCarta()`, así que la excepción ya existía
+  sola sin tocarle nada. El vendedor individual **no** tiene esta
+  excepción para su propio producto sellado: si publica sellado en el
+  Mercado, también necesita las 2 fotos.
+- **La miniatura sigue siendo la oficial**: en todas las tarjetas/grids
+  del Mercado, Directorio, Perfil público, Home y carrito, la miniatura
+  muestra la imagen oficial del catálogo (`imagen_url`), nunca la foto
+  real — nuevo helper `miniaturaListing()` en `theme.js`. Única excepción:
+  los accesorios no existen en ningún catálogo, así que su "miniatura
+  oficial" es su propia foto real de frente.
+- **En el detalle de la publicación** (`CartaDetalleView`) sí se ven las
+  3 imágenes: la oficial arriba (igual que antes) y, debajo, la foto real
+  de frente y de atrás lado a lado, al mismo tamaño que la oficial.
+- Las filas de "Tus publicaciones" (Mercado) y "Cartas sueltas" (tienda)
+  ahora tienen botones para cambiar cada una de las 2 fotos reales de una
+  publicación ya existente, no solo al momento de crearla.
+
+### Pendiente de aplicar en Supabase
+La migración `049_foto_real_reverso.sql` **todavía no se aplicó** a la
+base de datos real (el conector MCP de Supabase no estaba disponible en
+esta sesión) — cópiala y pégala en Supabase → SQL Editor → Run antes de
+usar esta función en producción.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

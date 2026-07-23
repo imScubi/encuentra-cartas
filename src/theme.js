@@ -202,6 +202,12 @@ export const conBoostPrimero = (lista) => {
   return [...destacados, ...resto];
 };
 
+// La miniatura pública siempre es la foto oficial (catálogo), nunca la foto
+// real que subió el vendedor -- salvo accesorios, que no tienen contraparte
+// en ningún catálogo y por eso su única "foto oficial" es la real de frente.
+export const miniaturaListing = (item) =>
+  item?.tipo === "accesorio" ? (item.foto_real_url || item.imagen_url) : (item.imagen_url || item.foto_real_url);
+
 // ---- Apariencia: modo día/noche (Zafiro+) y temas por tipo de Pokémon (Amatista+) ----
 //
 // COLORS es un objeto compartido: en vez de hacer que cada uno de los ~700 usos
