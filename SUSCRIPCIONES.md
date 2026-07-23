@@ -2072,6 +2072,32 @@ importa.
   name:VMAX*`), sin importar cuántas palabras tenga ni si ya se terminó de
   escribir la frase completa.
 
+### Seguía sin poder publicar aunque ya no faltara nada
+
+Después del fix de arriba, seguía sin poder publicar aunque el nuevo
+mensaje de "falta: ..." ya no mostrara nada pendiente. Causa más probable:
+la migración `049_foto_real_reverso.sql` (agrega `foto_real_reverso_url`
+a `mercado_listings` e `inventario_tienda`) quedó documentada como
+**pendiente de aplicar** en la sección 66 y nunca se confirmó que alguien
+la corriera — sin esa columna en la base de datos real, el `INSERT`
+fallaba por completo apenas se mandaba `foto_real_reverso_url`, sin
+ninguna relación con si el formulario estaba bien lleno o no.
+
+No hubo forma de confirmar esto en vivo porque el conector MCP de
+Supabase no estaba disponible en esta sesión (ver notas de las secciones
+anteriores) para revisar el esquema real. Mientras tanto, `agregar()` en
+`MyMarketPanel` y `agregarCarta()` en `MyStorePanel` ahora reintentan el
+`INSERT` una vez sin `foto_real_reverso_url` si el primer intento falla
+-- así publicar ya funciona de inmediato (guardando al menos la foto de
+frente) aunque la migración siga sin correr. **Sigue pendiente correr la
+migración 049 a mano** (copiar y pegar en Supabase → SQL Editor → Run)
+para que la foto de atrás también se guarde:
+
+```sql
+alter table mercado_listings add column if not exists foto_real_reverso_url text;
+alter table inventario_tienda add column if not exists foto_real_reverso_url text;
+```
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

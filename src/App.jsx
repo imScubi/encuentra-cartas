@@ -1708,12 +1708,12 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const agregar = async () => {
     if (faltantes.length > 0) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante para inventario ilimitado.`); return; }
-    setSaving(true);
+    setSaving(true); setError(null);
     try {
       const etiquetasArr = tipo === "accesorio"
         ? nueva.etiquetas.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean)
         : [];
-      await sbWrite("POST", "mercado_listings", {
+      const payload = {
         perfil_id: session.user.id,
         tipo,
         tcg: nueva.tcg,
@@ -1739,7 +1739,18 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           : {}),
         ...(tipo === "accesorio" ? { descripcion: nueva.descripcion || null, etiquetas: etiquetasArr, etiquetas_texto: etiquetasArr.join(" ") } : {}),
         ...(tipo !== "sellado" && nueva.buzon_tienda_id ? { buzon_tienda_id: nueva.buzon_tienda_id } : {}),
-      }, session);
+      };
+      try {
+        await sbWrite("POST", "mercado_listings", payload, session);
+      } catch (e) {
+        // Si la migración 049 (agrega foto_real_reverso_url) todavía no se
+        // corrió en la base de datos real, insertar con esa columna falla
+        // por completo -- en vez de dejar a la persona sin poder vender
+        // nada mientras se corre la migración pendiente, se reintenta una
+        // vez sin ese campo (la foto de frente sí se guarda).
+        const { foto_real_reverso_url, ...sinReverso } = payload;
+        await sbWrite("POST", "mercado_listings", sinReverso, session);
+      }
       setNueva({ ...vacio, buzon_tienda_id: buzonDefault });
       cargar();
     } catch (e) { setError(e.message); } finally { setSaving(false); }
@@ -4119,10 +4130,10 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const agregarCarta = async () => {
     if (faltantesCarta.length > 0) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.`); return; }
-    setSavingCarta(true);
+    setSavingCarta(true); setError(null);
     try {
       const { gradeada, grado_empresa, grado_empresa_otro, grado_calificacion, ...nuevaCartaBase } = nuevaCarta;
-      await sbWrite("POST", "inventario_tienda", {
+      const payload = {
         ...nuevaCartaBase,
         precio: Number(nuevaCarta.precio),
         precio_antes: nuevaCarta.precio_antes ? Number(nuevaCarta.precio_antes) : null,
@@ -4136,7 +4147,17 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         // agrega (040) aún no ha corrido. Las fotos reales van siempre --
         // son obligatorias desde la migración 036/049.
         ...(gradeada ? { gradeada: true, grado_empresa: grado_empresa || null, grado_empresa_otro: grado_empresa === "OTRO" ? grado_empresa_otro || null : null, grado_calificacion: grado_calificacion || null } : {}),
-      }, session);
+      };
+      try {
+        await sbWrite("POST", "inventario_tienda", payload, session);
+      } catch (e) {
+        // Ver el comentario equivalente en MyMarketPanel.agregar(): si la
+        // migración 049 (foto_real_reverso_url) no ha corrido todavía en la
+        // base de datos real, se reintenta una vez sin esa columna en vez de
+        // bloquear por completo el agregar cartas.
+        const { foto_real_reverso_url, ...sinReverso } = payload;
+        await sbWrite("POST", "inventario_tienda", sinReverso, session);
+      }
       setNuevaCarta({
         tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
         gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
