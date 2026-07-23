@@ -834,12 +834,15 @@ function ErrorBox({ message }) {
   );
 }
 
-// Botones de "Continuar con Google/Facebook": simplemente redirigen a Supabase
-// Auth, que habla con el proveedor y nos regresa con la sesión en la URL (ver
-// leerSesionDeUrl en el componente raíz). No hay botón de Instagram: Meta dio
-// de baja en 2024 la API pública que permitía "iniciar sesión con Instagram"
-// para cuentas normales — su enlace de perfil (ya existente, en Editar perfil)
-// sigue siendo la forma de mostrarlo, solo que no sirve para autenticarse.
+// Botón de "Continuar con Google": simplemente redirige a Supabase Auth, que
+// habla con el proveedor y nos regresa con la sesión en la URL (ver
+// leerSesionDeUrl en el componente raíz). No hay botón de Facebook (Meta
+// exige verificación de negocio con documentos para Facebook Login, y no
+// hay una empresa registrada detrás de este proyecto) ni de Instagram (Meta
+// dio de baja en 2024 la API pública que permitía "iniciar sesión con
+// Instagram" para cuentas normales) — el enlace de perfil a Instagram (ya
+// existente, en Editar perfil) se queda igual, solo que no sirve para
+// autenticarse.
 function BotonesLoginSocial() {
   return (
     <div className="grid gap-2">
@@ -852,11 +855,6 @@ function BotonesLoginSocial() {
         style={{ background: COLORS.surface2, border: `1px solid ${COLORS.surface2}`, color: COLORS.text }}
         className="rounded-xl p-3 text-sm font-semibold flex items-center justify-center gap-2">
         Google
-      </a>
-      <a href={urlLoginSocial("facebook")}
-        style={{ background: COLORS.surface2, border: `1px solid ${COLORS.surface2}`, color: COLORS.text }}
-        className="rounded-xl p-3 text-sm font-semibold flex items-center justify-center gap-2">
-        Facebook
       </a>
     </div>
   );
