@@ -1904,6 +1904,35 @@ usar esta función en producción.
     segmento anterior clicable para saltar directo ahí, en vez de solo un
     botón "← Eras"/"← Sets" ambiguo sobre a dónde regresa.
 
+## 69. Auditoría: reporte de "contraseña sin encriptar"
+
+Un usuario reportó (con razón de preocuparse) que el login parecía mandar
+el correo/contraseña "sin encriptar". Se auditó todo el flujo de
+autenticación (`authSignUp`/`authSignIn` en `src/lib/supabase.js`, y los
+formularios de `AccountModal` en `App.jsx`):
+
+- Ambas funciones mandan el correo/contraseña por **POST con body JSON**
+  (nunca por query string ni GET) a `https://nulypgaaekexlbxbxdwq.supabase.co`
+  — la URL está codificada con `https://` fijo, no hay ninguna ruta que use
+  `http://`. El formulario tampoco usa un `<form>` nativo (que podría
+  enviar por GET si no se cuida) — son `<input>` controlados por React y un
+  botón que llama `fetch()` directo.
+- **Conclusión: el tráfico ya viaja cifrado (TLS/HTTPS) de punta a punta.**
+  Lo que muy probablemente vio la persona que reportó esto es el panel
+  "Network" del navegador (DevTools) mostrando el *payload* de la
+  petición en texto plano — eso es normal y no es una falla: HTTPS cifra
+  los datos en tránsito por la red, pero el navegador (el propio emisor
+  de la petición) siempre puede mostrarle a su dueño lo que está a punto
+  de mandar, antes de cifrarlo. No es algo que un tercero en la red pueda
+  leer.
+- **Endurecimiento agregado de todos modos** (no estaba roto, pero cierra
+  el único hueco teórico real): `vercel.json` ahora manda el header
+  `Strict-Transport-Security` (`max-age=63072000; includeSubDomains;
+  preload`) en todas las respuestas, para que el navegador recuerde no
+  intentar nunca `http://` con este dominio ni con subdominios, ni
+  siquiera en la primerísima visita antes de que ocurra el redirect
+  automático de Vercel a HTTPS.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
