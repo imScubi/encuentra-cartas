@@ -1587,6 +1587,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const vacio = {
     tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
     gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "", buzon_tienda_id: "",
+    descripcion: "", etiquetas: "",
   };
   const [nueva, setNueva] = useState({ ...vacio, buzon_tienda_id: buzonDefault });
 
@@ -1616,16 +1617,21 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const alLimite = limiteAlcanzado(perfil, publicaciones.length);
 
   const agregar = async () => {
-    if (!nueva.carta || !nueva.precio || !nueva.zona || (tipo === "carta" && (!nueva.idioma || !nueva.condicion))) return;
+    if (!nueva.carta || !nueva.precio || !nueva.zona) return;
+    if (tipo === "carta" && (!nueva.idioma || !nueva.condicion)) return;
+    if (tipo === "accesorio" && !nueva.foto_real_url) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante para inventario ilimitado.`); return; }
     setSaving(true);
     try {
+      const etiquetasArr = tipo === "accesorio"
+        ? nueva.etiquetas.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean)
+        : [];
       await sbWrite("POST", "mercado_listings", {
         perfil_id: session.user.id,
         tipo,
         tcg: nueva.tcg,
         carta: nueva.carta,
-        set_nombre: nueva.set_nombre || null,
+        set_nombre: tipo === "accesorio" ? null : (nueva.set_nombre || null),
         condicion: tipo === "carta" ? nueva.condicion : null,
         ...(tipo === "carta" ? { idioma: nueva.idioma } : {}),
         precio: Number(nueva.precio),
@@ -1639,10 +1645,11 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         // verdad aplican: así publicar sigue funcionando aunque las
         // migraciones que agregan esas columnas (036, 040, 042) todavía no
         // se hayan corrido.
-        ...(tipo === "carta" && nueva.foto_real_url ? { foto_real_url: nueva.foto_real_url } : {}),
+        ...((tipo === "carta" || tipo === "accesorio") && nueva.foto_real_url ? { foto_real_url: nueva.foto_real_url } : {}),
         ...(tipo === "carta" && nueva.gradeada
           ? { gradeada: true, grado_empresa: nueva.grado_empresa || null, grado_empresa_otro: nueva.grado_empresa === "OTRO" ? nueva.grado_empresa_otro || null : null, grado_calificacion: nueva.grado_calificacion || null }
           : {}),
+        ...(tipo === "accesorio" ? { descripcion: nueva.descripcion || null, etiquetas: etiquetasArr, etiquetas_texto: etiquetasArr.join(" ") } : {}),
         ...(nueva.buzon_tienda_id ? { buzon_tienda_id: nueva.buzon_tienda_id } : {}),
       }, session);
       setNueva({ ...vacio, buzon_tienda_id: buzonDefault });
@@ -1699,6 +1706,9 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           <button type="button" onClick={() => { setTipo("sellado"); setNueva({ ...vacio, buzon_tienda_id: buzonDefault }); }}
             style={{ background: tipo === "sellado" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "sellado" ? COLORS.azulClaro : COLORS.surface2}`, color: tipo === "sellado" ? COLORS.azulClaro : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Producto sellado</button>
+          <button type="button" onClick={() => { setTipo("accesorio"); setNueva({ ...vacio, buzon_tienda_id: buzonDefault }); }}
+            style={{ background: tipo === "accesorio" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "accesorio" ? COLORS.gold : COLORS.surface2}`, color: tipo === "accesorio" ? COLORS.gold : COLORS.muted }}
+            className="px-3 py-1.5 rounded-full text-sm font-semibold">Accesorio</button>
         </div>
 
         {tiendasAfiliadas.length > 0 && (
@@ -1716,9 +1726,26 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
 
         <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
           {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          {tipo === "accesorio" && <option value="general">General (cualquier TCG)</option>}
         </select>
 
-        {tipo === "carta" ? (
+        {tipo === "accesorio" ? (
+          <>
+            <input placeholder="Nombre del accesorio (ej. Playmat Sylveon Ilustración especial)" value={nueva.carta}
+              onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <textarea placeholder="Descripción (material, tamaño, detalles del producto...)" value={nueva.descripcion} rows={3}
+              onChange={(e) => setNueva({ ...nueva, descripcion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <div>
+              <input placeholder="Etiquetas separadas por coma (ej. sylveon, playmat, eeveelution)" value={nueva.etiquetas}
+                onChange={(e) => setNueva({ ...nueva, etiquetas: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-full" />
+              <p style={{ color: COLORS.muted }} className="text-xs mt-1">Con estas palabras clave, tu accesorio aparece en Buscar aunque alguien no busque "accesorios" — por ejemplo, si pones "sylveon" aparece al buscar Sylveon.</p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto subida" : "📷 Foto del producto (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+            </div>
+          </>
+        ) : tipo === "carta" ? (
           <>
             <div>
               <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
@@ -1784,7 +1811,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nueva.precio_antes} onChange={(e) => setNueva({ ...nueva, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregar} disabled={saving || alLimite || (tipo === "carta" && (!nueva.idioma || !nueva.condicion))} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={agregar} disabled={saving || alLimite || (tipo === "carta" && (!nueva.idioma || !nueva.condicion)) || (tipo === "accesorio" && !nueva.foto_real_url)} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
           </button>
         </div>
@@ -1799,21 +1826,29 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             <div className="flex-1 min-w-[140px]">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
-                <Badge color={item.tipo === "sellado" ? COLORS.azulClaro : COLORS.azulPalido}>{item.tipo === "sellado" ? "Sellado" : "Carta"}</Badge>
-                {item.tipo !== "sellado" && <IdiomaBadge idioma={item.idioma} />}
-                {item.tipo !== "sellado" && <EstadoCartaBadge condicion={item.condicion} />}
-                {item.tipo !== "sellado" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />}
+                <Badge color={item.tipo === "sellado" ? COLORS.azulClaro : item.tipo === "accesorio" ? COLORS.gold : COLORS.azulPalido}>
+                  {item.tipo === "sellado" ? "Sellado" : item.tipo === "accesorio" ? "Accesorio" : "Carta"}
+                </Badge>
+                {item.tipo === "carta" && <IdiomaBadge idioma={item.idioma} />}
+                {item.tipo === "carta" && <EstadoCartaBadge condicion={item.condicion} />}
+                {item.tipo === "carta" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />}
                 <BuzonBadge tienda={item.buzon_tienda} />
                 <BoostBadge item={item} />
               </div>
-              <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.zona}</p>
+              {item.tipo === "accesorio" ? (
+                <p style={{ color: COLORS.muted }} className="text-xs truncate">{item.etiquetas?.join(", ")}{item.etiquetas?.length ? " · " : ""}{item.zona}</p>
+              ) : (
+                <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.zona}</p>
+              )}
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
             <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
-            {!item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
-            <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
+            {item.tipo !== "accesorio" && !item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
+            {item.tipo !== "accesorio" && (
+              <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
+            )}
             {item.tipo !== "sellado" && (
-              <SubirFotoManual session={session} label={item.foto_real_url ? "Cambiar foto real" : "📷 Foto real"} onSubido={async (url) => { await actualizar(item.id, "foto_real_url", url); cargar(); }} />
+              <SubirFotoManual session={session} label={item.foto_real_url ? (item.tipo === "accesorio" ? "Cambiar foto" : "Cambiar foto real") : (item.tipo === "accesorio" ? "📷 Foto" : "📷 Foto real")} onSubido={async (url) => { await actualizar(item.id, "foto_real_url", url); cargar(); }} />
             )}
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
             <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} tipoItem={item.tipo} onVendida={cargar} />
@@ -4953,6 +4988,35 @@ function ArmarMazoView({ session, onAbrirChat, onVerTienda }) {
 // las cartas se agregan con el mismo CardPicker que usa el resto de la
 // app (buscador con imagen y precio de referencia) y cada una lleva su
 // propia cantidad, incrementable/decrementable.
+// Avisos de legalidad de mazo por TCG (no bloquean guardar, solo avisan —
+// cada juego real tiene varios formatos con sus propias variantes, así que
+// esto valida el criterio "constructed" más común de cada uno, no todos los
+// formatos posibles). Copias máximas y tamaño de mazo son datos públicos de
+// las reglas oficiales de cada juego.
+const MAZO_MAX_COPIAS = { pokemon: 4, magic: 4, yugioh: 3, lorcana: 4, onepiece: 4 };
+const MAZO_TAMANO = {
+  pokemon: { min: 60, max: 60, texto: "60 cartas exactas" },
+  magic: { min: 60, max: null, texto: "mínimo 60 cartas (constructed)" },
+  yugioh: { min: 40, max: 60, texto: "entre 40 y 60 cartas (mazo principal, sin contar Extra/Side Deck)" },
+  lorcana: { min: 60, max: null, texto: "mínimo 60 cartas" },
+  onepiece: { min: 50, max: 50, texto: "50 cartas (sin contar tu carta Líder)" },
+};
+function avisosLegalidadMazo(tcg, mazoCartas, totalCartas) {
+  const avisos = [];
+  const maxCopias = MAZO_MAX_COPIAS[tcg] || 4;
+  const nombreTcg = TCG_LABEL[tcg] || tcg;
+  const exceso = mazoCartas.filter((mc) => mc.cantidad > maxCopias && !(tcg === "pokemon" && esEnergiaBasica(mc.nombre)));
+  if (exceso.length > 0) {
+    avisos.push(`Un mazo de ${nombreTcg} normalmente permite máximo ${maxCopias} copias de una misma carta${tcg === "pokemon" ? " (la Energía Básica no cuenta para este límite)" : ""} — revisa: ${exceso.map((mc) => mc.nombre).join(", ")}.`);
+  }
+  const t = MAZO_TAMANO[tcg];
+  if (t) {
+    if (t.min != null && totalCartas < t.min) avisos.push(`Un mazo de ${nombreTcg} normalmente necesita ${t.texto} (llevas ${totalCartas}).`);
+    else if (t.max != null && totalCartas > t.max) avisos.push(`Un mazo de ${nombreTcg} normalmente necesita ${t.texto} (llevas ${totalCartas}).`);
+  }
+  return avisos;
+}
+
 function MazosView({ session, perfil, onIrAPlanes }) {
   const info = planDe(perfil);
   const [mazos, setMazos] = useState([]);
@@ -4961,12 +5025,14 @@ function MazosView({ session, perfil, onIrAPlanes }) {
   const [mazoAbierto, setMazoAbierto] = useState(null);
   const [nombreNuevo, setNombreNuevo] = useState("");
   const [etiquetasNuevo, setEtiquetasNuevo] = useState("");
+  const [tcgNuevo, setTcgNuevo] = useState("pokemon");
   const [creando, setCreando] = useState(false);
   const [borrandoMazo, setBorrandoMazo] = useState(null);
   const [guardandoCarta, setGuardandoCarta] = useState(false);
   const [editandoNombre, setEditandoNombre] = useState(false);
   const [nombreEdit, setNombreEdit] = useState("");
   const [etiquetasEdit, setEtiquetasEdit] = useState("");
+  const [tcgFiltroMazos, setTcgFiltroMazos] = useState("todos");
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
@@ -4998,7 +5064,7 @@ function MazosView({ session, perfil, onIrAPlanes }) {
     setCreando(true); setError(null);
     try {
       const etiquetas = etiquetasNuevo.split(",").map((s) => s.trim()).filter(Boolean);
-      const creados = await sbWrite("POST", "mazos", { perfil_id: session.user.id, nombre: nombreNuevo.trim(), etiquetas }, session);
+      const creados = await sbWrite("POST", "mazos", { perfil_id: session.user.id, nombre: nombreNuevo.trim(), etiquetas, tcg: tcgNuevo }, session);
       setNombreNuevo(""); setEtiquetasNuevo("");
       cargar();
       if (creados?.[0]?.id) setMazoAbierto(creados[0].id);
@@ -5054,7 +5120,7 @@ function MazosView({ session, perfil, onIrAPlanes }) {
   // ---- Vista de un mazo abierto ----
   if (actual) {
     const totalCartas = actual.mazo_cartas.reduce((s, mc) => s + mc.cantidad, 0);
-    const exceso = actual.mazo_cartas.filter((mc) => mc.cantidad > 4 && !esEnergiaBasica(mc.nombre));
+    const avisos = avisosLegalidadMazo(actual.tcg || "pokemon", actual.mazo_cartas, totalCartas);
     return (
       <div>
         <button onClick={() => setMazoAbierto(null)} style={{ color: COLORS.azulPalido }} className="text-sm mb-4 flex items-center gap-1">← Mis mazos</button>
@@ -5074,18 +5140,19 @@ function MazosView({ session, perfil, onIrAPlanes }) {
           </div>
         )}
         <div className="flex items-center gap-2 flex-wrap mb-6">
+          <Badge color={COLORS.azulClaro}>{TCG_LABEL[actual.tcg] || "Pokémon"}</Badge>
           {(actual.etiquetas || []).map((e) => <Badge key={e} color={COLORS.violeta}>{e}</Badge>)}
           <p style={{ color: COLORS.muted }} className="text-xs">{totalCartas} carta{totalCartas === 1 ? "" : "s"}</p>
         </div>
 
-        {exceso.length > 0 && (
-          <div style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55`, color: COLORS.gold }} className="rounded-lg p-3 mb-4 text-xs">
-            ⚠️ Un mazo oficial de Pokémon TCG permite máximo 4 copias de una carta que no sea Energía Básica — revisa: {exceso.map((mc) => mc.nombre).join(", ")}.
+        {avisos.map((aviso, i) => (
+          <div key={i} style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55`, color: COLORS.gold }} className="rounded-lg p-3 mb-3 text-xs">
+            ⚠️ {aviso}
           </div>
-        )}
+        ))}
 
         <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-2 text-sm uppercase">Agregar carta</p>
-        <div className="mb-6"><CardPicker onSelect={agregarCarta} /></div>
+        <div className="mb-6"><CardPickerUniversal tcg={actual.tcg || "pokemon"} onSelect={agregarCarta} /></div>
         {guardandoCarta && <p style={{ color: COLORS.muted }} className="text-xs mb-4">Guardando...</p>}
 
         {actual.mazo_cartas.length === 0 ? (
@@ -5125,7 +5192,10 @@ function MazosView({ session, perfil, onIrAPlanes }) {
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Arma tus mazos con un selector visual de cartas: elige la cantidad de cada una y ponles nombre y etiquetas.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
-      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-8 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-8 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+        <select value={tcgNuevo} onChange={(e) => setTcgNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
         <input placeholder="Nombre del mazo (ej. Charizard ex)" value={nombreNuevo} onChange={(e) => setNombreNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
         <input placeholder="Etiquetas (ej. Estándar, Torneo)" value={etiquetasNuevo} onChange={(e) => setEtiquetasNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
         <button onClick={crearMazo} disabled={creando || !nombreNuevo.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
@@ -5133,17 +5203,34 @@ function MazosView({ session, perfil, onIrAPlanes }) {
         </button>
       </div>
 
+      {mazos.length > 0 && (
+        <div className="flex gap-2 flex-wrap mb-4">
+          {[{ key: "todos", label: "Todos" }, ...TCG_OPCIONES].map((o) => (
+            <button key={o.key} onClick={() => setTcgFiltroMazos(o.key)}
+              style={{ background: tcgFiltroMazos === o.key ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${tcgFiltroMazos === o.key ? COLORS.azulPalido : COLORS.surface2}`, color: tcgFiltroMazos === o.key ? COLORS.azulPalido : COLORS.muted }}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {mazos.length === 0 ? (
         <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Todavía no tienes mazos. Crea el primero arriba.</p>
+      ) : mazos.filter((m) => tcgFiltroMazos === "todos" || (m.tcg || "pokemon") === tcgFiltroMazos).length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">No tienes mazos de {TCG_LABEL[tcgFiltroMazos] || tcgFiltroMazos} todavía.</p>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {mazos.map((m) => {
+          {mazos.filter((m) => tcgFiltroMazos === "todos" || (m.tcg || "pokemon") === tcgFiltroMazos).map((m) => {
             const total = (m.mazo_cartas || []).reduce((s, mc) => s + mc.cantidad, 0);
             return (
               <div key={m.id} onClick={() => setMazoAbierto(m.id)}
                 style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
                 className="rounded-xl p-4 cursor-pointer transition-transform duration-200 hover:-translate-y-1">
-                <p className="font-semibold mb-1">{m.nombre}</p>
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <p className="font-semibold">{m.nombre}</p>
+                  <Badge color={COLORS.azulClaro}>{TCG_LABEL[m.tcg] || "Pokémon"}</Badge>
+                </div>
                 <div className="flex items-center gap-1 flex-wrap mb-2">
                   {(m.etiquetas || []).map((e) => <Badge key={e} color={COLORS.violeta}>{e}</Badge>)}
                 </div>
@@ -5800,7 +5887,7 @@ async function cargarDetalleListing(tabla, id) {
       gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.zona,
       imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
-      buzonTienda: r.buzon_tienda || null,
+      buzonTienda: r.buzon_tienda || null, descripcion: r.descripcion || null, etiquetas: r.etiquetas || [],
       vendedor: { perfilId: r.perfil_id, nombre: r.perfiles?.nombre || "Usuario", avatarUrl: r.perfiles?.avatar_url, whatsapp: r.perfiles?.whatsapp, facebook: r.perfiles?.facebook, perfil: r.perfiles, esTienda: false },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""}`,
     };
@@ -5966,38 +6053,46 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
         </div>
         <div>
           <div className="flex items-center gap-2 flex-wrap mb-2">
-            <Badge color={item.tipo === "sellado" ? COLORS.azulMedio : item.vendedor.esTienda ? COLORS.azulPalido : COLORS.azulClaro}>
-              {item.tipo === "sellado" ? "Sellado" : item.vendedor.esTienda ? "Tienda" : "Vendedor individual"}
+            <Badge color={item.tipo === "sellado" ? COLORS.azulMedio : item.tipo === "accesorio" ? COLORS.gold : item.vendedor.esTienda ? COLORS.azulPalido : COLORS.azulClaro}>
+              {item.tipo === "sellado" ? "Sellado" : item.tipo === "accesorio" ? "Accesorio" : item.vendedor.esTienda ? "Tienda" : "Vendedor individual"}
             </Badge>
-            <IdiomaBadge idioma={item.idioma} />
-            <EstadoCartaBadge condicion={item.condicion} />
-            <GradeoBadge gradeada={item.gradeada} grado_empresa={item.gradoEmpresa} grado_empresa_otro={item.gradoEmpresaOtro} grado_calificacion={item.gradoCalificacion} />
+            {item.tipo === "carta" && <IdiomaBadge idioma={item.idioma} />}
+            {item.tipo === "carta" && <EstadoCartaBadge condicion={item.condicion} />}
+            {item.tipo === "carta" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.gradoEmpresa} grado_empresa_otro={item.gradoEmpresaOtro} grado_calificacion={item.gradoCalificacion} />}
             <BuzonBadge tienda={item.buzonTienda} />
           </div>
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold mb-1">{item.nombre}</h2>
           {item.setNombre && <p style={{ color: COLORS.muted }} className="text-sm mb-4">{item.setNombre}</p>}
+          {item.tipo === "accesorio" && item.descripcion && <p style={{ color: COLORS.text }} className="text-sm mb-3 whitespace-pre-line">{item.descripcion}</p>}
+          {item.tipo === "accesorio" && item.etiquetas?.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-4">
+              {item.etiquetas.map((et) => <Badge key={et} color={COLORS.muted}>#{et}</Badge>)}
+            </div>
+          )}
 
           <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4">
             <PrecioConOferta precio={item.precio} precioAntes={item.precioAntes} size="lg" />
             {item.cantidad > 1 && <p style={{ color: COLORS.muted }} className="text-xs mt-1">{item.cantidad} disponibles</p>}
-            <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="mt-3 pt-3">
-              <p style={{ color: COLORS.muted }} className="text-xs uppercase font-semibold mb-1">Precio de referencia en el mercado</p>
-              {cargandoPrecio ? (
-                <p style={{ color: COLORS.muted }} className="text-xs">Consultando TCGplayer / Cardmarket...</p>
-              ) : precioVivo?.precioRefMxn ? (
-                <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-lg font-bold">~${precioVivo.precioRefMxn.toLocaleString("es-MX")} MXN</p>
-              ) : item.precioRefGuardado ? (
-                <p style={{ color: COLORS.muted }} className="text-sm">~${Number(item.precioRefGuardado).toLocaleString("es-MX")} MXN <span className="text-xs">(guardado al publicar)</span></p>
-              ) : (
-                <p style={{ color: COLORS.muted }} className="text-xs">Sin precio de referencia disponible para esta carta.</p>
-              )}
-              {(precioVivo?.tcgplayerUrl || precioVivo?.cardmarketUrl) && (
-                <div className="flex gap-3 mt-1">
-                  {precioVivo.tcgplayerUrl && <a href={precioVivo.tcgplayerUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulClaro }} className="text-xs flex items-center gap-1">TCGplayer <ExternalLink size={10} /></a>}
-                  {precioVivo.cardmarketUrl && <a href={precioVivo.cardmarketUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulClaro }} className="text-xs flex items-center gap-1">Cardmarket <ExternalLink size={10} /></a>}
-                </div>
-              )}
-            </div>
+            {item.tipo !== "accesorio" && (
+              <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="mt-3 pt-3">
+                <p style={{ color: COLORS.muted }} className="text-xs uppercase font-semibold mb-1">Precio de referencia en el mercado</p>
+                {cargandoPrecio ? (
+                  <p style={{ color: COLORS.muted }} className="text-xs">Consultando TCGplayer / Cardmarket...</p>
+                ) : precioVivo?.precioRefMxn ? (
+                  <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-lg font-bold">~${precioVivo.precioRefMxn.toLocaleString("es-MX")} MXN</p>
+                ) : item.precioRefGuardado ? (
+                  <p style={{ color: COLORS.muted }} className="text-sm">~${Number(item.precioRefGuardado).toLocaleString("es-MX")} MXN <span className="text-xs">(guardado al publicar)</span></p>
+                ) : (
+                  <p style={{ color: COLORS.muted }} className="text-xs">Sin precio de referencia disponible para esta carta.</p>
+                )}
+                {(precioVivo?.tcgplayerUrl || precioVivo?.cardmarketUrl) && (
+                  <div className="flex gap-3 mt-1">
+                    {precioVivo.tcgplayerUrl && <a href={precioVivo.tcgplayerUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulClaro }} className="text-xs flex items-center gap-1">TCGplayer <ExternalLink size={10} /></a>}
+                    {precioVivo.cardmarketUrl && <a href={precioVivo.cardmarketUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulClaro }} className="text-xs flex items-center gap-1">Cardmarket <ExternalLink size={10} /></a>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <button onClick={() => onVerPerfil(item.vendedor.perfilId)} disabled={!item.vendedor.perfilId}
@@ -7286,14 +7381,21 @@ const formatoDistancia = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.
 // encuentren una publicación sin importar el orden: cada palabra debe aparecer
 // en el nombre de la carta O en su set_nombre (que ya guarda cosas como
 // "Journey Together 016/159"), sin exigir que toda la frase esté en un solo campo.
-function filtroPalabrasCartaOSet(texto) {
+function filtroPalabrasCartaOSet(texto, campoExtra) {
   const palabras = (texto || "")
     .trim()
     .split(/\s+/)
     .map((w) => w.replace(/^#/, ""))
     .filter(Boolean);
   if (!palabras.length) return "";
-  const grupos = palabras.map((w) => `or(carta.ilike.*${encodeURIComponent(w)}*,set_nombre.ilike.*${encodeURIComponent(w)}*)`);
+  const grupos = palabras.map((w) => {
+    const campos = [`carta.ilike.*${encodeURIComponent(w)}*`, `set_nombre.ilike.*${encodeURIComponent(w)}*`];
+    // etiquetas_texto: para que un accesorio (mercado_listings.tipo="accesorio")
+    // aparezca al buscar una palabra clave (ej. "sylveon") aunque no sea el
+    // nombre del producto ni exista como carta — ver migración 046.
+    if (campoExtra) campos.push(`${campoExtra}.ilike.*${encodeURIComponent(w)}*`);
+    return `or(${campos.join(",")})`;
+  });
   return `and=(${grupos.join(",")})`;
 }
 
@@ -7457,6 +7559,11 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
   const [categoriaIdOP, setCategoriaIdOP] = useState(null);
   const [coleccion, setColeccion] = useState({}); // card_api_id -> "tengo" | "quiero"
   const [error, setError] = useState(null);
+  const [modo, setModo] = useState("explorar"); // explorar | masterSets
+  const [misMazosTcg, setMisMazosTcg] = useState([]);
+  const [mazoDestino, setMazoDestino] = useState("");
+  const [agregandoMazoId, setAgregandoMazoId] = useState(null);
+  const [misTengoSets, setMisTengoSets] = useState({}); // set_nombre -> cantidad marcada "tengo"
 
   useEffect(() => {
     setEraSel(null); setSetSel(null); setCartas([]); setError(null);
@@ -7490,6 +7597,47 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
       .then((rows) => setColeccion(Object.fromEntries(rows.map((r) => [r.card_api_id, r.estado]))))
       .catch(() => setColeccion({}));
   }, [tcgSel, session]);
+
+  // Mazos de este TCG (para poder agregar una carta del catálogo directo a uno) —
+  // Deck Builder es Amatista+ (info.mazoBuilder), igual que en "Armar mazo".
+  useEffect(() => {
+    if (!session || !info.mazoBuilder) { setMisMazosTcg([]); setMazoDestino(""); return; }
+    sb(`mazos?select=id,nombre&perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}&order=nombre.asc`, session)
+      .then((rows) => { setMisMazosTcg(rows); setMazoDestino((prev) => (rows.some((r) => r.id === prev) ? prev : (rows[0]?.id || ""))); })
+      .catch(() => setMisMazosTcg([]));
+  }, [tcgSel, session, info.mazoBuilder]);
+
+  // Master Sets: cuántas cartas de cada set ya marcaste como "tengo".
+  useEffect(() => {
+    if (!session || !info.wishlistPremium) { setMisTengoSets({}); return; }
+    sb(`coleccion_usuario?select=set_nombre&perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}&estado=eq.tengo`, session)
+      .then((rows) => {
+        const conteo = {};
+        for (const r of rows) { if (!r.set_nombre) continue; conteo[r.set_nombre] = (conteo[r.set_nombre] || 0) + 1; }
+        setMisTengoSets(conteo);
+      })
+      .catch(() => setMisTengoSets({}));
+  }, [tcgSel, session, info.wishlistPremium]);
+
+  const agregarAMazo = async (carta) => {
+    if (!mazoDestino || !session) return;
+    setAgregandoMazoId(carta.id);
+    try {
+      const existentes = await sb(`mazo_cartas?select=id,cantidad&mazo_id=eq.${mazoDestino}&card_api_id=eq.${encodeURIComponent(carta.id)}`, session);
+      if (existentes[0]) {
+        await sbWrite("PATCH", `mazo_cartas?id=eq.${existentes[0].id}`, { cantidad: existentes[0].cantidad + 1 }, session);
+      } else {
+        await sbWrite("POST", "mazo_cartas", { mazo_id: mazoDestino, nombre: carta.name, set_nombre: setSel?.nombre || null, card_api_id: carta.id, imagen_url: carta.image, cantidad: 1 }, session);
+      }
+    } catch (e) { setError(e.message); } finally { setAgregandoMazoId(null); }
+  };
+
+  const abrirSetDesdeMasterSets = (s) => {
+    const eraDelSet = eras.find((g) => g.sets.some((x) => x.id === s.id))?.era;
+    setEraSel(eraDelSet ?? null);
+    setModo("explorar");
+    abrirSet(s);
+  };
 
   const abrirSet = async (set) => {
     setSetSel(set); setLoadingCartas(true); setCartas([]); setError(null);
@@ -7556,14 +7704,60 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
 
       {!info.wishlistPremium && (
         <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
-          <p style={{ color: COLORS.muted }} className="text-sm">🔒 Marcar cartas como Tengo/Quiero es exclusivo de Amatista en adelante.</p>
+          <p style={{ color: COLORS.muted }} className="text-sm">🔒 Marcar cartas como Tengo/Quiero y ver Master Sets es exclusivo de Amatista en adelante.</p>
           <button onClick={onIrAPlanes} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">Ver planes</button>
         </div>
       )}
 
-      {loadingEras && <Loading label="Cargando sets..." />}
+      {info.wishlistPremium && (
+        <div className="flex gap-2 mb-6">
+          <button onClick={() => setModo("explorar")}
+            style={{ background: modo === "explorar" ? COLORS.surface2 : "transparent", border: `1px solid ${modo === "explorar" ? COLORS.azulPalido : COLORS.surface2}`, color: modo === "explorar" ? COLORS.azulPalido : COLORS.muted }}
+            className="rounded-lg px-4 py-2 text-sm font-semibold">🔍 Explorar</button>
+          <button onClick={() => setModo("masterSets")}
+            style={{ background: modo === "masterSets" ? COLORS.surface2 : "transparent", border: `1px solid ${modo === "masterSets" ? COLORS.azulPalido : COLORS.surface2}`, color: modo === "masterSets" ? COLORS.azulPalido : COLORS.muted }}
+            className="rounded-lg px-4 py-2 text-sm font-semibold">🏆 Master Sets</button>
+        </div>
+      )}
 
-      {!loadingEras && !setSel && (
+      {modo === "masterSets" && info.wishlistPremium && (
+        <div className="grid gap-3">
+          {loadingEras && <Loading label="Cargando sets..." />}
+          {!loadingEras && eras.flatMap((g) => g.sets).length === 0 && (
+            <p style={{ color: COLORS.muted }} className="text-sm">No pudimos cargar los sets de {TCG_LABEL[tcgSel]} en este momento.</p>
+          )}
+          {!loadingEras && eras.flatMap((g) => g.sets).map((s) => {
+            const tengo = misTengoSets[s.nombre] || 0;
+            const total = s.cardCount || null;
+            const pct = total ? Math.min(100, Math.round((tengo / total) * 100)) : null;
+            return (
+              <div key={s.id} style={{ background: COLORS.surface, border: `1px solid ${pct === 100 ? COLORS.gold + "88" : COLORS.surface2}` }} className="rounded-xl p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                  <div className="flex items-center gap-2">
+                    {s.imagen && <img src={s.imagen} alt="" style={{ maxHeight: 28, maxWidth: 70, objectFit: "contain" }} />}
+                    <p className="font-semibold text-sm">{s.nombre}</p>
+                  </div>
+                  <button onClick={() => abrirSetDesdeMasterSets(s)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="text-xs px-3 py-1.5 rounded-lg">Ver cartas</button>
+                </div>
+                {total ? (
+                  <>
+                    <div style={{ background: COLORS.surface2, height: 8, borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: pct === 100 ? COLORS.gold : COLORS.azulPalido }} />
+                    </div>
+                    <p style={{ color: COLORS.muted }} className="text-xs mt-1">{tengo} / {total} cartas ({pct}%){pct === 100 ? " 🏆 ¡Completo!" : ""}</p>
+                  </>
+                ) : (
+                  <p style={{ color: COLORS.muted }} className="text-xs">{tengo} carta{tengo === 1 ? "" : "s"} marcada{tengo === 1 ? "" : "s"} como "tengo" (el total de este set no está disponible).</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {modo === "explorar" && loadingEras && <Loading label="Cargando sets..." />}
+
+      {modo === "explorar" && !loadingEras && !setSel && (
         <>
           {!grupoUnico && !eraSel && (
             <div className="grid sm:grid-cols-2 gap-3">
@@ -7605,7 +7799,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
         </>
       )}
 
-      {setSel && (
+      {modo === "explorar" && setSel && (
         <div>
           <button onClick={() => { setSetSel(null); setCartas([]); }} style={{ color: COLORS.muted }} className="text-xs mb-3 flex items-center gap-1"><ChevronLeft size={14} /> Sets</button>
           <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
@@ -7614,6 +7808,20 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
               <p style={{ color: COLORS.muted }} className="text-xs">✅ Tengo: {tengoCount} · ⭐ Quiero: {quieroCount} de {cartas.length}</p>
             )}
           </div>
+
+          {info.mazoBuilder && (
+            misMazosTcg.length > 0 ? (
+              <div className="flex items-center gap-2 flex-wrap mb-4">
+                <p style={{ color: COLORS.muted }} className="text-xs">🧩 Agregar cartas al mazo:</p>
+                <select value={mazoDestino} onChange={(e) => setMazoDestino(e.target.value)} style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-1.5 text-xs">
+                  {misMazosTcg.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                </select>
+              </div>
+            ) : (
+              <p style={{ color: COLORS.muted }} className="text-xs mb-4">Crea un mazo de {TCG_LABEL[tcgSel]} en "Armar mazo" para poder agregar cartas directo desde aquí.</p>
+            )
+          )}
+
           {loadingCartas && <Loading label="Cargando cartas..." />}
           {!loadingCartas && cartas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin cartas para este set.</p>}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -7638,6 +7846,13 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
                         ⭐ Quiero
                       </button>
                     </div>
+                    {info.mazoBuilder && misMazosTcg.length > 0 && (
+                      <button onClick={() => agregarAMazo(c)} disabled={agregandoMazoId === c.id}
+                        style={{ border: `1px solid ${COLORS.violeta}88`, color: COLORS.violeta }}
+                        className="rounded-lg py-1 text-[11px] font-semibold flex items-center justify-center gap-1">
+                        <Layers size={11} /> {agregandoMazoId === c.id ? "Agregando..." : "Agregar a mazo"}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -7894,6 +8109,7 @@ export default function EncuentraCartas() {
 
   const [market, setMarket] = useState([]);
   const [loadingMarket, setLoadingMarket] = useState(false);
+  const [tipoMercadoTab, setTipoMercadoTab] = useState("todos"); // todos | carta | sellado | accesorio
   const [news, setNews] = useState([]);
   const [loadingNews, setLoadingNews] = useState(false);
   const [inicioTienda, setInicioTienda] = useState([]);
@@ -7916,12 +8132,16 @@ export default function EncuentraCartas() {
     }
     const q = encodeURIComponent(query.trim());
     const filtroCartaSet = filtroPalabrasCartaOSet(query);
+    // mercado_listings también incluye accesorios (tipo="accesorio") — se buscan
+    // además por sus etiquetas_texto, para que "sylveon" encuentre un accesorio
+    // con esa palabra clave aunque no sea una carta (ver migración 046).
+    const filtroMercado = filtroPalabrasCartaOSet(query, "etiquetas_texto");
     setSearching(true);
     setSearchError(null);
     const t = setTimeout(() => {
       Promise.all([
         sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&${filtroCartaSet}&order=precio.asc`),
-        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&${filtroCartaSet}&order=precio.asc`),
+        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&${filtroMercado}&order=precio.asc`),
         sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&producto=ilike.*${q}*&order=precio.asc`),
       ])
         .then(([inv, merc, sel]) => setSearchResults({ tiendas: conBoostPrimero(inv), mercado: conBoostPrimero(merc), sellado: conBoostPrimero(sel) }))
@@ -8206,11 +8426,16 @@ export default function EncuentraCartas() {
               )}
             </button>
 
-            {/* Todo lo demás (Anuncios, Torneos, Wishlist, Planes, Mis pagos, Mi
-                tienda/Vender, Ayuda, Admin, Editar perfil, Cerrar sesión) vive en
-                el menú lateral, para no saturar el encabezado con botones. */}
+            {/* Foto de perfil: acceso directo a "Editar perfil" (o a crear cuenta si
+                no hay sesión) — separado del menú de tres líneas, que abre el resto
+                (Torneos, Wishlist, Planes, Mis pagos, Ayuda, Admin, Cerrar sesión). */}
+            {session && (
+              <button onClick={() => setShowEditarPerfil(true)} style={{ color: COLORS.muted }} className="p-1 rounded-lg flex items-center">
+                <AvatarImg url={perfil?.avatar_url} size={32} />
+              </button>
+            )}
             <button onClick={() => setShowDrawer(true)} style={{ color: COLORS.muted }} className="p-1 rounded-lg flex items-center">
-              {session ? <AvatarImg url={perfil?.avatar_url} size={32} /> : <Menu size={20} />}
+              <Menu size={20} />
             </button>
           </nav>
         </div>
@@ -8460,8 +8685,12 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-3">
                     {(r.foto_real_url || r.imagen_url) && <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}{r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}{r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}<BuzonBadge tienda={r.buzon_tienda} /><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
-                      <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}{r.tipo === "accesorio" && <Badge color={COLORS.gold}>Accesorio</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo === "carta" && <IdiomaBadge idioma={r.idioma} />}{r.tipo === "carta" && <EstadoCartaBadge condicion={r.condicion} />}{r.tipo === "carta" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}<BuzonBadge tienda={r.buzon_tienda} /><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
+                      {r.tipo === "accesorio" ? (
+                        <p style={{ color: COLORS.muted }} className="text-sm line-clamp-2">{r.descripcion}</p>
+                      ) : (
+                        <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
+                      )}
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
                       <button onClick={(e) => { e.stopPropagation(); verPerfil(r.perfil_id); }} className="flex items-center gap-2 mt-2 hover:brightness-125">
                         <AvatarImg url={r.perfiles?.avatar_url} size={22} />
@@ -8617,17 +8846,26 @@ export default function EncuentraCartas() {
         {/* MARKET */}
         {view === "market" && (
           <div>
-            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">Mercado entre usuarios</h2>
+            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-4">Mercado entre usuarios</h2>
+            <div className="flex gap-2 flex-wrap mb-6">
+              {[{ id: "todos", label: "Todo" }, { id: "carta", label: "Cartas" }, { id: "sellado", label: "Sellado" }, { id: "accesorio", label: "Accesorios" }].map((t) => (
+                <button key={t.id} onClick={() => setTipoMercadoTab(t.id)}
+                  style={{ background: tipoMercadoTab === t.id ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${tipoMercadoTab === t.id ? COLORS.azulPalido : COLORS.surface2}`, color: tipoMercadoTab === t.id ? COLORS.azulPalido : COLORS.muted }}
+                  className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                  {t.label}
+                </button>
+              ))}
+            </div>
             {loadingMarket && <Loading label="Cargando publicaciones..." />}
-            {!loadingMarket && market.filter(pasaFiltroTcg).length === 0 && (
+            {!loadingMarket && market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).length === 0 && (
               <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
                 {market.length === 0
                   ? "Todavía no hay publicaciones de usuarios en el mercado. En cuanto alguien se registre como cuenta individual y publique una carta, aparecerá aquí automáticamente."
-                  : `Nadie ha publicado ${TCG_LABEL[tcgFiltro] || tcgFiltro} todavía en el Mercado.`}
+                  : "Nadie ha publicado nada así todavía en el Mercado."}
               </p>
             )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {market.filter(pasaFiltroTcg).map((r) => (
+              {market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).map((r) => (
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                   <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
                     {(r.foto_real_url || r.imagen_url) ? (
@@ -8639,15 +8877,20 @@ export default function EncuentraCartas() {
                   <div className="p-3 flex flex-col flex-1 gap-1">
                     <div className="flex items-center gap-1 flex-wrap">
                       {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
-                      {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
-                      {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
-                      {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
+                      {r.tipo === "accesorio" && <Badge color={COLORS.gold}>Accesorio</Badge>}
+                      {r.tipo === "carta" && <IdiomaBadge idioma={r.idioma} />}
+                      {r.tipo === "carta" && <EstadoCartaBadge condicion={r.condicion} />}
+                      {r.tipo === "carta" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
                       <BuzonBadge tienda={r.buzon_tienda} />
                       <PlanBadge perfil={r.perfiles} />
                       <BoostBadge item={r} />
                     </div>
                     <p className="font-semibold text-sm leading-snug line-clamp-2">{r.carta}</p>
-                    <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.set_nombre}{r.set_nombre && r.zona ? " · " : ""}{r.zona}</p>
+                    {r.tipo === "accesorio" ? (
+                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.descripcion || r.zona}</p>
+                    ) : (
+                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.set_nombre}{r.set_nombre && r.zona ? " · " : ""}{r.zona}</p>
+                    )}
                     <div className="mt-1">
                       <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="md" />
                     </div>

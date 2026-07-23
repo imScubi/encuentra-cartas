@@ -1611,6 +1611,82 @@ cartas/productos (antes 20, igual que Cuarzo) y **Amatista en adelante** ya
 no tiene límite de publicaciones (antes también 20 — el límite ilimitado
 empezaba hasta Diamante). Diamante y Aurora se quedan igual (ilimitado).
 
+## 59. Encabezado: menú de tres líneas separado de la foto de perfil
+
+Antes un solo botón hacía las dos cosas (mostraba tu foto y abría el menú
+lateral). Ahora son dos botones: tu foto abre "Editar perfil" directo, y el
+ícono de tres líneas (☰, siempre visible, con o sin sesión) abre el menú
+lateral con todo lo demás (Torneos, Wishlist, Planes, Ayuda, Admin, Cerrar
+sesión, etc.).
+
+## 60. Mercado: pestaña "Accesorios" (playmats, deckbox, micas, etc.)
+
+Tercer "tipo" de `mercado_listings` (junto a carta y sellado), no una tabla
+nueva — así reusa tal cual el límite de plan, el chat, el carrito, el boost
+y la moderación de admin que ya existían para esa tabla. A diferencia de
+una carta, un accesorio pide: nombre, **descripción** (nueva columna),
+**foto obligatoria** (antes era opcional) y **etiquetas/palabras clave**
+libres — sin estado, idioma ni gradeo, que no aplican.
+
+**Por qué aparece en Buscar aunque no sea una carta.** Las etiquetas se
+guardan dos veces: `etiquetas` (arreglo, para mostrarlas como chips) y
+`etiquetas_texto` (las mismas, todo junto en minúsculas, para buscarlas con
+ILIKE) — PostgREST no deja hacer un ILIKE parcial contra elementos de un
+arreglo directo desde la URL, así que se mantiene esta copia en texto plano
+en paralelo, cargada por el cliente al mismo tiempo que el arreglo. El
+buscador principal ahora también compara cada palabra escrita contra
+`etiquetas_texto` de `mercado_listings` — si un accesorio tiene la etiqueta
+"sylveon", buscar "sylveon" lo encuentra aunque no sea una carta.
+
+La pestaña "Mercado entre usuarios" ahora tiene sub-filtro Todo / Cartas /
+Sellado / Accesorios.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `046_accesorios_mercado.sql` (agrega
+`'accesorio'` al tipo de `mercado_listings` y a `ventas.tipo` — este último
+para que "Marcar vendida" funcione también en un accesorio — más las
+columnas `descripcion`, `etiquetas`, `etiquetas_texto`). Hasta entonces,
+publicar un accesorio va a fallar.
+
+## 61. Mazos: separados por TCG + avisos de reglas de construcción
+
+Antes todos los mazos eran implícitamente de Pokémon (el picker de cartas
+del Deck Builder solo buscaba en pokemontcg.io). Ahora:
+
+- Cada mazo tiene un TCG (columna `mazos.tcg`, elegido al crearlo).
+- "Mis mazos" tiene un filtro Todos / Pokémon / Yu-Gi-Oh! / Lorcana / Magic
+  / One Piece.
+- Al abrir un mazo, el buscador de cartas ya usa `CardPickerUniversal` con
+  el TCG de ese mazo en vez de estar fijo a Pokémon.
+- El aviso de "máximo de copias por carta" (antes solo existía para
+  Pokémon: 4 copias, sin contar Energía Básica) ahora es por TCG: Magic 4,
+  Yu-Gi-Oh 3, Lorcana 4, One Piece 4. También se agregó un aviso de tamaño
+  de mazo esperado por juego (Pokémon 60 exactas, Magic mínimo 60, Yu-Gi-Oh
+  entre 40 y 60 en el mazo principal, Lorcana mínimo 60, One Piece 50 sin
+  contar el Líder). **Honestidad**: esto valida el formato "constructed"
+  más común de cada juego, no cubre cada formato posible (Commander,
+  Extra/Side Deck de Yu-Gi-Oh, etc.) — son avisos, no bloquean guardar.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `047_mazos_tcg.sql` (agrega `mazos.tcg`,
+default `'pokemon'` para no romper los mazos que ya existen).
+
+## 62. Catálogo: agregar cartas a un mazo + Master Sets
+
+Dos funciones nuevas dentro de la vista Catálogo (ambas Amatista+, mismo
+nivel que marcar Tengo/Quiero):
+
+- **Agregar a un mazo directo desde el catálogo**: al abrir un set, si ya
+  tienes un mazo de ese TCG aparece un selector de "mazo destino" y cada
+  carta gana un botón "Agregar a mazo" — ya no hace falta ir al buscador
+  del Deck Builder para agregar una carta que acabas de ver en el catálogo.
+- **Master Sets**: pestaña nueva dentro de Catálogo ("🏆 Master Sets") que
+  resume, para cada set, cuántas cartas ya marcaste como "tengo" contra el
+  total de cartas del set (con barra de progreso y aviso de "¡Completo!" al
+  100%) — reusa `coleccion_usuario`, no necesitó tabla nueva. Para One
+  Piece (sin API de "total de cartas por set" verificado) solo muestra el
+  conteo de las que marcaste, sin porcentaje, en vez de inventar un total.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
