@@ -1839,6 +1839,29 @@ base de datos real (el conector MCP de Supabase no estaba disponible en
 esta sesión) — cópiala y pégala en Supabase → SQL Editor → Run antes de
 usar esta función en producción.
 
+## 67. Fix: texto negro invisible en portales + borrar anuncios pendientes/programados
+
+- **Texto negro que se perdía en el tutorial, la bandeja de notificaciones
+  y el chat flotante**: causa raíz encontrada — esos 3 son los únicos
+  componentes que usan `createPortal` para renderizar directo a
+  `document.body` en vez de dentro del árbol normal de la app. El div raíz
+  de `EncuentraCartas` sí trae `color: COLORS.text` y por eso todo lo demás
+  hereda un color legible sin tener que declararlo en cada `<p>`/`<h2>` —
+  pero un portal escapa de ese árbol, así que cualquier texto sin `color`
+  explícito caía al negro por default del navegador (`<body>` nunca tuvo
+  un `color` propio), invisible sobre los fondos oscuros de esos 3 paneles.
+  Arreglado agregando `color: COLORS.text` al div contenedor de cada
+  portal (`OnboardingTutorial`, el panel de `NotificationBell`, y la
+  ventana de chat flotante) en vez de parchar cada texto suelto uno por
+  uno.
+- **Admin → Anuncios: ahora sí se pueden borrar los pendientes y
+  programados** — antes la función `borrarAnuncio` (DELETE en `noticias`)
+  solo tenía botón en la lista de "Publicados"; un anuncio "Pendiente de
+  aprobación" solo se podía Aprobar o Rechazar (y "Rechazar" no lo borra,
+  solo lo saca de las 3 listas visibles), y uno "Programado" no tenía
+  ningún botón de acción. Se agregó el mismo botón "Borrar" a esas dos
+  secciones.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

@@ -1377,7 +1377,7 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
 
   return createPortal(
     <div
-      style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}66`, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
+      style={{ background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.azulClaro}66`, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
       className="fixed bottom-0 right-0 sm:bottom-4 sm:right-4 z-[80] w-full sm:w-96 max-w-full rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
     >
       <button onClick={() => setMinimizado((v) => !v)} style={{ borderBottom: minimizado ? "none" : `1px solid ${COLORS.surface2}` }}
@@ -3290,6 +3290,10 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                     style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                     Rechazar
                   </button>
+                  <button onClick={() => borrarAnuncio(n)} disabled={borrandoAnuncio === n.id}
+                    style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    {borrandoAnuncio === n.id ? "Borrando..." : "Borrar"}
+                  </button>
                 </div>
               </div>
             ))}
@@ -3306,6 +3310,10 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                 {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 140, objectFit: "cover" }} className="rounded-lg mb-2 w-full" />}
                 <p className="font-semibold">{n.titulo}</p>
                 <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
+                <button onClick={() => borrarAnuncio(n)} disabled={borrandoAnuncio === n.id}
+                  style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold mt-3">
+                  {borrandoAnuncio === n.id ? "Borrando..." : "Borrar"}
+                </button>
               </div>
             ))}
           </div>
@@ -4664,7 +4672,7 @@ function OnboardingTutorial({ onClose }) {
   const actual = ONBOARDING_STEPS[step];
 
   return createPortal(
-    <div style={{ background: "#00000099" }} className="fixed inset-0 z-[95] flex items-center justify-center p-4">
+    <div style={{ background: "#00000099", color: COLORS.text }} className="fixed inset-0 z-[95] flex items-center justify-center p-4">
       <div
         style={{ background: conAlpha(COLORS.surface, 0.95), border: `1px solid ${COLORS.azulMedio}44`, boxShadow: "0 30px 80px rgba(0,0,0,0.5)", backdropFilter: "blur(18px)" }}
         className="w-full max-w-md rounded-[28px] relative"
@@ -7473,7 +7481,7 @@ function NotificationBell({ session, onNavigate }) {
               el portal, ya no comparten el mismo contexto de apilamiento. */}
           <div
             style={{
-              background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33`,
+              background: COLORS.surface2, color: COLORS.text, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33`,
               position: "fixed", top: pos.top, left: pos.left, width: pos.ancho,
             }}
             className="rounded-xl overflow-hidden z-[91]"
