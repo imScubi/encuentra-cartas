@@ -7930,9 +7930,13 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
         setLoadingEras(false);
         return;
       }
-      const data = await obtenerErasYSetsCatalogo(tcgSel);
-      setEras(data);
-      setLoadingEras(false);
+      try {
+        setEras(await obtenerErasYSetsCatalogo(tcgSel));
+      } catch {
+        setEras([]);
+      } finally {
+        setLoadingEras(false);
+      }
     })();
   }, [tcgSel]);
 

@@ -549,20 +549,40 @@ export async function obtenerCartasDeSetLorcana(setNombre) {
 // theme.js). One Piece no entra aquí — su catálogo de "sets" sale de
 // TCGCSV (categoriaIdTCGplayer + /groups), igual que TCGplayerPicker, ver
 // App.jsx.
+// Estos 3 despachadores son el único punto por el que la pantalla de
+// Catálogo y el buscador de cartas llegan a las APIs externas de cada TCG
+// (ver App.jsx) -- por eso atrapan aquí cualquier falla de red/límite de
+// tasa que sobreviva a los reintentos de fetchConReintento, en vez de
+// dejarla reventar como promesa sin atrapar. Antes, si pokemontcg.io/
+// Scryfall/YGOPRODeck fallaban las 3 veces, el error se colaba sin que
+// nadie lo esperara y disparaba un aviso "🔴 Error detectado" al admin por
+// cada usuario que tuvo la mala suerte de toparse con una caída momentánea
+// de una API gratuita de terceros -- ruido que nadie puede arreglar del
+// lado de la app. Ahora se degrada a "sin resultados" (la pantalla ya
+// sabe mostrar "no pudimos cargar los sets/cartas" cuando la lista viene
+// vacía), y solo se sigue avisando si es un bug de verdad de nuestro código.
 export async function obtenerErasYSetsCatalogo(tcg) {
-  if (tcg === "pokemon") return obtenerErasYSetsPokemon();
-  if (tcg === "magic") return obtenerErasYSetsMagic();
-  if (tcg === "yugioh") return obtenerErasYSetsYugioh();
-  if (tcg === "lorcana") return obtenerSetsLorcana();
-  return [];
+  try {
+    if (tcg === "pokemon") return await obtenerErasYSetsPokemon();
+    if (tcg === "magic") return await obtenerErasYSetsMagic();
+    if (tcg === "yugioh") return await obtenerErasYSetsYugioh();
+    if (tcg === "lorcana") return await obtenerSetsLorcana();
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 export async function obtenerCartasDeSetCatalogo(tcg, setId) {
-  if (tcg === "pokemon") return obtenerCartasDeSetPokemon(setId);
-  if (tcg === "magic") return obtenerCartasDeSetMagic(setId);
-  if (tcg === "yugioh") return obtenerCartasDeSetYugioh(setId);
-  if (tcg === "lorcana") return obtenerCartasDeSetLorcana(setId);
-  return [];
+  try {
+    if (tcg === "pokemon") return await obtenerCartasDeSetPokemon(setId);
+    if (tcg === "magic") return await obtenerCartasDeSetMagic(setId);
+    if (tcg === "yugioh") return await obtenerCartasDeSetYugioh(setId);
+    if (tcg === "lorcana") return await obtenerCartasDeSetLorcana(setId);
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 // Elige el catálogo correcto según el TCG de la publicación (ver
@@ -571,11 +591,15 @@ export async function obtenerCartasDeSetCatalogo(tcg, setId) {
 // usa TCGplayerPicker (elegir set, luego buscar dentro de ese set) en vez
 // de este despachador; ver App.jsx.
 export async function buscarCartasCatalogo(tcg, texto) {
-  if (tcg === "magic") return buscarCartasMagic(texto);
-  if (tcg === "pokemon") return buscarCartasVisual(texto);
-  if (tcg === "yugioh") return buscarCartasYugioh(texto);
-  if (tcg === "lorcana") return buscarCartasLorcana(texto);
-  return [];
+  try {
+    if (tcg === "magic") return await buscarCartasMagic(texto);
+    if (tcg === "pokemon") return await buscarCartasVisual(texto);
+    if (tcg === "yugioh") return await buscarCartasYugioh(texto);
+    if (tcg === "lorcana") return await buscarCartasLorcana(texto);
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 export async function obtenerPrecioRefActualPorTcg(tcg, cardApiId) {
@@ -616,9 +640,13 @@ async function obtenerCategoriasTCGplayer() {
 export async function categoriaIdTCGplayer(tcg) {
   const patron = PATRON_NOMBRE_CATEGORIA_TCGPLAYER[tcg];
   if (!patron) return null;
-  const categorias = await obtenerCategoriasTCGplayer();
-  const encontrada = categorias.find((c) => patron.test(c.name || ""));
-  return encontrada?.categoryId ?? null;
+  try {
+    const categorias = await obtenerCategoriasTCGplayer();
+    const encontrada = categorias.find((c) => patron.test(c.name || ""));
+    return encontrada?.categoryId ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // Precio de referencia "en vivo" para la ficha de detalle de una publicación:

@@ -1984,6 +1984,36 @@ traía la consulta completa. Se corrigieron los 3 puntos:
   `Content-Security-Policy: frame-ancestors 'none'` (más
   `X-Content-Type-Options: nosniff` de paso) en `vercel.json`.
 
+## 71. Bajar el ruido de los avisos de error por caídas de APIs externas
+
+Después del fix de la sección 70, siguió llegando el aviso "⚠️ Error
+detectado" por un `HTTP 500` -- rastreado hasta `fetchConReintento()` en
+`pokemonApi.js` (reintenta 3 veces las llamadas a pokemontcg.io/Scryfall/
+YGOPRODeck/lorcana-api/TCGCSV, gratis y sin llave, así que fallan de vez
+en cuando). El problema de fondo: los 3 despachadores que usa toda la
+pantalla de Catálogo y el buscador de cartas (`obtenerErasYSetsCatalogo`,
+`obtenerCartasDeSetCatalogo`, `buscarCartasCatalogo`) y
+`categoriaIdTCGplayer` no atrapaban ese error -- se colaba como promesa
+sin atrapar (`unhandledrejection`), y el listener global de
+`errorReporting.jsx` lo mandaba derechito al correo del admin cada vez
+que a alguien le tocaba una caída momentánea de una de esas APIs
+gratuitas, algo que la app no puede arreglar y que no era realmente
+accionable.
+
+- Los 3 despachadores + `categoriaIdTCGplayer` ahora atrapan cualquier
+  falla y devuelven `[]`/`null` en vez de dejarla reventar -- la pantalla
+  ya sabía mostrar "no pudimos cargar los sets/cartas en este momento"
+  cuando la lista viene vacía, así que la UX de una caída real no cambia,
+  solo deja de generarle un correo al admin.
+- De regalo, esto también corrige un bug real: el `useEffect` que carga
+  las eras/sets en `CatalogoView` no tenía manejo de error, así que si la
+  API fallaba se quedaba pegado en "Cargando sets..." para siempre (nunca
+  llegaba a `setLoadingEras(false)`). Ahora sí lo hace, con `try/finally`.
+- Los errores de verdad accionables (bugs de nuestro código, fallas de
+  `sb()`/`sbWrite()` contra Supabase) siguen avisando al admin igual que
+  antes -- este cambio solo afecta específicamente a las 4 funciones que
+  hablan con catálogos externos de terceros.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
