@@ -26,7 +26,7 @@ import {
   PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
   BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero, miniaturaListing,
   MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, aplicarTema,
-  IDIOMA_OPCIONES, IDIOMA_LABEL,
+  IDIOMA_OPCIONES, IDIOMA_LABEL, MUNICIPIOS_NL,
   CONDICION_OPCIONES, CONDICION_LABEL, CONDICION_DESC, normalizarCondicion,
   GRADEADORAS_OPCIONES, GRADEADORAS_LABEL, calificacionesDeEmpresa, textoGradeo,
   TCG_OPCIONES, TCG_LABEL, TCG_CON_CATALOGO,
@@ -774,6 +774,19 @@ function IdiomaSelector({ value, onChange }) {
         </button>
       ))}
     </div>
+  );
+}
+
+// ---- Selector de zona: uno de los 51 municipios de Nuevo León, en vez de
+// texto libre -- así el filtro de zona siempre hace match exacto (antes
+// "San Pedro" y "San pedro garza garcia" eran zonas distintas para el buscador). ----
+function ZonaSelector({ value, onChange, incluirTodas, className, style }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} style={style || inputStyle} className={className || "rounded-lg px-2 py-2 text-sm"}>
+      <option value="">{incluirTodas ? "Todas las zonas" : "Elige tu municipio..."}</option>
+      {MUNICIPIOS_NL.map((m) => <option key={m} value={m}>{m}</option>)}
+    </select>
   );
 }
 
@@ -1935,7 +1948,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         <div className="grid sm:grid-cols-4 gap-2">
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nueva.precio_antes} onChange={(e) => setNueva({ ...nueva, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <ZonaSelector value={nueva.zona} onChange={(v) => setNueva({ ...nueva, zona: v })} style={inputStyle} />
           <button onClick={agregar} disabled={saving || alLimite || faltantes.length > 0} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
           </button>
@@ -3852,7 +3865,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
       return f.incluir && (f.encontrada?.name || f.nombre || f.nombreManual) && Number(f.precio) > 0 && imagen;
     });
     if (!validas.length) { setError("Ponle un precio y una foto (del catálogo o subida a mano) a al menos una carta para publicarla."); return; }
-    if (contexto === "mercado" && !zonaMercado.trim()) { setError("Escribe tu zona para publicar en el Mercado."); return; }
+    if (contexto === "mercado" && !zonaMercado) { setError("Elige tu municipio para publicar en el Mercado."); return; }
     if (!idiomaCarpeta) { setError("Elige el idioma de estas cartas antes de publicar."); return; }
     if (!estadoCarpeta) { setError("Elige el estado (condición) de estas cartas antes de publicar."); return; }
     setPublicando(true); setError(null);
@@ -3941,8 +3954,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
             Revisa lo que detectamos ({revision.filas.length} carta{revision.filas.length === 1 ? "" : "s"})
           </p>
           {contexto === "mercado" && (
-            <input placeholder="Tu zona (ej. Centro, San Pedro)" value={zonaMercado} onChange={(e) => setZonaMercado(e.target.value)}
-              style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+            <ZonaSelector value={zonaMercado} onChange={setZonaMercado} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
           )}
           <div>
             <p style={{ color: COLORS.muted }} className="text-xs mb-1">Idioma de estas cartas (obligatorio — se aplica a todas las de esta revisión)</p>
@@ -9390,9 +9402,8 @@ export default function EncuentraCartas() {
                   <option value="">Estado (cualquiera)</option>
                   {CONDICION_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.key} · {o.label}</option>)}
                 </select>
-                <input placeholder="Zona (ej. Centro)" value={filtrosMercado.zona}
-                  onChange={(e) => setFiltrosMercado((f) => ({ ...f, zona: e.target.value }))}
-                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm" />
+                <ZonaSelector incluirTodas value={filtrosMercado.zona}
+                  onChange={(v) => setFiltrosMercado((f) => ({ ...f, zona: v }))} />
                 {filtrosMercadoActivos && (
                   <button onClick={() => setFiltrosMercado({ precioMin: "", precioMax: "", idioma: "", condicion: "", zona: "" })}
                     style={{ color: COLORS.muted }} className="text-xs text-left sm:col-span-5">Limpiar filtros</button>

@@ -67,6 +67,20 @@ export const IDIOMA_OPCIONES = [
 ];
 export const IDIOMA_LABEL = { EN: "Inglés", ES: "Español", JP: "Japonés" };
 
+// ---- Zona: los 51 municipios de Nuevo León, en vez de texto libre -- así
+// "San Pedro" y "San pedro garza garcia" ya no son zonas distintas para el
+// buscador/filtro, y tiendas + publicaciones usan siempre el mismo catálogo ----
+export const MUNICIPIOS_NL = [
+  "Abasolo", "Agualeguas", "Los Aldamas", "Allende", "Anáhuac", "Apodaca", "Aramberri", "Bustamante",
+  "Cadereyta Jiménez", "Carmen", "Cerralvo", "Ciénega de Flores", "China", "Doctor Arroyo", "Doctor Coss",
+  "Doctor González", "Galeana", "García", "General Bravo", "General Escobedo", "General Terán",
+  "General Treviño", "General Zaragoza", "General Zuazua", "Guadalupe", "Hidalgo", "Higueras", "Hualahuises",
+  "Iturbide", "Juárez", "Lampazos de Naranjo", "Linares", "Los Herreras", "Los Ramones", "Marín",
+  "Melchor Ocampo", "Mier y Noriega", "Mina", "Montemorelos", "Monterrey", "Parás", "Pesquería", "Rayones",
+  "Sabinas Hidalgo", "Salinas Victoria", "San Nicolás de los Garza", "San Pedro Garza García", "Santa Catarina",
+  "Santiago", "Vallecillo", "Villaldama",
+];
+
 // ---- Estado (condición) de la carta: obligatorio al publicar una carta suelta,
 // para que el comprador sepa el desgaste real antes de contactar al vendedor ----
 export const CONDICION_OPCIONES = [
