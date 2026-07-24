@@ -3641,6 +3641,128 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
   );
 }
 
+// Importar el catálogo de la propia tienda Shopify de un vendedor (ver
+// api/tcgcsv.js, modo fuente=shopify) -- pega el link de una colección,
+// se listan los productos para revisar/elegir y se importan como
+// sellado_tienda (no sabemos si cada producto de un catálogo externo es
+// una carta suelta o sellado, así que se trata como producto general).
+// Muchas tiendas bloquean el acceso automático a su catálogo (protección
+// anti-bots) -- cuando eso pasa se avisa claramente y se ofrece el
+// Importador Masivo de abajo (copiar/pegar a mano) como respaldo.
+function ImportadorShopify({ session, tiendaId, onImportado }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [urlColeccion, setUrlColeccion] = useState("");
+  const [tcgLote, setTcgLote] = useState("pokemon");
+  const [buscando, setBuscando] = useState(false);
+  const [productos, setProductos] = useState([]);
+  const [pagina, setPagina] = useState(1);
+  const [hayMas, setHayMas] = useState(false);
+  const [origenActual, setOrigenActual] = useState(null);
+  const [coleccionActual, setColeccionActual] = useState(null);
+  const [error, setError] = useState(null);
+  const [bloqueado, setBloqueado] = useState(false);
+  const [importando, setImportando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+
+  const buscar = async (siguientePagina) => {
+    setError(null); setBloqueado(false); setBuscando(true);
+    try {
+      let origin = origenActual, coleccion = coleccionActual;
+      if (siguientePagina === 1) {
+        const u = new URL(urlColeccion.trim());
+        origin = `${u.protocol}//${u.hostname}`;
+        const m = u.pathname.match(/\/collections\/([a-z0-9-]+)/i);
+        if (!m) throw new Error("Pega el link de una colección (ej. tutienda.com/collections/tcg).");
+        coleccion = m[1];
+        setOrigenActual(origin); setColeccionActual(coleccion);
+      }
+      const res = await fetch(`/api/tcgcsv?fuente=shopify&origin=${encodeURIComponent(origin)}&coleccion=${encodeURIComponent(coleccion)}&page=${siguientePagina}`);
+      const data = await res.json();
+      if (!res.ok || data.bloqueado) {
+        setBloqueado(true);
+        if (siguientePagina === 1) setProductos([]);
+        return;
+      }
+      const nuevos = (data.productos || []).filter((p) => p.titulo && p.precio > 0).map((p) => ({ ...p, incluir: true, cantidad: "1" }));
+      setProductos((prev) => (siguientePagina === 1 ? nuevos : [...prev, ...nuevos]));
+      setHayMas(!!data.hayMas);
+      setPagina(siguientePagina);
+    } catch (e) {
+      setError(e.message || "No se pudo leer esa colección.");
+    } finally {
+      setBuscando(false);
+    }
+  };
+
+  const actualizarProducto = (idx, cambios) => setProductos((prev) => prev.map((p, i) => (i === idx ? { ...p, ...cambios } : p)));
+
+  const importar = async () => {
+    const seleccionados = productos.filter((p) => p.incluir && p.precio > 0);
+    if (seleccionados.length === 0) return;
+    setImportando(true); setError(null); setResultado(null);
+    try {
+      await sbWrite("POST", "sellado_tienda", seleccionados.map((p) => ({
+        tienda_id: tiendaId, tcg: tcgLote, producto: p.titulo, precio: p.precio, cantidad: Number(p.cantidad) || 1, imagen_url: p.imagen || null,
+      })), session);
+      setResultado(`Se importaron ${seleccionados.length} productos.`);
+      setProductos([]);
+      onImportado?.();
+    } catch (e) { setError(e.message); } finally { setImportando(false); }
+  };
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-6 grid gap-3">
+      <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold uppercase">🛍️ Importar desde tu tienda en línea (Shopify)</p>
+      <p style={{ color: COLORS.muted }} className="text-xs -mt-1">
+        Pega el link de una colección de tu tienda Shopify (ej. tutienda.com/collections/tcg) y trae los productos de ahí para revisarlos antes de publicar. Solo funciona si tu tienda no bloquea el acceso automático a su catálogo.
+      </p>
+      {error && <ErrorBox message={error} />}
+      {resultado && <p style={{ color: COLORS.azulPalido }} className="text-xs">{resultado}</p>}
+      {bloqueado && (
+        <p style={{ color: COLORS.gold }} className="text-xs">
+          Esta tienda no dejó traer su catálogo automáticamente (protección anti-bots, o el link no es de una colección Shopify pública). Copia tus productos a mano con el Importador Masivo de abajo.
+        </p>
+      )}
+      <div className="flex gap-2 flex-wrap">
+        <input placeholder="https://tutienda.com/collections/tcg" value={urlColeccion} onChange={(e) => setUrlColeccion(e.target.value)}
+          style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[220px]" />
+        <select value={tcgLote} onChange={(e) => setTcgLote(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+        <button onClick={() => buscar(1)} disabled={buscando || !urlColeccion.trim()} style={{ background: COLORS.azul, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+          {buscando ? "Buscando..." : "Traer productos"}
+        </button>
+      </div>
+
+      {productos.length > 0 && (
+        <>
+          <div className="grid gap-2 max-h-96 overflow-y-auto">
+            {productos.map((p, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input type="checkbox" checked={p.incluir} onChange={(e) => actualizarProducto(idx, { incluir: e.target.checked })} />
+                {p.imagen && <img src={p.imagen} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
+                <p className="text-xs flex-1 truncate">{p.titulo}</p>
+                <input type="number" value={p.precio ?? ""} onChange={(e) => actualizarProducto(idx, { precio: Number(e.target.value) })} style={inputStyle} className="rounded-lg px-2 py-1 text-xs w-20" />
+                <input type="number" value={p.cantidad} onChange={(e) => actualizarProducto(idx, { cantidad: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-1 text-xs w-14" title="Cantidad" />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            {hayMas && (
+              <button onClick={() => buscar(pagina + 1)} disabled={buscando} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                {buscando ? "Cargando..." : "Cargar más productos"}
+              </button>
+            )}
+            <button onClick={importar} disabled={importando || productos.every((p) => !p.incluir)} style={{ background: COLORS.azul, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+              {importando ? "Importando..." : `Importar seleccionados (${productos.filter((p) => p.incluir).length})`}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ImportadorMasivo({ session, tiendaId, onImportado }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [texto, setTexto] = useState("");
@@ -4309,7 +4431,10 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
       )}
 
       {planDe(perfil).importadorMasivo && (
-        <ImportadorMasivo session={session} tiendaId={tienda.id} onImportado={cargar} />
+        <>
+          <ImportadorShopify session={session} tiendaId={tienda.id} onImportado={cargar} />
+          <ImportadorMasivo session={session} tiendaId={tienda.id} onImportado={cargar} />
+        </>
       )}
 
       {planDe(perfil).carpetas ? (

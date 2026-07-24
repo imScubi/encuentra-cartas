@@ -1,7 +1,65 @@
 // Función de servidor: le pide los datos a TCGCSV (catálogo de producto sellado)
 // y se los pasa a la app. Esto es necesario porque TCGCSV no permite
 // que el navegador le pregunte directamente (política de seguridad de ellos, no nuestra).
+//
+// También atiende `fuente=shopify` (importar el catálogo de la tienda
+// Shopify PROPIA de un vendedor, ver ImportadorShopify en App.jsx) --
+// vive en el mismo archivo por el límite de 12 funciones serverless del
+// plan Hobby de Vercel (ya estaba al tope, igual que la moderación de
+// fotos de la sección 74). El servidor arma la URL final a partir de un
+// origen y una colección por separado (nunca una ruta libre que mande el
+// cliente) para no abrir un proxy genérico hacia cualquier URL.
+const HOSTNAMES_BLOQUEADOS = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/i;
+
+function origenValido(origin) {
+  try {
+    const u = new URL(origin);
+    if (u.protocol !== "https:") return null;
+    if (HOSTNAMES_BLOQUEADOS.test(u.hostname)) return null;
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(u.hostname)) return null; // IP literal
+    return `${u.protocol}//${u.hostname}`;
+  } catch {
+    return null;
+  }
+}
+
+async function importarShopify(req, res) {
+  const { origin, coleccion, page } = req.query;
+  const origenLimpio = origenValido(origin || "");
+  if (!origenLimpio) return res.status(400).json({ error: "La URL de tu tienda no es válida (debe empezar con https://)." });
+  const handle = String(coleccion || "").trim();
+  if (!/^[a-z0-9-]+$/i.test(handle)) return res.status(400).json({ error: "El nombre de la colección no es válido." });
+  const pagina = Math.max(1, parseInt(page, 10) || 1);
+
+  try {
+    const upstream = await fetch(`${origenLimpio}/collections/${handle}/products.json?limit=100&page=${pagina}`, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; EncuentraCartasBot/1.0; +https://encuentracartasmx.com)" },
+    });
+    if (!upstream.ok) {
+      return res.status(200).json({ productos: [], bloqueado: true, status: upstream.status });
+    }
+    const data = await upstream.json().catch(() => null);
+    if (!data || !Array.isArray(data.products)) {
+      return res.status(200).json({ productos: [], bloqueado: true });
+    }
+    const productos = data.products.flatMap((p) =>
+      (p.variants && p.variants.length ? p.variants : [{ id: p.id, title: null, price: null }]).map((v) => ({
+        titulo: v.title && v.title !== "Default Title" ? `${p.title} - ${v.title}` : p.title,
+        precio: v.price ? Number(v.price) : null,
+        imagen: p.images?.[0]?.src || p.image?.src || null,
+      }))
+    );
+    res.status(200).json({ productos, hayMas: data.products.length === 100 });
+  } catch (e) {
+    res.status(200).json({ productos: [], bloqueado: true });
+  }
+}
+
 export default async function handler(req, res) {
+  if (req.query.fuente === "shopify") {
+    return importarShopify(req, res);
+  }
+
   const { path } = req.query;
   if (!path) {
     return res.status(400).json({ error: "Falta el parámetro 'path'" });
