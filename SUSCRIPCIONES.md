@@ -2380,6 +2380,44 @@ de referencia. Exportar genera el mismo formato a partir de lo que ya
 tiene el mazo (con un botón "Copiar" al portapapeles), así que
 exportar → editar a mano → volver a importar funciona como round-trip.
 
+## 82. Importar catálogo desde la tienda Shopify propia (Aurora)
+
+Se investigó si se podía traer el inventario de una tienda desde su
+propio sitio web (ejemplo real usado para probar: `juegodebelugas.com/collections/tcg`).
+Hallazgo: la URL de ese ejemplo tiene la forma típica de una colección de
+**Shopify**, que normalmente expone un endpoint público
+`/collections/<handle>/products.json` con los productos ya estructurados
+(sin tener que "raspar" HTML) -- pero al probarlo, ese sitio en particular
+devolvió **403 Forbidden** tanto en la página como en ese endpoint
+(protección anti-bots activa). No hay forma de saber de antemano si otra
+tienda bloqueará el acceso o no.
+
+Con eso claro, se construyó **el intento automático + una salida clara
+cuando falla**, en vez de fingir que siempre va a funcionar:
+
+- `api/tcgcsv.js` (ya existía como proxy de TCGCSV) ahora también atiende
+  `?fuente=shopify` -- por el límite de 12 funciones serverless del plan
+  Hobby de Vercel (ya al tope), no se hizo un archivo nuevo. El servidor
+  arma la URL final él mismo a partir de un origen (`https://...`) y un
+  nombre de colección validados por separado (nunca una ruta libre que
+  mande el cliente), y rechaza hostnames que parezcan IPs o direcciones
+  internas (`localhost`, `127.`, `10.`, `192.168.`, `169.254.`) -- así
+  esto no se convierte en un proxy genérico hacia cualquier URL (riesgo
+  de SSRF).
+- Nuevo componente `ImportadorShopify` en `MyStorePanel` (junto al
+  Importador Masivo, mismo gate de plan Aurora): pegas el link de una
+  colección de tu tienda Shopify, se listan los productos encontrados
+  (imagen, nombre, precio y cantidad editables, con checkbox) para
+  revisar antes de publicar, con paginación ("Cargar más productos") y
+  se importan como `sellado_tienda` (un catálogo externo no dice si cada
+  producto es una carta suelta o sellado, así que se trata como producto
+  general).
+- **Si la tienda bloquea el acceso automático** (como en el ejemplo de
+  arriba), se muestra un aviso claro y se señala el Importador Masivo de
+  abajo (copiar/pegar a mano) como respaldo -- que ya existía desde antes
+  y sigue funcionando siempre, sin depender de si un sitio externo
+  permite o no el acceso automatizado.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

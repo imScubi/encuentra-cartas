@@ -188,7 +188,7 @@ export const PLAN_INFO = {
     nombre: "Aurora", emoji: "🔴", precio: 349, color: COLORS.gold,
     resumen: "Exclusivo tiendas: todo + importador masivo",
     beneficios: [
-      "Todo lo de Diamante", "Importador masivo de inventario (texto o Excel)", "Solo disponible para cuentas de tienda",
+      "Todo lo de Diamante", "Importador masivo de inventario (texto, Excel, o directo desde tu tienda Shopify)", "Solo disponible para cuentas de tienda",
       "3 Boosts gratis cada mes", "Aparece en el carrusel de tiendas destacadas del Mercado",
       "Organiza sorteos con premio para tus clientes",
     ],
