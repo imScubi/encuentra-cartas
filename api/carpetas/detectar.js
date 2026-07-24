@@ -6,6 +6,15 @@
 // Llama directo a la API REST de Gemini (sin el SDK) y le pregunta a
 // Google qué modelos están disponibles en vez de fijar un nombre — así
 // no se rompe cuando Google retira o renombra un modelo.
+//
+// Este mismo archivo también atiende `modo: "moderar"` (moderación de
+// fotos reales que sube cualquier vendedor antes de publicar) -- no es
+// "detectar cartas de carpetas" en sentido estricto, pero el plan Hobby de
+// Vercel limita a 12 funciones serverless y este archivo ya trae toda la
+// lógica de llamar a Gemini con visión, así que se comparte en vez de
+// sumar un archivo nuevo en api/ (ver sección 74 de SUSCRIPCIONES.md).
+import { llamarGeminiConReintento } from "../../lib/gemini.js";
+
 const PLANES_CON_CARPETAS = ["ultraball", "masterball", "enteball"];
 
 // Nombres de sets que solo existen en Pokémon TCG Pocket (el juego para
@@ -24,51 +33,59 @@ function esDePocket(carta) {
   return SETS_SOLO_POCKET.some((set) => texto.includes(set));
 }
 
-async function elegirModeloGemini(apiKey, preferido) {
-  const candidatos = [];
-  if (preferido) candidatos.push(preferido);
-  try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-    if (res.ok) {
-      const data = await res.json();
-      const flash = (data.models || [])
-        .filter((m) => m.supportedGenerationMethods?.includes("generateContent") && /flash/i.test(m.name) && !/tts|embedding/i.test(m.name))
-        .map((m) => m.name.replace(/^models\//, ""));
-      // Prefiere el más nuevo (mayor número de versión en el nombre, ej. 2.5 > 2.0 > 1.5).
-      flash.sort((a, b) => {
-        const na = parseFloat((a.match(/[\d.]+/) || ["0"])[0]);
-        const nb = parseFloat((b.match(/[\d.]+/) || ["0"])[0]);
-        return nb - na;
-      });
-      candidatos.push(...flash);
-    }
-  } catch {
-    // si falla la lista, seguimos con los candidatos fijos de abajo
-  }
-  candidatos.push("gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash");
-  return [...new Set(candidatos)];
-}
+// Moderación de una foto real antes de publicarla (ver moderarFotoReal en
+// lib/moderacion.js, del lado del cliente): rechaza contenido sexual/
+// gráfico explícito o fotos que claramente no son de una carta/producto de
+// TCG. "Fail-open" a propósito -- si Gemini falla o no hay llave
+// configurada, se deja pasar la foto en vez de bloquear a un vendedor por
+// un problema ajeno a él (ver sección 74 de SUSCRIPCIONES.md).
+async function moderarImagen(req, res, geminiKey) {
+  const { imagenBase64, mimeType } = req.body || {};
+  if (!imagenBase64) return res.status(400).json({ error: "Falta imagenBase64" });
+  if (!geminiKey) return res.status(200).json({ permitida: true });
 
-async function llamarGemini(apiKey, modelo, base64, mimeType, prompt) {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ inline_data: { mime_type: mimeType, data: base64 } }, { text: prompt }] }],
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data?.error?.message || `Gemini respondió con error ${res.status}`);
-    err.status = res.status;
-    throw err;
+  const prompt =
+    "Eres el filtro de moderación de contenido de un marketplace de cartas coleccionables (TCG: Pokémon, Yu-Gi-Oh, " +
+    "Magic, Lorcana, One Piece) y sus accesorios/producto sellado. Te voy a mostrar una foto que alguien subió como " +
+    "la foto REAL de un producto que quiere vender (una carta suelta -- de frente o de atrás--, una caja o producto " +
+    "sellado, o un accesorio como playmat/funda/deckbox). " +
+    "Responde ÚNICAMENTE con un JSON (sin texto antes ni después, sin markdown) con este formato exacto: " +
+    '{"permitida": true|false, "motivo": "..."}' +
+    "\n\nMarca \"permitida\": false SOLO si la imagen claramente: " +
+    "1) Contiene desnudos, contenido sexual explícito o insinuación sexual. " +
+    "2) Contiene violencia gráfica, gore, o contenido perturbador/ilegal. " +
+    "3) No tiene absolutamente nada que ver con cartas coleccionables/TCG o sus accesorios (ej. una selfie de una " +
+    "persona, comida, un auto, una pantalla en blanco, un meme, una foto random sin ninguna carta ni producto). " +
+    "Una foto borrosa, mal iluminada o de mala calidad de una carta SIGUE siendo \"permitida\" -- el criterio es el " +
+    "TEMA de la foto, no qué tan bien tomada está. Si tienes duda razonable de que sí podría ser una carta/producto " +
+    "de TCG legítimo, marca \"permitida\": true. Cuando \"permitida\" sea false, \"motivo\" debe ser una frase corta " +
+    "en español explicándole a quien subió la foto por qué se rechazó (ej. \"La foto no muestra ninguna carta ni " +
+    "producto de TCG\" o \"La foto contiene contenido inapropiado\").";
+
+  try {
+    const texto = await llamarGeminiConReintento(geminiKey, imagenBase64, mimeType || "image/jpeg", prompt, process.env.GEMINI_MODEL);
+    const inicio = texto.indexOf("{");
+    const fin = texto.lastIndexOf("}");
+    const json = inicio >= 0 && fin >= inicio ? texto.slice(inicio, fin + 1) : "{}";
+    let veredicto = {};
+    try { veredicto = JSON.parse(json); } catch { veredicto = {}; }
+    const permitida = veredicto.permitida !== false;
+    res.status(200).json({ permitida, motivo: permitida ? null : (veredicto.motivo || "Esta foto no se puede usar.") });
+  } catch (e) {
+    console.error("Error moderando imagen:", e);
+    res.status(200).json({ permitida: true });
   }
-  return (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método no permitido" });
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+
+  if (req.body?.modo === "moderar") {
+    return moderarImagen(req, res, geminiKey);
   }
 
   const { perfilId, imagenUrl } = req.body || {};
@@ -78,7 +95,6 @@ export default async function handler(req, res) {
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) {
     return res.status(500).json({ error: "Falta configurar GEMINI_API_KEY en Vercel." });
   }
@@ -125,19 +141,7 @@ export default async function handler(req, res) {
       "Responde ÚNICAMENTE con un JSON array (sin texto antes ni después, sin markdown), con este formato exacto: " +
       '[{"nombre": "...", "set": "...", "numero": "...", "confianza": "alta|media|baja"}, ...]';
 
-    const candidatos = await elegirModeloGemini(geminiKey, process.env.GEMINI_MODEL);
-    let texto = null;
-    let ultimoError = null;
-    for (const modelo of candidatos) {
-      try {
-        texto = await llamarGemini(geminiKey, modelo, base64, mimeType, prompt);
-        break;
-      } catch (e) {
-        ultimoError = e;
-        if (e.status !== 404) break; // si no es "modelo no encontrado", no tiene caso probar otro
-      }
-    }
-    if (texto === null) throw ultimoError || new Error("No se pudo contactar a Gemini.");
+    const texto = await llamarGeminiConReintento(geminiKey, base64, mimeType, prompt, process.env.GEMINI_MODEL);
 
     const inicio = texto.indexOf("[");
     const fin = texto.lastIndexOf("]");
