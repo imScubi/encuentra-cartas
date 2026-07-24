@@ -7,8 +7,34 @@ export function setUidActual(id) {
   uidActual = id;
 }
 
+// Ruido conocido que no tiene nada que ver con nuestro código -- nunca vale
+// la pena despertar al admin por esto, así que se descarta antes de mandar
+// el reporte (ni siquiera gasta la llamada de red). Cada patrón es un caso
+// real que ya llegó por correo:
+const RUIDO_CONOCIDO = [
+  // Navegador integrado de apps Android (Gmail, Facebook, Instagram, etc.):
+  // su propio script de medición de navegación revienta cuando cierran esa
+  // vista antes de que termine de llamar a su puente Java -- no es nuestro
+  // código ni algo que podamos arreglar del lado de la web.
+  /iabjs:\/\//i,
+  /Java object is gone/i,
+  // Advertencia inofensiva y muy común de Chrome/Safari sobre el timing de
+  // ResizeObserver -- no rompe nada visible.
+  /ResizeObserver loop/i,
+  // El navegador manda este mensaje genérico (sin archivo ni línea) cuando
+  // el script que falló es de otro origen -- casi siempre una extensión
+  // instalada en el navegador de quien visita, nunca nuestro propio bundle.
+  /^Script error\.?$/i,
+  // Extensiones del navegador (bloqueadores de anuncios, gestores de
+  // contraseñas, etc.) inyectando su propio script en la página.
+  /chrome-extension:\/\/|moz-extension:\/\/|safari-extension:\/\//i,
+];
+function esRuidoConocido(texto) {
+  return RUIDO_CONOCIDO.some((patron) => patron.test(String(texto || "")));
+}
+
 export function reportarError(mensaje, stack) {
-  if (!mensaje) return;
+  if (!mensaje || esRuidoConocido(mensaje) || esRuidoConocido(stack)) return;
   try {
     fetch("/api/errores/reportar", {
       method: "POST",

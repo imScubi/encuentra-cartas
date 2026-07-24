@@ -28,7 +28,35 @@ export const COLORS = {
   azul: "#0B2A66", azulClaro: "#4F7FD1", azulMedio: "#1B4A9E",
   azulPalido: "#9EC0EE", gold: "#FFD34D", violeta: "#8B5CF6",
   text: "#F4F6FB", muted: "#8291B5",
+  // Fijo siempre (no lo toca aplicarTema, ver más abajo): para texto legible
+  // sobre botones/insignias con fondo claro o medio (azulPalido, azulClaro,
+  // gold) sin importar el modo. Antes esos botones usaban COLORS.bg como
+  // "el color oscuro de siempre" -- funcionaba de casualidad en modo noche
+  // (donde bg sí es oscuro) pero en modo día bg es claro, así que el texto
+  // se volvía casi invisible sobre esos mismos botones.
+  textoOscuro: "#0B1220",
+  fondoProfundo: "#070c1c",
 };
+
+// ---- TCG (juego de cartas): Pokémon fue el primero en tener catálogo
+// visual real (imagen, set, precio de referencia); Magic es el segundo
+// piloto (vía Scryfall). Yu-Gi-Oh, Lorcana y One Piece ya se pueden
+// publicar (texto libre, sin catálogo todavía) hasta que se conecte su
+// propia fuente de datos, mismo patrón que Magic ----
+export const TCG_OPCIONES = [
+  { key: "pokemon", label: "Pokémon" },
+  { key: "yugioh", label: "Yu-Gi-Oh!" },
+  { key: "lorcana", label: "Lorcana" },
+  { key: "magic", label: "Magic" },
+  { key: "onepiece", label: "One Piece" },
+];
+export const TCG_LABEL = Object.fromEntries(TCG_OPCIONES.map((o) => [o.key, o.label]));
+// TCG con buscador de texto libre (una sola caja, contra todo el catálogo):
+// Pokémon (pokemontcg.io), Magic (Scryfall), Yu-Gi-Oh (YGOPRODeck) y Lorcana
+// (lorcana-api.com). One Piece no tiene todavía una fuente gratis confiable
+// de texto libre — usa TCGplayerPicker (elegir set, luego buscar dentro,
+// ver App.jsx) en su lugar, igual que el producto sellado de todos los TCG.
+export const TCG_CON_CATALOGO = ["pokemon", "magic", "yugioh", "lorcana"];
 
 // ---- Idioma de la carta: obligatorio al publicar, para que el comprador
 // sepa en qué idioma está la carta sin tener que preguntar ----
@@ -107,41 +135,48 @@ export const PLAN_INFO = {
   pokeball: {
     nombre: "Cuarzo", emoji: "⚪", precio: 0, color: COLORS.muted,
     resumen: "Básico y gratis",
-    beneficios: ["Publica hasta 20 cartas/productos activos", "Aparece en búsquedas y en el directorio"],
+    beneficios: ["Publica hasta 20 cartas/productos activos", "Aparece en búsquedas y en el directorio", "Modo día/noche"],
     limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: false, mazoBuilder: false,
   },
   superball: {
     nombre: "Zafiro", emoji: "🔵", precio: 49, color: COLORS.azulClaro,
     resumen: "Insignia verificado + redes directas",
     beneficios: [
-      "Todo lo de Cuarzo", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)",
+      "Publica hasta 50 cartas/productos activos", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)",
       "Personaliza tu perfil público: biografía, color de acento y el orden de tus secciones",
-      "Modo día/noche",
       "Filtra tiendas por zona y encuentra la más cercana con tu ubicación",
     ],
-    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false,
+    limiteCartas: 50, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false,
   },
   ultraball: {
     nombre: "Amatista", emoji: "🟣", precio: 89, color: COLORS.violeta,
     resumen: "Todo Zafiro + Wishlist Premium",
     beneficios: [
-      "Todo lo de Zafiro", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente",
+      "Todo lo de Zafiro", "Publicaciones ilimitadas", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente",
       "Cambia los colores de la página según tipos de Pokémon (agua, fuego, psíquico, etc.)",
       "Deck Builder visual: arma varios mazos con selector de cartas, cantidad, nombre y etiquetas",
+      "Catálogo de sets: marca qué cartas ya tienes y cuáles deseas (se agregan solas a tu wishlist)",
+      "1 Boost gratis cada mes (destaca una publicación 3 días)",
     ],
-    limiteCartas: 20, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true,
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true, boostsGratisMes: 1,
   },
   masterball: {
     nombre: "Diamante", emoji: "🟡", precio: 149, color: COLORS.azulPalido,
     resumen: "Todos los beneficios, inventario ilimitado",
-    beneficios: ["Todo lo de Amatista", "Publicaciones ilimitadas (una por una)", "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante"],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true, ubicacion: true, mazoBuilder: true,
+    beneficios: [
+      "Todo lo de Amatista", "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante",
+      "2 Boosts gratis cada mes", "Si eres tienda: panel de Mis Estadísticas (ventas, contactos y seguidores, con gráfica de crecimiento)",
+    ],
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true, ubicacion: true, mazoBuilder: true, boostsGratisMes: 2,
   },
   enteball: {
     nombre: "Aurora", emoji: "🔴", precio: 349, color: COLORS.gold,
     resumen: "Exclusivo tiendas: todo + importador masivo",
-    beneficios: ["Todo lo de Diamante", "Importador masivo de inventario (texto o Excel)", "Solo disponible para cuentas de tienda"],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: true, soloTienda: true, carpetas: true, holo: true, ubicacion: true, mazoBuilder: true,
+    beneficios: [
+      "Todo lo de Diamante", "Importador masivo de inventario (texto o Excel)", "Solo disponible para cuentas de tienda",
+      "3 Boosts gratis cada mes", "Aparece en el carrusel de tiendas destacadas del Mercado",
+    ],
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: true, soloTienda: true, carpetas: true, holo: true, ubicacion: true, mazoBuilder: true, diamante: true, boostsGratisMes: 3,
   },
 };
 
@@ -167,6 +202,12 @@ export const conBoostPrimero = (lista) => {
   return [...destacados, ...resto];
 };
 
+// La miniatura pública siempre es la foto oficial (catálogo), nunca la foto
+// real que subió el vendedor -- salvo accesorios, que no tienen contraparte
+// en ningún catálogo y por eso su única "foto oficial" es la real de frente.
+export const miniaturaListing = (item) =>
+  item?.tipo === "accesorio" ? (item.foto_real_url || item.imagen_url) : (item.imagen_url || item.foto_real_url);
+
 // ---- Apariencia: modo día/noche (Zafiro+) y temas por tipo de Pokémon (Amatista+) ----
 //
 // COLORS es un objeto compartido: en vez de hacer que cada uno de los ~700 usos
@@ -183,9 +224,12 @@ export const conBoostPrimero = (lista) => {
 // Bases deliberadamente neutras (sin tinte azul propio): así, cuando aplicarTema()
 // mezcla el color del tipo de Pokémon encima, el tinte resultante se ve limpio y
 // fiel al tipo elegido, en vez de mezclarse con un azul de fondo que ya traía el modo.
+// fondoProfundo: el tono al que se degrada el fondo animado (BackgroundField)
+// en su punto más profundo -- antes era un oscuro fijo en todos los modos,
+// lo que hacía que el fondo animado se viera negro incluso en modo día.
 export const MODOS_COLOR = {
-  noche: { bg: "#08080B", surface: "#131318", surface2: "#1D1D24", text: "#F4F6FB", muted: "#8B93A8" },
-  dia: { bg: "#F4F4F6", surface: "#FFFFFF", surface2: "#E7E7EC", text: "#0B1220", muted: "#5B6472" },
+  noche: { bg: "#08080B", surface: "#131318", surface2: "#1D1D24", text: "#F4F6FB", muted: "#8B93A8", fondoProfundo: "#070c1c" },
+  dia: { bg: "#F5F5F8", surface: "#FFFFFF", surface2: "#EAECF2", text: "#0B1220", muted: "#5B6472", fondoProfundo: "#D7DEEC" },
 };
 
 export const TIPOS_POKEMON_INFO = {
@@ -250,17 +294,41 @@ function mezclarHex(hexBase, hexTinte, cantidad) {
 export function aplicarTema(modo, tipo) {
   const m = MODOS_COLOR[modo] || MODOS_COLOR.noche;
   const t = TIPOS_POKEMON_COLOR[tipo] || TIPOS_POKEMON_COLOR.default;
+  const esDia = modo === "dia";
   // No solo cambiamos el acento (botones/bordes) — también teñimos el fondo y las
   // superficies con el color del tipo, para que el cambio se note de verdad y no
   // solo en detalles pequeños de texto.
+  //
+  // De noche se tiñe hacia el tono OSCURO del tipo (azul/azulMedio): parte de
+  // un fondo casi negro, así que agregar un oscuro lo aclara un poco y se
+  // nota el tinte. De día pasaría lo contrario: mezclar ese mismo oscuro en
+  // un fondo casi blanco lo apaga, y como "surface" recibe más tinte que
+  // "bg" (28% vs 22%), de día terminaba MÁS oscuro que el fondo -- las
+  // tarjetas se veían más sucias que la página en vez de "flotar" sobre
+  // ella. De día se tiñe hacia el tono CLARO del tipo (azulPalido/azulClaro)
+  // para que el resultado se quede luminoso y la tarjeta sí se vea más
+  // clara que el fondo.
+  const tinteSuperficie = esDia ? t.azulPalido : t.azul;
+  const tinteProfundo = esDia ? t.azulClaro : t.azulMedio;
   Object.assign(COLORS, {
-    bg: mezclarHex(m.bg, t.azul, 0.22),
-    surface: mezclarHex(m.surface, t.azul, 0.28),
-    surface2: mezclarHex(m.surface2, t.azulMedio, 0.34),
+    bg: mezclarHex(m.bg, tinteSuperficie, 0.22),
+    surface: mezclarHex(m.surface, tinteSuperficie, 0.28),
+    surface2: mezclarHex(m.surface2, tinteProfundo, 0.34),
     text: m.text,
     muted: m.muted,
+    fondoProfundo: m.fondoProfundo,
   }, t);
   STORE_COLORS.splice(0, STORE_COLORS.length, COLORS.azul, COLORS.azulClaro, COLORS.azulMedio, COLORS.azulPalido);
+}
+
+// "#RRGGBB" -> "rgba(r, g, b, alpha)": para fondos translúcidos (el header
+// con blur, el modal de bienvenida) que necesitan seguir el modo actual en
+// vez de quedar fijos en un tono oscuro que no cambia de día.
+export function conAlpha(hex, alpha) {
+  const limpio = hex.replace("#", "");
+  const n = parseInt(limpio, 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // Se aplica una sola vez, al cargar el módulo (antes de que React pinte nada),

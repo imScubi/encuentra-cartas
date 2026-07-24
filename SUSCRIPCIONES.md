@@ -1290,12 +1290,819 @@ columna es obligatoria (`NOT NULL`) — hasta que se corra esta migración,
 crear un perfil o una tienda nueva fallará con un error de "la columna
 slug no existe". Correrla antes de (o al mismo tiempo que) este despliegue.
 
+## 51. Tiendas afiliadas: entrega en buzón para publicaciones del Mercado
+
+Nuevo mecanismo pensado para que un vendedor individual (o una cuenta de
+tienda vendiendo en "Vender en el Mercado") pueda ofrecer dejar la carta en
+tratos en el buzón de una tienda física de confianza, en vez de solo
+coordinar entrega en persona o envío.
+
+- **Admin → pestaña "Tiendas" → "Todas las tiendas"**: cada tienda tiene
+  ahora un botón **"📦 Marcar afiliada" / "📦 Quitar afiliada"** —
+  independiente de si esa tienda ya tiene o no una cuenta vinculada. Solo
+  las tiendas marcadas como afiliadas van a aparecer como opción de buzón.
+- **"Vender en el Mercado" (`MyMarketPanel`)**: al publicar una carta o
+  producto sellado, si existe al menos una tienda afiliada aparece la
+  casilla **"📦 Ofrezco entrega en buzón de una tienda afiliada
+  (opcional)"** — al marcarla, se despliega un selector con **solo** las
+  tiendas afiliadas (ej. si únicamente HQ y Kantocards están afiliadas,
+  esas dos son las únicas opciones). Se guarda en
+  `mercado_listings.buzon_tienda_id`.
+- **Buzón por default**: arriba del formulario, un selector
+  "Usar este buzón en todas mis publicaciones nuevas" guarda la preferencia
+  en `perfiles.buzon_default_tienda_id` — a partir de ahí, cada publicación
+  nueva ya sale con esa casilla marcada y esa tienda elegida, sin tener que
+  repetirlo a mano. Se puede seguir cambiando o quitando el buzón en una
+  publicación puntual sin afectar la preferencia guardada.
+- **Visible en toda la app**: la insignia "📦 Buzón: `<nombre de la
+  tienda>`" se muestra junto a las demás (idioma, estado, gradeo) en
+  cualquier lugar donde ya aparecía una publicación del Mercado — tus
+  propias publicaciones, la pestaña "Mercado", la vitrina de inicio, los
+  resultados de "Buscar", el perfil público y la ficha de detalle de la
+  publicación. No aplica al inventario propio de una tienda (`Mi tienda`),
+  solo a publicaciones de "Vender en el Mercado".
+
+Migración `042_buzon_tiendas_afiliadas.sql`: agrega `tiendas.afiliada`
+(boolean, default `false`), `mercado_listings.buzon_tienda_id` y
+`perfiles.buzon_default_tienda_id` (ambas `uuid references tiendas(id)`).
+No requiere ninguna política de RLS nueva — `tiendas` ya es de lectura
+pública y cada quien ya puede escribir su propio `mercado_listings`/`perfiles`.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `042_buzon_tiendas_afiliadas.sql`.
+
+## 52. Panel de Admin: pestaña "Estadísticas" (crecimiento de la plataforma)
+
+Nueva pestaña, primera al abrir el panel de Admin, pensada para monitorear
+el crecimiento de la app con el tiempo sin tener que revisar la base de
+datos a mano.
+
+**Cifras al momento:**
+- Usuarios registrados (sin contar sub-perfiles administrados por el
+  admin, ver sección 38) y su distribución por los 5 planes (barra con el
+  mismo color que ya tiene asignado cada plan en el resto de la app).
+- Tiendas en el directorio y cuántas están afiliadas (sección 51).
+- Reportes pendientes y calificación promedio de la plataforma (reseñas).
+- Cartas y producto sellado **en venta ahora mismo** (suma de "Vender en
+  el Mercado" + inventario de tiendas).
+- Cartas y producto sellado **vendidos** (ventas confirmadas, ver sección
+  28) — separados por tipo gracias a la nueva columna `ventas.tipo`
+  (antes no se guardaba si lo vendido era carta o sellado, solo la tabla
+  de origen; las ventas ya existentes se marcaron como "carta" al aplicar
+  la migración).
+- Monto total transactado entre usuarios (ventas confirmadas), ingresos
+  totales por planes pagados y por Boost — estos dos últimos requieren
+  que el admin pueda leer la tabla `pagos`/`boosts` de **todos** los
+  usuarios (antes cada quien solo veía la suya), por eso la migración
+  agrega una política de lectura para admin en ambas tablas.
+
+**Gráficas de progreso en el tiempo** (acumulado semana a semana, sin
+ninguna librería de gráficas nueva — SVG simple hecho a mano, con tooltip
+al pasar el mouse sobre cada punto): usuarios registrados, ventas
+confirmadas, y publicaciones creadas en total (esta última mide actividad
+de publicación en el tiempo, no el inventario activo ahora — incluye lo
+que ya se vendió o se borró; el dato de "activo ahora" está en las cifras
+de arriba).
+
+Migración `043_admin_estadisticas.sql`: agrega `ventas.tipo` y las
+políticas de lectura de admin en `pagos`/`boosts`.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `043_admin_estadisticas.sql`.
+
+## 53. Segundo TCG con catálogo real: Magic (piloto) + selector de TCG en el inicio
+
+Primer paso de expandir más allá de Pokémon: el campo `tcg` ya existía desde
+hace tiempo en "Vender en el Mercado"/"Mi tienda"/Wishlist (Yu-Gi-Oh,
+Lorcana, Magic y One Piece ya se podían elegir), pero solo Pokémon tenía
+catálogo real conectado — el resto era texto libre, sin imagen ni precio de
+referencia. Se eligió **Magic** como piloto del segundo TCG porque su API
+pública (Scryfall) es gratuita, no pide llave, y es la más completa y
+estable del mercado — mejor terreno de prueba que Yu-Gi-Oh/Lorcana/One
+Piece, cuyas opciones gratuitas de datos son bastante menos maduras.
+
+**No requirió ninguna migración**: las columnas `tcg` de `mercado_listings`
+e `inventario_tienda` ya eran texto libre desde antes de que existiera esta
+carpeta de migraciones (tablas originales del proyecto), así que ya
+aceptaban "magic" sin ningún cambio de esquema.
+
+- **Buscador visual de Magic** (`buscarCartasMagic` en `src/lib/pokemonApi.js`,
+  vía `api.scryfall.com`): mismo componente `CardPicker` que ya usaba
+  Pokémon, ahora recibe un prop `tcg` y usa el catálogo correspondiente —
+  imagen, set, número de coleccionista y precio de referencia (USD de
+  Scryfall convertido a MXN). Disponible en los 3 lugares donde ya existía
+  el selector de TCG: "Vender en el Mercado", "Mi tienda" (cartas sueltas)
+  y Wishlist Premium.
+- **Precio en vivo en la ficha de detalle**: igual que Pokémon consulta
+  pokemontcg.io por el id exacto, una publicación de Magic ahora consulta
+  Scryfall por su id (`obtenerPrecioRefActualMagic`) y trae también los
+  links directos de compra (TCGplayer/Cardmarket) que Scryfall ya incluye.
+- **Yu-Gi-Oh, Lorcana y One Piece** siguen en texto libre por ahora (sin
+  imagen ni precio) — se pueden ir agregando uno por uno con el mismo
+  patrón (`buscarCartasCatalogo`/`obtenerPrecioRefActualPorTcg` en
+  `pokemonApi.js` son los "despachadores" que deciden qué catálogo usar
+  según el TCG; agregar uno nuevo es sumar un caso ahí).
+- **Producto sellado** (booster boxes, etc.) sigue siendo Pokémon-only por
+  ahora — `sellado_tienda` no tiene columna `tcg`, es la siguiente pieza
+  pendiente si se quiere vender sellado de otros TCG.
+
+**Selector de TCG en el inicio**: en la pantalla "Buscar", debajo del
+buscador principal, un grupo de botones ("Todos", Pokémon, Yu-Gi-Oh,
+Lorcana, Magic, One Piece) para elegir qué TCG te interesa ver. Se guarda
+solo en el dispositivo (`localStorage`, igual que el tema de Apariencia),
+no en la cuenta. Filtra:
+- Los resultados de la búsqueda en vivo (tiendas, Mercado).
+- La vitrina "🔥 Recién publicado" y la pestaña "Mercado entre usuarios".
+
+El producto sellado (que no tiene `tcg` guardado) se sigue mostrando
+mientras el filtro esté en "Todos" o "Pokémon" (hoy todo el sellado
+existente es Pokémon) y se oculta con cualquier otro TCG elegido, para no
+mostrar sellado con la etiqueta equivocada.
+
+**Nota de alcance** (ya resuelta en la sección 54 de abajo): el filtro de
+TCG en esta primera versión solo vivía en la pantalla de inicio/Mercado —
+el Directorio de tiendas y el detalle de una tienda no lo usaban todavía.
+
+## 54. Los 5 TCG completos: Yu-Gi-Oh, Lorcana y One Piece + sellado multi-TCG + filtro en Tiendas
+
+Segunda pasada, después del piloto de Magic (sección 53): se agregan los
+tres TCG que faltaban, producto sellado para cualquier TCG, y el filtro de
+TCG también en el Directorio de tiendas.
+
+**Buscador de texto libre agregado a:**
+- **Yu-Gi-Oh!** vía [YGOPRODeck](https://db.ygoprodeck.com/api-guide/)
+  (`buscarCartasYugioh` en `pokemonApi.js`) — gratis, sin llave, con precio
+  de referencia incluido en la misma respuesta.
+- **Lorcana** vía [lorcana-api.com](https://lorcana-api.com) — con una
+  diferencia: esta API no documenta de forma confiable una búsqueda
+  parcial por nombre, así que en vez de arriesgar la sintaxis exacta del
+  query se trae el catálogo completo **una sola vez** (son pocos cientos
+  de cartas) y se filtra por nombre en el navegador — mismo patrón que ya
+  usa el buscador de Pokémon para elegir foto de perfil. **Aviso de
+  honestidad**: no se pudieron confirmar en vivo los nombres exactos de
+  los campos de esa API desde este entorno (el proxy de red del sandbox
+  bloquea dominios externos) — el código prueba varias variantes de
+  nombre de campo por si acaso; si ves nombres o imágenes en blanco al
+  buscar Lorcana, avisa para ajustar el mapeo exacto.
+- Con esto, `TCG_CON_CATALOGO` (theme.js) ya incluye Pokémon, Magic,
+  Yu-Gi-Oh y Lorcana — los 4 con buscador de una sola caja de texto.
+
+**One Piece: por qué se quedó fuera del buscador de texto libre.** Se
+investigaron varias opciones (apitcg.com, optcgapi.com, un proxy en
+Cloudflare Workers) y ninguna resultó ser, a la vez, gratis, sin necesitar
+llave/registro, y con una búsqueda por nombre confiable y verificable
+desde este entorno — la más completa (`optcg-api` de GitHub) exige pedir
+una llave por correo o estar en la lista blanca de otro dominio. En vez de
+integrar algo no verificado que podría fallar en silencio, One Piece (y el
+producto sellado de **todos** los TCG, ver abajo) usa el catálogo de
+TCGplayer.
+
+**Producto sellado para cualquier TCG** (antes solo existía para Pokémon):
+- Migración `044_sellado_multi_tcg.sql`: agrega `sellado_tienda.tcg`
+  (default `'pokemon'`, para no romper el sellado ya publicado).
+- `TCGplayerPicker` (antes se llamaba `SealedPicker`, ahora generalizado):
+  en vez de buscar por texto libre contra todo el catálogo (TCGplayer no
+  lo permite), es un picker de 2 pasos — elige el set/expansión, luego
+  busca el producto dentro de ese set. Sirve tanto para producto sellado
+  de cualquier TCG como para cartas sueltas de One Piece.
+- El **categoryId** de TCGplayer para cada juego (el número interno con el
+  que identifican Pokémon, Magic, etc.) no está documentado públicamente y
+  no es adivinable con confianza para juegos que agregaron hace poco
+  (Lorcana, One Piece). En vez de hardcodear un número que podría fallar
+  en silencio para siempre, `categoriaIdTCGplayer()` (pokemonApi.js) lo
+  busca por nombre contra el catálogo de categorías en vivo de TCGCSV — se
+  auto-corrige solo si TCGplayer cambia esos números.
+- `CardPickerUniversal` (nuevo): decide automáticamente entre el buscador
+  de texto libre (`CardPicker`) o el de 2 pasos (`TCGplayerPicker`) según
+  el TCG — los formularios de publicar ("Vender en el Mercado", "Mi
+  tienda", Wishlist Premium) ya no necesitan saber cuál es cuál. El
+  selector de TCG ahora vive **fuera** de la rama "Carta suelta"/"Producto
+  sellado" en esos 3 formularios, para que también aplique al publicar
+  sellado (antes solo existía para cartas sueltas).
+
+**Directorio de tiendas: filtro por TCG.** Mismo selector de botones que ya
+tenía "Buscar" — se calcula qué TCG vende cada tienda a partir de su
+inventario/sellado real (`inventario_tienda`/`sellado_tienda`) y se
+filtran tanto la lista del directorio como el inventario/sellado dentro
+del detalle de una tienda.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `044_sellado_multi_tcg.sql`. Hasta
+entonces, elegir un TCG distinto de Pokémon al publicar producto sellado
+va a fallar con "la columna tcg no existe" en `sellado_tienda`.
+
+## 55. Admin: pestaña "Usuarios" (lista completa, cambiar plan, borrar cuentas)
+
+Antes solo existía "Cambiar plan de un usuario" (buscador). Ahora hay una
+pestaña "Usuarios" con la lista completa de todas las cuentas registradas
+(oculta sub-perfiles por default, con casilla para mostrarlos), buscador por
+nombre/correo, cambio de plan al vuelo y botón de borrado.
+
+**Borrar una cuenta borra todo lo asociado.** Se revisaron las llaves
+foráneas reales de la base de datos: casi todas las tablas que dependen de
+`perfiles` son `ON DELETE CASCADE` (tienda, publicaciones, mensajes*,
+wishlist, alertas, ventas, reseñas, destellos, seguidores, mazos, ofertas,
+notificaciones, pagos, boosts, carpetas, reportes...), así que borrar el
+usuario de Supabase Auth se lleva todo lo demás solo. La única excepción es
+`mensajes` (su FK es `NO ACTION`, no cascada) — el endpoint borra esos
+mensajes a mano antes de borrar la cuenta, si no la base de datos rechazaría
+el borrado. No se puede borrar a otro administrador ni a la propia cuenta
+desde este panel (por seguridad, para no perder acceso de admin por error).
+
+- `api/admin/usuarios.js` (antes `subperfiles.js`, se renombró y se le
+  agregó la acción `"borrar"` — seguía usando el mismo archivo por el límite
+  de 12 funciones serverless del plan Hobby de Vercel).
+- `UsuariosAdmin` (App.jsx): la lista, el buscador, el cambio de plan y el
+  borrado con confirmación de dos pasos.
+
+## 56. Login con Google/Facebook + teléfono de contacto
+
+**Login social.** Botones "Continuar con Google" y "Continuar con Facebook"
+en el modal de cuenta (tanto al crear cuenta como al iniciar sesión). Como la
+app no usa el SDK de supabase-js (habla directo con la API REST de
+Supabase Auth), el flujo se hizo a mano: el botón redirige a
+`/auth/v1/authorize?provider=...`, Supabase habla con Google/Facebook y
+regresa a la página con los tokens en el fragmento de la URL
+(`#access_token=...`) — `leerSesionDeUrl()` (lib/supabase.js) los lee una
+sola vez y limpia la URL.
+
+Si es la primera vez que esa persona entra por Google/Facebook, todavía no
+existe su fila en `perfiles` (Google no pregunta "¿tienda o individual?").
+En ese caso aparece un modal nuevo, `CompletarPerfilOAuthModal`, que pide
+tipo de cuenta + nombre (ya viene precargado desde Google/Facebook si está
+disponible) + teléfono opcional, y crea el perfil.
+
+**Por qué no hay botón de Instagram:** Meta dio de baja en diciembre de 2024
+la API pública que permitía "iniciar sesión con Instagram" para cuentas
+normales — hoy Instagram Login solo aplica a cuentas de negocio/creador para
+publicar contenido, no sirve como método de autenticación de un usuario
+cualquiera, y Supabase Auth tampoco lo lista como proveedor soportado. El
+enlace de perfil a Instagram (ya existente, en "Editar perfil", Zafiro+)
+se queda igual — solo no puede usarse para iniciar sesión.
+
+**Importante — falta un paso manual:** para que los botones de Google/
+Facebook funcionen de verdad hace falta ir a **Supabase → Authentication →
+Providers** y activar Google y Facebook, cada uno con su Client ID/Secret
+(se obtienen creando una app en Google Cloud Console y en Meta for
+Developers respectivamente, con la URL de callback que Supabase indica en
+esa misma pantalla). Esto no se puede hacer desde aquí porque requiere tus
+propias cuentas de desarrollador — el código ya está listo para cuando los
+actives.
+
+**Teléfono de contacto.** `perfiles.telefono` ya existía en la base de datos
+pero no se usaba en ningún lado — ahora se pide (opcional) al crear cuenta
+individual, se puede agregar/editar después en "Tus redes" (mismo bloque de
+WhatsApp/Facebook, mismo candado de Zafiro+), y se muestra en el perfil
+público como enlace `tel:` para que un comprador pueda llamar o mandar SMS
+directo.
+
+## 57. Carrito: agregar cartas y mandar un solo mensaje a cada vendedor
+
+Botón 🛒 junto a "Contactar" en los resultados de Buscar, en el tab Mercado,
+en el detalle de una tienda y en el detalle de una publicación. El carrito
+vive solo en este dispositivo (localStorage, igual que el tema o el filtro
+de TCG) — no hace falta tabla nueva ni sincronizarlo entre dispositivos.
+
+En la nueva vista Carrito (ícono junto a la campana de notificaciones), lo
+agregado se agrupa por vendedor. Se escribe un solo mensaje y, al enviar, se
+manda **una vez por cada vendedor distinto** (no una vez por carta) con la
+lista de lo que le interesa de él — en vez de tener que abrir cada chat uno
+por uno para preguntar lo mismo.
+
+## 58. Catálogo por TCG: eras, sets y marcar Tengo/Quiero (Amatista+)
+
+Nueva vista "Catálogo" (menú lateral): elige un TCG, luego una era, luego un
+set, y ve la cuadrícula de cartas de ese set. Cada TCG se agrupa según lo
+que su propia API realmente ofrece — no se inventó una estructura de "era"
+donde la fuente no la tiene:
+
+- **Pokémon** (pokemontcg.io): la era es `series` (Scarlet & Violet, Sword &
+  Shield, Sun & Moon, etc.), tal como TCGplayer/Pokellector la organizan.
+- **Magic** (Scryfall): no tiene "era" como tal — se agrupa por `set_type`
+  (Expansión, Commander, Masters, etc.) como equivalente más cercano.
+- **Yu-Gi-Oh** (YGOPRODeck): tampoco hay era oficial — se agrupa por año de
+  lanzamiento (dato real de la API), en vez de usar nombres de era no
+  oficiales que inventan algunos fans.
+- **Lorcana**: son menos de una decena de sets — se listan todos directo,
+  sin agrupar por era.
+- **One Piece**: no entra por el buscador de texto libre (ver sección 54,
+  sigue sin haber una API confiable para eso) — sus "sets" salen de TCGCSV
+  (los mismos grupos que ya usa `TCGplayerPicker` para el producto sellado).
+
+**Marcar Tengo/Quiero es exclusivo de Amatista en adelante** (mismo nivel
+que la Wishlist Premium) — cualquiera puede *navegar* el catálogo gratis,
+pero los botones de marcar están bloqueados con un aviso "Ver planes" si el
+plan no alcanza. Marcar una carta como "Quiero" además la agrega
+automáticamente a la Wishlist (si no estaba ya), tal como se pidió — así no
+hay que agregarla otra vez a mano ahí.
+
+- Migración `045_coleccion_usuario.sql` (ya aplicada directo a Supabase
+  desde aquí, con el conector MCP — no hace falta pegarla a mano): tabla
+  `coleccion_usuario` (perfil_id, tcg, card_api_id, carta, set_nombre,
+  imagen_url, estado `tengo`/`quiero`), única por perfil+tcg+carta.
+- `pokemonApi.js`: `obtenerErasYSetsCatalogo`/`obtenerCartasDeSetCatalogo`
+  (despachador para los 4 TCG con catálogo) + una función por TCG.
+- `CatalogoView` (App.jsx): navega los 3 niveles con el mismo patrón
+  view/selectedX que el resto de la app (sin librería de router).
+
+### Cambio de límites de plan
+Se ajustó lo pedido sobre los planes: **Zafiro** ahora publica hasta **50**
+cartas/productos (antes 20, igual que Cuarzo) y **Amatista en adelante** ya
+no tiene límite de publicaciones (antes también 20 — el límite ilimitado
+empezaba hasta Diamante). Diamante y Aurora se quedan igual (ilimitado).
+
+## 59. Encabezado: menú de tres líneas separado de la foto de perfil
+
+Antes un solo botón hacía las dos cosas (mostraba tu foto y abría el menú
+lateral). Ahora son dos botones: tu foto abre "Editar perfil" directo, y el
+ícono de tres líneas (☰, siempre visible, con o sin sesión) abre el menú
+lateral con todo lo demás (Torneos, Wishlist, Planes, Ayuda, Admin, Cerrar
+sesión, etc.).
+
+## 60. Mercado: pestaña "Accesorios" (playmats, deckbox, micas, etc.)
+
+Tercer "tipo" de `mercado_listings` (junto a carta y sellado), no una tabla
+nueva — así reusa tal cual el límite de plan, el chat, el carrito, el boost
+y la moderación de admin que ya existían para esa tabla. A diferencia de
+una carta, un accesorio pide: nombre, **descripción** (nueva columna),
+**foto obligatoria** (antes era opcional) y **etiquetas/palabras clave**
+libres — sin estado, idioma ni gradeo, que no aplican.
+
+**Por qué aparece en Buscar aunque no sea una carta.** Las etiquetas se
+guardan dos veces: `etiquetas` (arreglo, para mostrarlas como chips) y
+`etiquetas_texto` (las mismas, todo junto en minúsculas, para buscarlas con
+ILIKE) — PostgREST no deja hacer un ILIKE parcial contra elementos de un
+arreglo directo desde la URL, así que se mantiene esta copia en texto plano
+en paralelo, cargada por el cliente al mismo tiempo que el arreglo. El
+buscador principal ahora también compara cada palabra escrita contra
+`etiquetas_texto` de `mercado_listings` — si un accesorio tiene la etiqueta
+"sylveon", buscar "sylveon" lo encuentra aunque no sea una carta.
+
+La pestaña "Mercado entre usuarios" ahora tiene sub-filtro Todo / Cartas /
+Sellado / Accesorios.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `046_accesorios_mercado.sql` (agrega
+`'accesorio'` al tipo de `mercado_listings` y a `ventas.tipo` — este último
+para que "Marcar vendida" funcione también en un accesorio — más las
+columnas `descripcion`, `etiquetas`, `etiquetas_texto`). Hasta entonces,
+publicar un accesorio va a fallar.
+
+## 61. Mazos: separados por TCG + avisos de reglas de construcción
+
+Antes todos los mazos eran implícitamente de Pokémon (el picker de cartas
+del Deck Builder solo buscaba en pokemontcg.io). Ahora:
+
+- Cada mazo tiene un TCG (columna `mazos.tcg`, elegido al crearlo).
+- "Mis mazos" tiene un filtro Todos / Pokémon / Yu-Gi-Oh! / Lorcana / Magic
+  / One Piece.
+- Al abrir un mazo, el buscador de cartas ya usa `CardPickerUniversal` con
+  el TCG de ese mazo en vez de estar fijo a Pokémon.
+- El aviso de "máximo de copias por carta" (antes solo existía para
+  Pokémon: 4 copias, sin contar Energía Básica) ahora es por TCG: Magic 4,
+  Yu-Gi-Oh 3, Lorcana 4, One Piece 4. También se agregó un aviso de tamaño
+  de mazo esperado por juego (Pokémon 60 exactas, Magic mínimo 60, Yu-Gi-Oh
+  entre 40 y 60 en el mazo principal, Lorcana mínimo 60, One Piece 50 sin
+  contar el Líder). **Honestidad**: esto valida el formato "constructed"
+  más común de cada juego, no cubre cada formato posible (Commander,
+  Extra/Side Deck de Yu-Gi-Oh, etc.) — son avisos, no bloquean guardar.
+
+### Pendiente por aplicar en Supabase
+Copiar y pegar en el SQL Editor: `047_mazos_tcg.sql` (agrega `mazos.tcg`,
+default `'pokemon'` para no romper los mazos que ya existen).
+
+## 62. Catálogo: agregar cartas a un mazo + Master Sets
+
+Dos funciones nuevas dentro de la vista Catálogo (ambas Amatista+, mismo
+nivel que marcar Tengo/Quiero):
+
+- **Agregar a un mazo directo desde el catálogo**: al abrir un set, si ya
+  tienes un mazo de ese TCG aparece un selector de "mazo destino" y cada
+  carta gana un botón "Agregar a mazo" — ya no hace falta ir al buscador
+  del Deck Builder para agregar una carta que acabas de ver en el catálogo.
+- **Master Sets**: pestaña nueva dentro de Catálogo ("🏆 Master Sets") que
+  resume, para cada set, cuántas cartas ya marcaste como "tengo" contra el
+  total de cartas del set (con barra de progreso y aviso de "¡Completo!" al
+  100%) — reusa `coleccion_usuario`, no necesitó tabla nueva. Para One
+  Piece (sin API de "total de cartas por set" verificado) solo muestra el
+  conteo de las que marcaste, sin porcentaje, en vez de inventar un total.
+
+## 63. Fix: catálogo flaky (sin cartas intermitente), Master Sets se regresaba a Explorar, precio de referencia por carta
+
+Tres reportes del catálogo, todos con la misma causa raíz: las llamadas a
+las APIs externas sin llave del catálogo (pokemontcg.io, Scryfall,
+YGOPRODeck, lorcana-api.com, TCGCSV) no tenían reintento — cualquier 429
+(límite de tasa) o caída breve de 5xx se atrapaba y se devolvía en
+silencio una lista vacía, que del lado del usuario se veía como "no se
+encontraron cartas para este set" o "sin resultados" de forma
+intermitente ("a veces sí, a veces no"), aunque la carta/set sí existiera.
+Además, varias listas (sets de Pokémon/Magic/Yu-Gi-Oh, categorías de
+TCGplayer, catálogo completo de Lorcana) se guardaban en cache en memoria
+incluso cuando el fetch había fallado, dejando ese catálogo "vacío" para
+el resto de la sesión.
+
+- **`src/lib/pokemonApi.js`**: nuevo helper `fetchConReintento` (3
+  intentos, espera creciente 500ms/1s/1.5s) usado en todas las llamadas a
+  pokemontcg.io, Scryfall, YGOPRODeck, lorcana-api.com y TCGCSV
+  (categorías). `buscarCartasVisual` (buscador de Pokémon) ahora usa
+  `Promise.allSettled` en vez de `Promise.all`: si una combinación de
+  nombre/set de verdad no existe no tumba a las demás, pero si TODAS
+  fallan por conexión se avisa un error real en vez de "sin resultados".
+  Ningún cache en memoria (`_setsPokemonCache`, `_setsMagicCache`,
+  `_setsYugiohCache`, `_lorcanaCache`, `_categoriasTCGplayerCache`) guarda
+  ya un resultado vacío por error — solo cachean cuando el fetch sí llegó
+  bien.
+- **`CardPicker`** (buscador de cartas al publicar): ahora distingue un
+  error real de conexión (ya con reintentos agotados) de "sin resultados"
+  de verdad — antes ambos casos mostraban el mismo mensaje genérico, que
+  es lo que hacía parecer que "agregar o borrar un espacio" arreglaba la
+  búsqueda (en realidad solo disparaba un reintento nuevo del debounce).
+- **Master Sets → "Ver cartas" ya no te deja varado en Explorar**: se
+  agregó un estado `volverAMasterSets` que se activa al entrar a un set
+  desde Master Sets; el botón "atrás" dentro de ese set ahora dice
+  "← Master Sets" y regresa ahí en vez de a la lista genérica de sets de
+  Explorar. Cambiar de pestaña manualmente (Explorar/Master Sets) limpia
+  ese estado.
+- **Precio de referencia por carta en el Catálogo**: cada tarjeta de carta
+  dentro de un set ahora muestra su precio de mercado aproximado en MXN
+  (o "Sin precio de referencia" si esa API no lo trae, como Lorcana). Para
+  Pokémon/Magic/Yu-Gi-Oh ya venía en la misma respuesta de la API; para
+  One Piece se agregó una segunda llamada a TCGCSV (`/prices`, mismo
+  patrón que ya usa `TCGplayerPicker`) que se cruza por `productId`. El
+  precio se vuelve a pedir fresco cada vez que abres un set (no hay
+  cache), así que se mantiene actualizado sin necesitar un ticker de fondo
+  que solo aumentaría la presión sobre APIs gratis ya limitadas de tasa.
+
+## 64. Reemplazo de iconografía + fix de modo día
+
+- **Iconos propios**: los 38 iconos de botones/nav de `lucide-react` se
+  reemplazaron por un set de marca a la medida (`src/lib/icons.jsx` +
+  fuente en `src/assets/icons/*.svg`). Misma API de props (`size`, `color`,
+  `fill`, `className`) que lucide, así que solo cambió el import en
+  `App.jsx` — ningún uso individual se tocó. Se quitó `lucide-react` de
+  `package.json`.
+- **Modo día — dos bugs de raíz corregidos** (antes se veía "roto"/feo):
+  - ~45 botones usaban `COLORS.bg` como color de su propio texto sobre
+    fondos claros (`azulPalido`, `azulClaro`, `gold`), asumiendo que `bg`
+    siempre es oscuro — cierto de noche, falso de día (`bg` es claro ahí),
+    así que el texto quedaba casi invisible. Se agregó `COLORS.textoOscuro`
+    (fijo en ambos modos, nunca lo toca `aplicarTema`) para ese rol.
+  - El header, el modal de bienvenida y el fondo animado (`BackgroundField`)
+    tenían colores oscuros escritos directo en el código (no derivados de
+    `COLORS`), así que se quedaban oscuros sin importar el modo — de día se
+    veía una mezcla rota de header oscuro sobre contenido claro. Ahora usan
+    `conAlpha(COLORS.bg/surface, alpha)` (helper nuevo en `theme.js`, hex →
+    rgba) y `COLORS.fondoProfundo` (nuevo, un valor por modo).
+  - De paso, `aplicarTema()` ahora tiñe `bg`/`surface` hacia el tono CLARO
+    del tipo de Pokémon en modo día (antes siempre hacia el oscuro, incluso
+    de día) — con el tinte oscuro, "surface" recibía más mezcla que "bg" y
+    terminaba más apagado que la página en vez de "flotar" sobre ella.
+
+## 65. Nuevos beneficios de plan (todos menos "acceso anticipado")
+
+- **Modo día/noche gratis para todos los planes** (antes exclusivo Zafiro+):
+  `AparienciaView` ya no bloquea esa sección detrás de `info.redesExtra` —
+  solo el color según tipo de Pokémon se queda Amatista+.
+- **Wishlist básica gratis para todos**: marcar "Quiero" en el Catálogo ya
+  no exige `info.wishlistPremium` (solo "Tengo", que alimenta Master Sets,
+  se queda Amatista+). La vista "Wishlist" (antes "Wishlist Premium") ahora
+  siempre muestra arriba "Mi Wishlist" (tabla `wishlist`, gratis) y abajo,
+  aparte, las alertas de precio con push (siguen Amatista+).
+- **Boost gratis mensual escalonado**: Amatista 1/mes, Diamante 2/mes,
+  Aurora 3/mes, como Destellos (150/300/450 — el mismo costo que cobra
+  `api/recompensas/canjear.js` por 1/2/3 boosts de 3 días). Se otorga desde
+  `api/cron/recordatorios.js` (el cron diario ya existente, con un `if
+  (ahora.getDate() === 1)` adentro) en vez de un archivo de cron nuevo —
+  el proyecto ya estaba en el límite de 12 funciones serverless de Vercel
+  Hobby, así que sumar un archivo aparte lo hubiera roto.
+- **"Mis estadísticas" para tiendas** (Diamante+, `info.diamante` — se le
+  agregó ese flag también a Aurora, que antes no lo tenía a pesar de decir
+  "Todo lo de Diamante" en su texto): panel nuevo en `MyStorePanel` con
+  inventario activo, ventas confirmadas (monto + gráfica de crecimiento por
+  semana), contactos (mensajes recibidos) y seguidores/reseñas — reusa
+  `StatTile`/`MiniAreaChart`/`serieAcumuladaPorSemana`, los mismos
+  componentes del panel de Estadísticas de Admin. No incluye "vistas de
+  página" porque esa métrica no existe en el esquema — se omitió en vez de
+  inventar un número falso.
+- **Carrusel de tiendas Aurora** en el home del Mercado: se oculta solo si
+  no hay ninguna tienda Aurora, rota cada 5s si hay más de una.
+- **Insignia "Tienda verificada" con trámite real**: migración 048 agrega
+  la tabla `verificaciones_tienda` (pendiente/aprobada/rechazada), separada
+  de `tiendas` a propósito para no necesitar ni una función serverless ni
+  un trigger que reviente si la tabla `tiendas` gana columnas — la RLS de
+  esta tabla nueva ya impide que una tienda se apruebe a sí misma (solo
+  puede insertar en 'pendiente'; solo un admin puede resolver a
+  'aprobada'/'rechazada'). Nueva sección en `MyStorePanel` para solicitarla
+  y una nueva pestaña dentro de Admin → Tiendas para aprobar/rechazar. La
+  insignia (`TiendaVerificadaBadge`, ícono 🛡️ dorado) es distinta de
+  "✓ Verificado" (ese sigue siendo automático solo por plan Zafiro+).
+
+### Ya aplicado en Supabase
+La migración `048_tienda_verificacion.sql` ya se aplicó directo a la base
+de datos real vía el conector MCP de Supabase — no hace falta copiarla a
+mano en el SQL Editor.
+
+## 66. Foto real de frente y de atrás obligatorias al publicar
+
+- **Qué cambia**: al publicar una carta, producto sellado o accesorio en
+  el Mercado (vendedor individual) o al agregar una carta suelta al
+  inventario de una tienda, ahora hay que subir **2 fotos reales**
+  (frente y atrás) de manera obligatoria — antes `foto_real_url` (frente)
+  era opcional para cartas y obligatoria solo para accesorios, y no
+  existía ningún campo de reverso. Migración `049_foto_real_reverso.sql`
+  agrega `foto_real_reverso_url` a `mercado_listings` e
+  `inventario_tienda`.
+- **Excepciones (solo para tiendas)**: el producto sellado de tienda
+  (`sellado_tienda`) sigue sin pedir ninguna foto real — esa tabla nunca
+  tuvo la columna, a propósito. El Importador Masivo (Ente Ball) tampoco
+  pide fotos — es un código separado (`importar()` en `ImportadorMasivo`)
+  que nunca pasó por `agregarCarta()`, así que la excepción ya existía
+  sola sin tocarle nada. El vendedor individual **no** tiene esta
+  excepción para su propio producto sellado: si publica sellado en el
+  Mercado, también necesita las 2 fotos.
+- **La miniatura sigue siendo la oficial**: en todas las tarjetas/grids
+  del Mercado, Directorio, Perfil público, Home y carrito, la miniatura
+  muestra la imagen oficial del catálogo (`imagen_url`), nunca la foto
+  real — nuevo helper `miniaturaListing()` en `theme.js`. Única excepción:
+  los accesorios no existen en ningún catálogo, así que su "miniatura
+  oficial" es su propia foto real de frente.
+- **En el detalle de la publicación** (`CartaDetalleView`) sí se ven las
+  3 imágenes: la oficial arriba (igual que antes) y, debajo, la foto real
+  de frente y de atrás lado a lado, al mismo tamaño que la oficial.
+- Las filas de "Tus publicaciones" (Mercado) y "Cartas sueltas" (tienda)
+  ahora tienen botones para cambiar cada una de las 2 fotos reales de una
+  publicación ya existente, no solo al momento de crearla.
+
+### Pendiente de aplicar en Supabase
+La migración `049_foto_real_reverso.sql` **todavía no se aplicó** a la
+base de datos real (el conector MCP de Supabase no estaba disponible en
+esta sesión) — cópiala y pégala en Supabase → SQL Editor → Run antes de
+usar esta función en producción.
+
+## 67. Fix: texto negro invisible en portales + borrar anuncios pendientes/programados
+
+- **Texto negro que se perdía en el tutorial, la bandeja de notificaciones
+  y el chat flotante**: causa raíz encontrada — esos 3 son los únicos
+  componentes que usan `createPortal` para renderizar directo a
+  `document.body` en vez de dentro del árbol normal de la app. El div raíz
+  de `EncuentraCartas` sí trae `color: COLORS.text` y por eso todo lo demás
+  hereda un color legible sin tener que declararlo en cada `<p>`/`<h2>` —
+  pero un portal escapa de ese árbol, así que cualquier texto sin `color`
+  explícito caía al negro por default del navegador (`<body>` nunca tuvo
+  un `color` propio), invisible sobre los fondos oscuros de esos 3 paneles.
+  Arreglado agregando `color: COLORS.text` al div contenedor de cada
+  portal (`OnboardingTutorial`, el panel de `NotificationBell`, y la
+  ventana de chat flotante) en vez de parchar cada texto suelto uno por
+  uno.
+- **Admin → Anuncios: ahora sí se pueden borrar los pendientes y
+  programados** — antes la función `borrarAnuncio` (DELETE en `noticias`)
+  solo tenía botón en la lista de "Publicados"; un anuncio "Pendiente de
+  aprobación" solo se podía Aprobar o Rechazar (y "Rechazar" no lo borra,
+  solo lo saca de las 3 listas visibles), y uno "Programado" no tenía
+  ningún botón de acción. Se agregó el mismo botón "Borrar" a esas dos
+  secciones.
+
+## 68. Navegación a prueba de tontos: máximo 5 botones arriba + pestañas + Catálogo más claro
+
+- **Encabezado reducido a máximo 5 botones** (antes hasta 9, según plan y
+  tipo de cuenta, y se sentía saturado): ahora siempre son los mismos 4
+  para cualquiera (Buscar, Mercado, Tiendas, Catálogo) más "Mensajes" si
+  ya iniciaste sesión. Todo lo demás (Mi tienda/Vender en el Mercado, Mis
+  compras y ventas, Torneos, Armar mazo, Comunidad, Noticias, Lista de
+  deseos, Recompensas, Apariencia, Mis pagos, Planes, Ayuda, Admin) se
+  movió al menú lateral.
+- **Menú lateral con pestañas** en vez de una lista larga sin agrupar:
+  `Drawer` ahora recibe `navGrupos` (antes `navSecundarios`, una lista
+  plana) y muestra 4 pestañas con nombres que no requieren explicación —
+  **Vender** (acciones de vendedor: Mi tienda/Vender en el Mercado, Mis
+  compras y ventas), **Comunidad** (Torneos, Armar mazo, Comunidad,
+  Noticias, Tiendas que sigo), **Mi cuenta** (Lista de deseos,
+  Recompensas, Apariencia, Mis pagos, Planes y precios) y **Ayuda**
+  (Centro de ayuda, Ver el tutorial de bienvenida, Admin). Si una pestaña
+  queda vacía por no tener sesión (ej. "Vender" para un invitado), en vez
+  de verse en blanco muestra "Inicia sesión para ver esta sección" con un
+  botón directo. El perfil (editar/cerrar sesión) se queda fuera de las
+  pestañas, siempre visible abajo, tal como antes.
+- **Renombres para quitar anglicismos y jerga confusa**: "Wishlist" →
+  "Lista de deseos" (en el nav, el h2 de la vista, el selector de
+  visibilidad del perfil y el editor de orden de secciones). "Anuncios y
+  noticias" → "Noticias" en el nav (la vista conserva su título completo).
+  "Planes" → "Planes y precios".
+- **Catálogo reestructurado para que nadie se pierda**: antes el flujo
+  (TCG → Era → Set → Cartas) no tenía ninguna señal de "dónde estoy", y
+  el modo "🏆 Master Sets" usaba jerga sin explicar qué hacía. Ahora:
+  - El subtítulo de arriba explica los 3 pasos de una sola vez ("Paso 1:
+    elige el juego. Paso 2: elige una era y un set. Paso 3: marca cada
+    carta...").
+  - Cada sección trae su propia etiqueta "Paso 1 · Elige el juego",
+    "Paso 2 · Elige una era/set", "Paso 3 · Marca cada carta".
+  - "🔍 Explorar" y "🏆 Master Sets" se renombraron a "📖 Ver cartas y
+    marcar" y "🏆 Mi progreso por set", cada uno con una línea corta
+    debajo explicando qué hace.
+  - Nueva migaja de pan (breadcrumb) siempre visible mientras navegas
+    dentro de un TCG: `📍 Pokémon › Escarlata y Púrpura › 151`, con cada
+    segmento anterior clicable para saltar directo ahí, en vez de solo un
+    botón "← Eras"/"← Sets" ambiguo sobre a dónde regresa.
+
+## 69. Auditoría: reporte de "contraseña sin encriptar"
+
+Un usuario reportó (con razón de preocuparse) que el login parecía mandar
+el correo/contraseña "sin encriptar". Se auditó todo el flujo de
+autenticación (`authSignUp`/`authSignIn` en `src/lib/supabase.js`, y los
+formularios de `AccountModal` en `App.jsx`):
+
+- Ambas funciones mandan el correo/contraseña por **POST con body JSON**
+  (nunca por query string ni GET) a `https://nulypgaaekexlbxbxdwq.supabase.co`
+  — la URL está codificada con `https://` fijo, no hay ninguna ruta que use
+  `http://`. El formulario tampoco usa un `<form>` nativo (que podría
+  enviar por GET si no se cuida) — son `<input>` controlados por React y un
+  botón que llama `fetch()` directo.
+- **Conclusión: el tráfico ya viaja cifrado (TLS/HTTPS) de punta a punta.**
+  Lo que muy probablemente vio la persona que reportó esto es el panel
+  "Network" del navegador (DevTools) mostrando el *payload* de la
+  petición en texto plano — eso es normal y no es una falla: HTTPS cifra
+  los datos en tránsito por la red, pero el navegador (el propio emisor
+  de la petición) siempre puede mostrarle a su dueño lo que está a punto
+  de mandar, antes de cifrarlo. No es algo que un tercero en la red pueda
+  leer.
+- **Endurecimiento agregado de todos modos** (no estaba roto, pero cierra
+  el único hueco teórico real): `vercel.json` ahora manda el header
+  `Strict-Transport-Security` (`max-age=63072000; includeSubDomains;
+  preload`) en todas las respuestas, para que el navegador recuerde no
+  intentar nunca `http://` con este dominio ni con subdominios, ni
+  siquiera en la primerísima visita antes de que ocurra el redirect
+  automático de Vercel a HTTPS.
+
+## 70. Fix real: inyección en filtros PostgREST + error verboso + clickjacking
+
+El mismo usuario mandó un segundo reporte, este sí con una falla real de
+verdad (no solo una confusión de DevTools): una coma en un nombre/búsqueda
+podía "desmadrar" la consulta, y el mensaje de error que veía de regreso
+traía la consulta completa. Se corrigieron los 3 puntos:
+
+- **Inyección en filtros PostgREST vía coma/paréntesis (la causa real)**:
+  PostgREST usa `,` `.` `(` `)` como caracteres reservados de su propia
+  gramática de filtros (`columna=operador.valor`, y sobre todo dentro de
+  `or=(...)`/`and=(...)`). El bug: `encodeURIComponent()` NO protege contra
+  esto, porque el servidor decodifica la URL *antes* de parsear el filtro
+  — un `,` que un usuario escribe en un nombre vuelve a ser un `,` literal
+  justo cuando PostgREST decide dónde termina una condición y empieza la
+  siguiente, dejando que el resto del texto se cuele como si fuera otra
+  condición. Afectaba sobre todo al buscador público (`filtroPalabrasCartaOSet`,
+  el que arma `and=(or(...),or(...))` a partir de las palabras que escribes
+  en Buscar) y a la búsqueda de usuarios en Admin → Planes
+  (`or=(nombre.ilike...,email.ilike...)`). Fix: nuevo helper `pgValor()` en
+  `lib/supabase.js` que envuelve cualquier texto libre en comillas dobles
+  (escapando `\` y `"` adentro) antes de codificarlo para la URL — la forma
+  que la propia documentación de PostgREST pide para tratar un valor
+  siempre como texto literal, sin importar en qué filtro se use. Se aplicó
+  en las 6 consultas que interpolaban texto de usuario directo en un
+  filtro (buscador público, búsqueda de usuarios en Admin, búsqueda de
+  publicaciones en Admin, búsqueda de sellado, buscador de destinatario de
+  mensaje).
+- **El mensaje de error ya no expone la consulta ni el mensaje crudo de la
+  base de datos**: `sb()`/`sbWrite()` armaban el `Error` con la ruta/query
+  completa y el `message`/`hint` tal cual los mandaba PostgREST, y eso se
+  mostraba directo en pantalla (`ErrorBox`) — un mapa gratis de nombres de
+  tablas/columnas para cualquiera que force un error. Ahora el detalle
+  técnico completo se manda a `reportarError()` (el mismo sistema de
+  "Captura de errores + aviso al admin" de la sección 35, que hasta ahora
+  nunca se enteraba de estos errores porque siempre se atrapaban en un
+  `try/catch` local antes de llegar al listener global) y al usuario se le
+  muestra un mensaje genérico ("No se pudo cargar/guardar. Intenta de
+  nuevo"). El único caso donde el resto de la app necesitaba distinguir el
+  tipo de error (duplicado, para reintentar con otro slug en
+  `crearConSlugUnico`, o para no tratar como error real un
+  `push_subscriptions` repetido) ahora usa `error.code === "23505"`
+  (el código SQLSTATE real de Postgres para unique_violation) en vez de
+  buscar la palabra "duplicate" dentro del mensaje mostrado al usuario.
+- **Clickjacking**: `vercel.json` no mandaba `X-Frame-Options` ni
+  `frame-ancestors`, así que en teoría cualquier sitio podía meter
+  Encuentra Cartas dentro de un `<iframe>` invisible/disfrazado y engañar
+  a alguien para que hiciera clic pensando que interactúa con otra cosa.
+  Se agregó `X-Frame-Options: DENY` y
+  `Content-Security-Policy: frame-ancestors 'none'` (más
+  `X-Content-Type-Options: nosniff` de paso) en `vercel.json`.
+
+## 71. Bajar el ruido de los avisos de error por caídas de APIs externas
+
+Después del fix de la sección 70, siguió llegando el aviso "⚠️ Error
+detectado" por un `HTTP 500` -- rastreado hasta `fetchConReintento()` en
+`pokemonApi.js` (reintenta 3 veces las llamadas a pokemontcg.io/Scryfall/
+YGOPRODeck/lorcana-api/TCGCSV, gratis y sin llave, así que fallan de vez
+en cuando). El problema de fondo: los 3 despachadores que usa toda la
+pantalla de Catálogo y el buscador de cartas (`obtenerErasYSetsCatalogo`,
+`obtenerCartasDeSetCatalogo`, `buscarCartasCatalogo`) y
+`categoriaIdTCGplayer` no atrapaban ese error -- se colaba como promesa
+sin atrapar (`unhandledrejection`), y el listener global de
+`errorReporting.jsx` lo mandaba derechito al correo del admin cada vez
+que a alguien le tocaba una caída momentánea de una de esas APIs
+gratuitas, algo que la app no puede arreglar y que no era realmente
+accionable.
+
+- Los 3 despachadores + `categoriaIdTCGplayer` ahora atrapan cualquier
+  falla y devuelven `[]`/`null` en vez de dejarla reventar -- la pantalla
+  ya sabía mostrar "no pudimos cargar los sets/cartas en este momento"
+  cuando la lista viene vacía, así que la UX de una caída real no cambia,
+  solo deja de generarle un correo al admin.
+- De regalo, esto también corrige un bug real: el `useEffect` que carga
+  las eras/sets en `CatalogoView` no tenía manejo de error, así que si la
+  API fallaba se quedaba pegado en "Cargando sets..." para siempre (nunca
+  llegaba a `setLoadingEras(false)`). Ahora sí lo hace, con `try/finally`.
+- Los errores de verdad accionables (bugs de nuestro código, fallas de
+  `sb()`/`sbWrite()` contra Supabase) siguen avisando al admin igual que
+  antes -- este cambio solo afecta específicamente a las 4 funciones que
+  hablan con catálogos externos de terceros.
+
+## 72. Filtrar ruido de errores que no tienen nada que ver con la app
+
+Tercer aviso de error el mismo día, esta vez `Uncaught Error: Error
+invoking postMessage: Java object is gone`, con el stack apuntando a
+`iabjs://navigation_performance_logger_android`. Ese `iabjs://` es el
+navegador integrado de una app de Android (Gmail, Facebook, Instagram,
+etc. cuando abres un link "dentro" de la app en vez de en Chrome) —
+su propio script de medición de navegación truena cuando cierran esa
+vista antes de que termine de llamar a su puente Java. No tiene nada que
+ver con el código de Encuentra Cartas ni es algo que se pueda arreglar
+desde la web.
+
+En vez de ir tapando un patrón a la vez cada vez que llegue uno nuevo, se
+agregó una lista de "ruido conocido" en `errorReporting.jsx`
+(`RUIDO_CONOCIDO`) que se revisa ANTES de mandar el reporte -- si el
+mensaje o el stack hace match, ni siquiera se manda la llamada de red.
+Incluye, además del caso de arriba: navegadores integrados de Android en
+general (`iabjs://`), la advertencia inofensiva de `ResizeObserver loop`
+(muy común en Chrome/Safari, no rompe nada), el `Script error.` genérico
+que mandan los navegadores cuando el script que falló es de otro origen
+(casi siempre una extensión instalada, no nuestro bundle), y errores con
+stack de una extensión del navegador (`chrome-extension://`,
+`moz-extension://`, `safari-extension://`). Cualquier error real de
+nuestro propio código sigue avisando exactamente igual que antes — esta
+lista es deliberadamente específica (son patrones que ya llegaron por
+correo, no una suposición) para no silenciar por accidente algo que sí
+importa.
+
+## 73. Fix: no se podía publicar (sin error visible) + buzón + búsqueda
+
+- **El bug real: el botón de publicar se quedaba deshabilitado en silencio.**
+  Desde que las 2 fotos (frente/atrás) se hicieron obligatorias (sección
+  66), `agregar()`/`agregarCarta()` hacían un `return` mudo si faltaba
+  algo -- sin `setError()`, así que quien no había subido las fotos (o le
+  faltaba idioma/condición/precio/zona) solo veía el botón "+ Publicar"
+  sin reaccionar, sin ninguna pista de por qué. Se reemplazó por una
+  lista (`faltantes`/`faltantesCarta`) que junta en español exactamente
+  lo que falta ("el idioma de la carta", "la foto de atrás", etc.) y se
+  muestra como texto debajo del botón en `MyMarketPanel` y en la sección
+  de "Cartas sueltas" de `MyStorePanel` -- el botón sigue deshabilitado
+  mientras falte algo, pero ahora ya no es un misterio por qué.
+- **Buzón de tienda afiliada ya no aparece al vender producto sellado**:
+  un comprador recoge algo pequeño en el buzón de una tienda, no tiene
+  sentido para cajas/booster boxes. La casilla y el selector desaparecen
+  por completo cuando `tipo === "sellado"` en `MyMarketPanel` (antes
+  salía para los 3 tipos), se limpia `buzon_tienda_id` al cambiar a ese
+  tipo, y el payload de `agregar()` ya no lo manda aunque quedara alguno
+  guardado de antes.
+- **Búsqueda de cartas Pokémon (`buscarCartasVisual` en `pokemonApi.js`)**:
+  encontrado un bug de fondo en `terminoDeCampo()` -- un nombre o set de
+  una sola palabra ya buscaba con comodín parcial ("char*"), pero de dos
+  palabras o más exigía la FRASE EXACTA entre comillas ("Pikachu VMAX").
+  Mientras alguien seguía escribiendo ("Pikachu V", "Journey Toge...") no
+  encontraba nada, como si el buscador estuviera roto. Ahora cada palabra
+  del nombre/set se busca con su propio comodín parcial (`name:Pikachu*
+  name:VMAX*`), sin importar cuántas palabras tenga ni si ya se terminó de
+  escribir la frase completa.
+
+### Seguía sin poder publicar aunque ya no faltara nada
+
+Después del fix de arriba, seguía sin poder publicar aunque el nuevo
+mensaje de "falta: ..." ya no mostrara nada pendiente. Causa más probable:
+la migración `049_foto_real_reverso.sql` (agrega `foto_real_reverso_url`
+a `mercado_listings` e `inventario_tienda`) quedó documentada como
+**pendiente de aplicar** en la sección 66 y nunca se confirmó que alguien
+la corriera — sin esa columna en la base de datos real, el `INSERT`
+fallaba por completo apenas se mandaba `foto_real_reverso_url`, sin
+ninguna relación con si el formulario estaba bien lleno o no.
+
+No hubo forma de confirmar esto en vivo porque el conector MCP de
+Supabase no estaba disponible en esta sesión (ver notas de las secciones
+anteriores) para revisar el esquema real. Mientras tanto, `agregar()` en
+`MyMarketPanel` y `agregarCarta()` en `MyStorePanel` ahora reintentan el
+`INSERT` una vez sin `foto_real_reverso_url` si el primer intento falla
+-- así publicar ya funciona de inmediato (guardando al menos la foto de
+frente) aunque la migración siga sin correr. **Sigue pendiente correr la
+migración 049 a mano** (copiar y pegar en Supabase → SQL Editor → Run)
+para que la foto de atrás también se guarde:
+
+```sql
+alter table mercado_listings add column if not exists foto_real_reverso_url text;
+alter table inventario_tienda add column if not exists foto_real_reverso_url text;
+```
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
 - Permitir editar un torneo ya publicado (hoy solo se puede borrar y crear uno nuevo) y adjuntarle una imagen.
 - Mapa de Google en el detalle del torneo (hoy solo muestra la dirección en texto).
-- Subir foto manual también en el formulario de "agregar" (hoy solo en las filas ya publicadas).
 - Enlazar al perfil público también desde el chat/inbox y desde el detalle de tienda (hoy solo desde las tarjetas del Mercado).
 - Restaurar una publicación si el comprador rechaza una venta que sí ocurrió (ver limitación de la sección 28).
 - La búsqueda de "Armar mazo" hace match de nombre simple (contiene el texto) — si dos cartas distintas comparten parte del nombre (ej. "Pikachu" y "Pikachu VMAX"), puede haber falsos positivos leves; no ata el nombre a un ID exacto de la carta como sí hace el catálogo de TCGdex.

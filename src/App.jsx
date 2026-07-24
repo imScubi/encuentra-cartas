@@ -2,29 +2,33 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
-  User, Megaphone, Newspaper, ShoppingBag, X, Loader2, AlertCircle,
+  User, Megaphone, Newspaper, ShoppingBag, ShoppingCart, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
-  ArrowUp, ArrowDown, Navigation, Image as ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check,
-} from "lucide-react";
+  ArrowUp, ArrowDown, Navigation, ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
+} from "./lib/icons.jsx";
 import {
   VAPID_PUBLIC_KEY,
   setOnSesionRefrescada,
   sb, sbWrite, authSignUp, authSignIn,
   subirAvatar, subirImagenAnuncio, subirImagenABucket, subirImagenCarta, subirImagenMensaje,
+  urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken, pgValor,
 } from "./lib/supabase.js";
 import { setUidActual } from "./lib/errorReporting.jsx";
 import {
   pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
   parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
+  buscarCartasCatalogo, obtenerPrecioRefActualPorTcg, categoriaIdTCGplayer,
+  obtenerErasYSetsCatalogo, obtenerCartasDeSetCatalogo,
 } from "./lib/pokemonApi.js";
 import {
-  FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre,
+  FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre, conAlpha,
   PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
-  BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero,
+  BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero, miniaturaListing,
   MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, aplicarTema,
   IDIOMA_OPCIONES, IDIOMA_LABEL,
   CONDICION_OPCIONES, CONDICION_LABEL, CONDICION_DESC, normalizarCondicion,
   GRADEADORAS_OPCIONES, GRADEADORAS_LABEL, calificacionesDeEmpresa, textoGradeo,
+  TCG_OPCIONES, TCG_LABEL, TCG_CON_CATALOGO,
 } from "./theme.js";
 
 function AvatarImg({ url, size = 36 }) {
@@ -222,10 +226,10 @@ function BoostButton({ session, tabla, item, onBoosted }) {
   return (
     <div className="flex items-center gap-1 flex-wrap">
       {error && <span style={{ color: COLORS.azulPalido }} className="text-xs">{error}</span>}
-      <button onClick={() => destacar(3)} disabled={pagando !== null} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+      <button onClick={() => destacar(3)} disabled={pagando !== null} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
         {pagando === 3 ? "..." : `3 días · $${BOOST_PRECIOS[3]}`}
       </button>
-      <button onClick={() => destacar(7)} disabled={pagando !== null} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+      <button onClick={() => destacar(7)} disabled={pagando !== null} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
         {pagando === 7 ? "..." : `7 días · $${BOOST_PRECIOS[7]}`}
       </button>
       <button onClick={() => setAbierto(false)} style={{ color: COLORS.muted }} className="text-xs px-1">✕</button>
@@ -252,7 +256,7 @@ function PlanBadge({ perfil, size = "sm" }) {
   const iconPx = size === "lg" ? 18 : 14;
   const holoStyle = info.holo
     ? {
-        color: COLORS.bg,
+        color: COLORS.textoOscuro,
         border: "none",
         background: "linear-gradient(90deg,#FF9FE0,#9EC0EE,#FFD34D,#8B5CF6)",
         backgroundSize: "300% 100%",
@@ -281,6 +285,73 @@ function VerificadoBadge({ perfil }) {
     >
       ✓ Verificado
     </span>
+  );
+}
+
+// Insignia de verificación REAL (trámite con admin, tabla verificaciones_tienda)
+// -- distinta de VerificadoBadge de arriba (esa es automática solo por pagar
+// Zafiro+). Esta requiere que la tienda pida la revisión y un admin la
+// apruebe, así que pesa más como señal de confianza.
+function TiendaVerificadaBadge({ tienda }) {
+  const aprobada = tienda?.verificaciones_tienda?.some((v) => v.estado === "aprobada");
+  if (!aprobada) return null;
+  return (
+    <span
+      title="Verificación de tienda aprobada por el equipo de Encuentra Cartas"
+      style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.gold, boxShadow: `0 0 8px ${COLORS.gold}66` }}
+      className="inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap px-2 py-0.5 text-xs"
+    >
+      🛡️ Verificación de tienda
+    </span>
+  );
+}
+
+// ---- Carrusel de tiendas Aurora en el home del Mercado -- visibilidad real
+// para el plan más caro (a diferencia de un ícono en el perfil, esto sí es
+// tráfico nuevo). Se oculta del todo si no hay ninguna tienda Aurora, en vez
+// de mostrar un carrusel vacío. Rota sola cada 5s si hay más de una. ----
+function TiendasAuroraCarrusel({ onAbrirTienda }) {
+  const [tiendas, setTiendas] = useState([]);
+  const [indice, setIndice] = useState(0);
+
+  useEffect(() => {
+    sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,avatar_url,instagram)&order=nombre.asc`)
+      .then((rows) => setTiendas(rows.filter((t) => planDe(t.perfiles) === PLAN_INFO.enteball)))
+      .catch(() => setTiendas([]));
+  }, []);
+
+  useEffect(() => {
+    if (tiendas.length < 2) return;
+    const t = setInterval(() => setIndice((i) => (i + 1) % tiendas.length), 5000);
+    return () => clearInterval(t);
+  }, [tiendas.length]);
+
+  if (tiendas.length === 0) return null;
+  const store = tiendas[indice % tiendas.length];
+
+  return (
+    <div
+      onClick={() => onAbrirTienda(store)}
+      style={{
+        background: `linear-gradient(120deg, ${COLORS.gold}22, ${COLORS.surface})`,
+        border: `1px solid ${COLORS.gold}66`, boxShadow: `0 0 24px ${COLORS.gold}22`, cursor: "pointer",
+      }}
+      className="rounded-2xl p-5 mb-6 flex items-center gap-4 flex-wrap transition-transform duration-200 hover:-translate-y-0.5"
+    >
+      <span style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap">🔴 Tienda Aurora</span>
+      <AvatarImg url={store.perfiles?.avatar_url} size={40} />
+      <div className="flex-1 min-w-[160px]">
+        <p className="font-bold text-lg">{store.nombre}</p>
+        <p style={{ color: COLORS.muted }} className="text-xs">{store.zona || store.direccion}</p>
+      </div>
+      {tiendas.length > 1 && (
+        <div className="flex gap-1">
+          {tiendas.map((_, i) => (
+            <span key={i} style={{ background: i === indice ? COLORS.gold : COLORS.surface2, width: 6, height: 6, borderRadius: "9999px" }} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -375,7 +446,7 @@ function ReportarModal({ session, tipo, tablaObjetivo, objetivoId, objetivoPerfi
             <textarea value={detalle} onChange={(e) => setDetalle(e.target.value)} placeholder="Detalle (opcional)"
               style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
               className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-3" rows={3} />
-            <button onClick={enviar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="w-full rounded-lg py-2 text-sm font-semibold">
+            <button onClick={enviar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="w-full rounded-lg py-2 text-sm font-semibold">
               {enviando ? "Enviando..." : "Enviar reporte"}
             </button>
           </>
@@ -412,7 +483,7 @@ function BuscadorComprador({ session, excluirId, onSelect }) {
     if (texto.length < 2) { setResultados([]); return; }
     setBuscando(true);
     const t = setTimeout(() => {
-      sb(`perfiles?select=id,nombre,avatar_url,tipo&nombre=ilike.*${encodeURIComponent(texto)}*&id=neq.${excluirId}&limit=8`, session)
+      sb(`perfiles?select=id,nombre,avatar_url,tipo&nombre=ilike.${encodeURIComponent(pgValor(`*${texto}*`))}&id=neq.${excluirId}&limit=8`, session)
         .then(setResultados)
         .catch(() => setResultados([]))
         .finally(() => setBuscando(false));
@@ -442,10 +513,15 @@ function BuscadorComprador({ session, excluirId, onSelect }) {
   );
 }
 
-function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, onClose, onVendida }) {
+function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, tipoItem, onClose, onVendida }) {
   const [comprador, setComprador] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(null);
+
+  // sellado_tienda/inventario_tienda son de un solo tipo cada una; solo
+  // mercado_listings puede ser carta o sellado, por eso ahí sí hace falta
+  // el tipo del item (tipoItem) para guardarlo correctamente en ventas.tipo.
+  const tipoVenta = tabla === "sellado_tienda" ? "sellado" : tabla === "inventario_tienda" ? "carta" : (tipoItem || "carta");
 
   const confirmar = async () => {
     setEnviando(true); setError(null);
@@ -457,6 +533,7 @@ function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, onClo
         listing_id: itemId,
         descripcion,
         precio: precio || null,
+        tipo: tipoVenta,
       }, session);
       await sbWrite("DELETE", `${tabla}?id=eq.${itemId}`, {}, session);
       onVendida?.();
@@ -485,7 +562,7 @@ function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, onClo
             <p style={{ color: COLORS.muted }} className="text-xs mb-3">
               Le mandaremos un aviso a {comprador.nombre} para que confirme la compra. Cuando confirme, contará como venta completada y podrán calificarse mutuamente.
             </p>
-            <button onClick={confirmar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="w-full rounded-lg py-2 text-sm font-semibold">
+            <button onClick={confirmar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="w-full rounded-lg py-2 text-sm font-semibold">
               {enviando ? "Enviando..." : "Confirmar venta"}
             </button>
           </>
@@ -495,7 +572,7 @@ function MarcarVendidaModal({ session, tabla, itemId, descripcion, precio, onClo
   );
 }
 
-function MarcarVendidaBoton({ session, tabla, itemId, descripcion, precio, onVendida }) {
+function MarcarVendidaBoton({ session, tabla, itemId, descripcion, precio, tipoItem, onVendida }) {
   const [abierto, setAbierto] = useState(false);
   return (
     <>
@@ -503,7 +580,7 @@ function MarcarVendidaBoton({ session, tabla, itemId, descripcion, precio, onVen
         ✅ Vendida
       </button>
       {abierto && (
-        <MarcarVendidaModal session={session} tabla={tabla} itemId={itemId} descripcion={descripcion} precio={precio} onClose={() => setAbierto(false)} onVendida={onVendida} />
+        <MarcarVendidaModal session={session} tabla={tabla} itemId={itemId} descripcion={descripcion} precio={precio} tipoItem={tipoItem} onClose={() => setAbierto(false)} onVendida={onVendida} />
       )}
     </>
   );
@@ -536,7 +613,7 @@ function SeguirBoton({ session, seguidoPerfilId }) {
   if (siguiendo === null) return null;
   return (
     <button onClick={alternar} disabled={enviando}
-      style={siguiendo ? { color: COLORS.muted, border: `1px solid ${COLORS.surface2}` } : { background: COLORS.azulClaro, color: COLORS.bg }}
+      style={siguiendo ? { color: COLORS.muted, border: `1px solid ${COLORS.surface2}` } : { background: COLORS.azulClaro, color: COLORS.textoOscuro }}
       className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap">
       {siguiendo ? "Siguiendo ✓" : "+ Seguir"}
     </button>
@@ -598,7 +675,7 @@ function CalificarModal({ session, ventaId, objetivoPerfilId, objetivoNombre, on
         <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Comentario (opcional)"
           style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
           className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-3" rows={3} />
-        <button onClick={enviar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="w-full rounded-lg py-2 text-sm font-semibold">
+        <button onClick={enviar} disabled={enviando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="w-full rounded-lg py-2 text-sm font-semibold">
           {enviando ? "Enviando..." : "Enviar calificación"}
         </button>
       </div>
@@ -639,7 +716,7 @@ async function activarPush(session) {
     }, session);
   } catch (e) {
     // Ya estaba suscrito con este mismo endpoint (navegador/dispositivo): no es un error real.
-    if (!/duplicate key|already exists/i.test(e.message || "")) throw e;
+    if (e.code !== "23505") throw e;
   }
 }
 
@@ -780,6 +857,14 @@ function GradeoBadge({ gradeada, grado_empresa, grado_empresa_otro, grado_califi
   return <Badge color={COLORS.azulPalido}>{texto}</Badge>;
 }
 
+// Badge de entrega en buzón: solo aplica a publicaciones del Mercado que el
+// vendedor marcó con una tienda afiliada (mercado_listings.buzon_tienda_id).
+function BuzonBadge({ tienda }) {
+  const nombre = tienda?.nombre;
+  if (!nombre) return null;
+  return <Badge color={COLORS.azulMedio}>📦 Buzón: {nombre}</Badge>;
+}
+
 function PrecioConOferta({ precio, precioAntes, size = "lg" }) {
   const enOferta = precioAntes && Number(precioAntes) > Number(precio);
   const pct = enOferta ? Math.round((1 - Number(precio) / Number(precioAntes)) * 100) : 0;
@@ -816,12 +901,39 @@ function ErrorBox({ message }) {
   );
 }
 
+// Botón de "Continuar con Google": simplemente redirige a Supabase Auth, que
+// habla con el proveedor y nos regresa con la sesión en la URL (ver
+// leerSesionDeUrl en el componente raíz). No hay botón de Facebook (Meta
+// exige verificación de negocio con documentos para Facebook Login, y no
+// hay una empresa registrada detrás de este proyecto) ni de Instagram (Meta
+// dio de baja en 2024 la API pública que permitía "iniciar sesión con
+// Instagram" para cuentas normales) — el enlace de perfil a Instagram (ya
+// existente, en Editar perfil) se queda igual, solo que no sirve para
+// autenticarse.
+function BotonesLoginSocial() {
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center gap-2 my-1">
+        <div style={{ flex: 1, height: 1, background: COLORS.surface2 }} />
+        <p style={{ color: COLORS.muted }} className="text-xs">o continúa con</p>
+        <div style={{ flex: 1, height: 1, background: COLORS.surface2 }} />
+      </div>
+      <a href={urlLoginSocial("google")}
+        style={{ background: COLORS.surface2, border: `1px solid ${COLORS.surface2}`, color: COLORS.text }}
+        className="rounded-xl p-3 text-sm font-semibold flex items-center justify-center gap-2">
+        Google
+      </a>
+    </div>
+  );
+}
+
 function AccountModal({ onClose, onAuthed }) {
   const [mode, setMode] = useState("choose"); // choose | signupForm | login
   const [accountType, setAccountType] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [nombre, setNombre] = useState("");
+  const [telefono, setTelefono] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [facebook, setFacebook] = useState("");
   const [avatarFile, setAvatarFile] = useState(null);
@@ -852,7 +964,7 @@ function AccountModal({ onClose, onAuthed }) {
     try {
       const avatarUrlPokemonFinal = avatarFile ? null : avatarPokemonUrl || randomPokemonAvatar();
       const auth = await authSignUp(email, password, {
-        tipo: accountType, nombre, whatsapp: whatsapp || null, facebook: facebook || null,
+        tipo: accountType, nombre, telefono: telefono || null, whatsapp: whatsapp || null, facebook: facebook || null,
         avatar_url: avatarUrlPokemonFinal,
       });
       if (!auth.access_token) {
@@ -864,7 +976,7 @@ function AccountModal({ onClose, onAuthed }) {
       const avatarUrl = avatarFile ? await subirAvatar(avatarFile, session) : avatarUrlPokemonFinal;
       await sbWrite("POST", "perfiles", {
         id: auth.user.id, tipo: accountType, nombre, email: auth.user.email,
-        whatsapp: whatsapp || null, facebook: facebook || null, avatar_url: avatarUrl,
+        telefono: telefono || null, whatsapp: whatsapp || null, facebook: facebook || null, avatar_url: avatarUrl,
       }, session);
       localStorage.setItem("ec_session", JSON.stringify(session));
       onAuthed(session, { esNuevo: true });
@@ -914,6 +1026,7 @@ function AccountModal({ onClose, onAuthed }) {
               <button onClick={() => setMode("login")} style={{ color: COLORS.azulPalido }} className="text-sm mt-2">
                 Ya tengo cuenta, iniciar sesión
               </button>
+              <BotonesLoginSocial />
             </div>
           </>
         )}
@@ -955,6 +1068,8 @@ function AccountModal({ onClose, onAuthed }) {
               style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
             {accountType === "individual" && (
               <>
+                <input placeholder="Teléfono (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)}
+                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
                 <input placeholder="WhatsApp (opcional)" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)}
                   style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
                 <input placeholder="Enlace de Facebook (opcional)" value={facebook} onChange={(e) => setFacebook(e.target.value)}
@@ -964,7 +1079,7 @@ function AccountModal({ onClose, onAuthed }) {
             {error && <ErrorBox message={error} />}
             {info && <p style={{ color: COLORS.azulPalido }} className="text-xs">{info}</p>}
             <button onClick={handleSignUp} disabled={loading || !email || !password || !nombre}
-              style={{ background: accountType === "tienda" ? COLORS.azulPalido : COLORS.azulClaro, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
+              style={{ background: accountType === "tienda" ? COLORS.azulPalido : COLORS.azulClaro, color: COLORS.textoOscuro, opacity: loading ? 0.6 : 1 }}
               className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
               {loading && <Loader2 size={16} className="animate-spin" />} Crear cuenta
             </button>
@@ -981,13 +1096,75 @@ function AccountModal({ onClose, onAuthed }) {
               style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
             {error && <ErrorBox message={error} />}
             <button onClick={handleLogin} disabled={loading || !email || !password}
-              style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: loading ? 0.6 : 1 }}
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: loading ? 0.6 : 1 }}
               className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
               {loading && <Loader2 size={16} className="animate-spin" />} Entrar
             </button>
             <button onClick={() => setMode("choose")} style={{ color: COLORS.muted }} className="text-xs">← Volver</button>
+            <BotonesLoginSocial />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Tras un login social exitoso puede que todavía no exista perfiles (nadie
+// eligió tipo de cuenta ni nombre — Google/Facebook no preguntan eso). Este
+// modal completa esos datos una sola vez, usando lo que el proveedor ya nos
+// dio (nombre y foto) como valor inicial.
+function CompletarPerfilOAuthModal({ session, onCreado, onCancelar }) {
+  const meta = session.user.user_metadata || {};
+  const [accountType, setAccountType] = useState(null);
+  const [nombre, setNombre] = useState(meta.full_name || meta.name || "");
+  const [telefono, setTelefono] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const confirmar = async () => {
+    if (!accountType || !nombre.trim()) return;
+    setLoading(true); setError(null);
+    try {
+      const creado = await crearConSlugUnico("perfiles", {
+        id: session.user.id, tipo: accountType, nombre: nombre.trim(), email: session.user.email || null,
+        telefono: telefono || null, avatar_url: meta.avatar_url || meta.picture || randomPokemonAvatar(),
+      }, nombre.trim(), session, "usuario");
+      onCreado(Array.isArray(creado) ? creado[0] : creado);
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 40px ${COLORS.azulMedio}33` }} className="w-full max-w-md rounded-2xl p-6">
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Completa tu registro</h2>
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">Ya iniciaste sesión. Solo nos falta esto para terminar de crear tu cuenta.</p>
+        <div className="grid gap-3">
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setAccountType("tienda")}
+              style={{ background: accountType === "tienda" ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${accountType === "tienda" ? COLORS.azulPalido : COLORS.surface2}` }}
+              className="rounded-xl p-3 text-sm font-semibold flex flex-col items-center gap-1">
+              <Store size={20} color={COLORS.azulPalido} /> Tienda
+            </button>
+            <button onClick={() => setAccountType("individual")}
+              style={{ background: accountType === "individual" ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${accountType === "individual" ? COLORS.azulClaro : COLORS.surface2}` }}
+              className="rounded-xl p-3 text-sm font-semibold flex flex-col items-center gap-1">
+              <User size={20} color={COLORS.azulClaro} /> Individual
+            </button>
+          </div>
+          <input placeholder={accountType === "tienda" ? "Nombre de la tienda" : "Nombre de usuario"} value={nombre} onChange={(e) => setNombre(e.target.value)}
+            style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+          {accountType === "individual" && (
+            <input placeholder="Teléfono (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)}
+              style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+          )}
+          {error && <ErrorBox message={error} />}
+          <button onClick={confirmar} disabled={loading || !accountType || !nombre.trim()}
+            style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: loading ? 0.6 : 1 }}
+            className="rounded-lg py-2 font-semibold flex items-center justify-center gap-2">
+            {loading && <Loader2 size={16} className="animate-spin" />} Continuar
+          </button>
+          <button onClick={onCancelar} style={{ color: COLORS.muted }} className="text-xs">Cancelar e iniciar sesión con otra cuenta</button>
+        </div>
       </div>
     </div>
   );
@@ -1042,23 +1219,28 @@ function ReintentarImagen({ nombre, setNombre, onEncontrada }) {
   );
 }
 
-function CardPicker({ onSelect }) {
+function CardPicker({ tcg = "pokemon", onSelect }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (!q.trim() || q.trim().length < 3) { setResults([]); return; }
+    if (!q.trim() || q.trim().length < 3) { setResults([]); setError(false); return; }
     setLoading(true);
+    setError(false);
     const t = setTimeout(() => {
-      buscarCartasVisual(q.trim())
-        .then(setResults)
-        .catch(() => setResults([]))
+      buscarCartasCatalogo(tcg, q.trim())
+        .then((r) => { setResults(r); setError(false); })
+        // Un error real (falló la conexión con el catálogo, ya con reintentos
+        // agotados) es distinto de "no hay resultados" — si se muestran igual,
+        // el usuario no puede saber si debe reintentar o de plano no existe la carta.
+        .catch(() => { setResults([]); setError(true); })
         .finally(() => setLoading(false));
     }, 400);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, tcg]);
 
   const seleccionar = (c) => {
     onSelect({
@@ -1074,7 +1256,12 @@ function CardPicker({ onSelect }) {
   return (
     <div className="relative">
       <input
-        placeholder='Nombre, número (ej. "016" o "#016") o set (ej. Sprigatito Journey Together)'
+        placeholder={
+          tcg === "pokemon" ? 'Nombre, número (ej. "016" o "#016") o set (ej. Sprigatito Journey Together)'
+            : tcg === "magic" ? 'Nombre de la carta (ej. "Lightning Bolt")'
+            : tcg === "yugioh" ? 'Nombre de la carta (ej. "Dark Magician")'
+            : 'Nombre de la carta'
+        }
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
@@ -1085,7 +1272,10 @@ function CardPicker({ onSelect }) {
         <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66` }}
           className="absolute z-20 mt-1 w-full max-h-80 overflow-y-auto rounded-lg shadow-xl p-2">
           {loading && <p style={{ color: COLORS.muted }} className="text-xs p-2">Buscando en el catálogo oficial...</p>}
-          {!loading && results.length === 0 && (
+          {!loading && error && (
+            <p style={{ color: COLORS.azulPalido }} className="text-xs p-2">No se pudo conectar con el catálogo. Espera un momento e intenta de nuevo.</p>
+          )}
+          {!loading && !error && results.length === 0 && (
             <p style={{ color: COLORS.muted }} className="text-xs p-2">Sin resultados. Prueba con otro nombre, número o set.</p>
           )}
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -1187,7 +1377,7 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
 
   return createPortal(
     <div
-      style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}66`, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
+      style={{ background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.azulClaro}66`, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
       className="fixed bottom-0 right-0 sm:bottom-4 sm:right-4 z-[80] w-full sm:w-96 max-w-full rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
     >
       <button onClick={() => setMinimizado((v) => !v)} style={{ borderBottom: minimizado ? "none" : `1px solid ${COLORS.surface2}` }}
@@ -1236,7 +1426,7 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
             <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSend()}
               placeholder="Escribe un mensaje..." style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
               className="flex-1 rounded-lg px-3 py-2 text-sm outline-none min-w-0" />
-            <button onClick={handleSend} disabled={sending} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg p-2 shrink-0">
+            <button onClick={handleSend} disabled={sending} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg p-2 shrink-0">
               <Send size={16} />
             </button>
           </div>
@@ -1267,8 +1457,29 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
   );
 }
 
-function SealedPicker({ onSelect }) {
+// Nombres de campo que TCGCSV/TCGplayer usa (varía un poco según el juego)
+// para indicar que un producto es una carta suelta con número de colección.
+// Si un producto no trae ninguno de estos, se asume que es producto sellado
+// (booster box, ETB, mazo, etc.) — es una heurística, no una regla oficial
+// documentada por TCGplayer, así que puede fallar para algún juego/producto
+// raro; si ves algo mal clasificado, avisa con el nombre exacto.
+const CAMPOS_NUMERO_CARTA = ["Number", "Card Number", "CardNumber"];
+function looksLikeCard(producto) {
+  return (producto.extendedData || []).some((e) => CAMPOS_NUMERO_CARTA.includes(e.name));
+}
+
+// ---- Buscador contra el catálogo de TCGplayer (vía TCGCSV, api/tcgcsv.js) ----
+// A diferencia de CardPicker (Pokémon/Magic, con buscador de texto libre
+// contra todo el catálogo), TCGplayer/TCGCSV no ofrece una búsqueda así de
+// simple — solo se puede listar por set/expansión y buscar dentro de ese
+// set. Por eso este picker es de dos pasos: "elige el set" y luego "busca
+// el producto dentro de ese set". Sirve para dos casos:
+// - Producto sellado (soloSellado=true) de CUALQUIER TCG.
+// - Cartas sueltas (soloSellado=false) de los TCG que todavía no tienen un
+//   buscador de texto libre propio (Yu-Gi-Oh, Lorcana, One Piece).
+function TCGplayerPicker({ tcg = "pokemon", soloSellado = true, onSelect }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [categoriaId, setCategoriaId] = useState(undefined); // undefined = resolviendo, null = no encontrada
   const [grupos, setGrupos] = useState([]);
   const [loadingGrupos, setLoadingGrupos] = useState(true);
   const [grupoId, setGrupoId] = useState("");
@@ -1279,38 +1490,51 @@ function SealedPicker({ onSelect }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    fetch("/api/tcgcsv?path=tcgplayer/3/groups")
-      .then((r) => r.json())
-      .then((d) => setGrupos((d.results || []).slice().sort((a, b) => (b.publishedOn || "").localeCompare(a.publishedOn || ""))))
-      .catch(() => {})
-      .finally(() => setLoadingGrupos(false));
-  }, []);
+    setLoadingGrupos(true);
+    setGrupoId(""); setGrupos([]); setProductos([]); setPrecios([]);
+    categoriaIdTCGplayer(tcg).then((id) => {
+      setCategoriaId(id);
+      if (!id) { setLoadingGrupos(false); return; }
+      fetch(`/api/tcgcsv?path=tcgplayer/${id}/groups`)
+        .then((r) => r.json())
+        .then((d) => setGrupos((d.results || []).slice().sort((a, b) => (b.publishedOn || "").localeCompare(a.publishedOn || ""))))
+        .catch(() => {})
+        .finally(() => setLoadingGrupos(false));
+    });
+  }, [tcg]);
 
   useEffect(() => {
-    if (!grupoId) { setProductos([]); setPrecios([]); return; }
+    if (!grupoId || !categoriaId) { setProductos([]); setPrecios([]); return; }
     setLoadingProductos(true);
     Promise.all([
-      fetch(`/api/tcgcsv?path=tcgplayer/3/${grupoId}/products`).then((r) => r.json()),
-      fetch(`/api/tcgcsv?path=tcgplayer/3/${grupoId}/prices`).then((r) => r.json()),
+      fetch(`/api/tcgcsv?path=tcgplayer/${categoriaId}/${grupoId}/products`).then((r) => r.json()),
+      fetch(`/api/tcgcsv?path=tcgplayer/${categoriaId}/${grupoId}/prices`).then((r) => r.json()),
     ])
       .then(([p, pr]) => {
-        // Filtramos: si el producto NO tiene "Number" en sus datos, no es una carta suelta, es producto sellado
-        const sellado = (p.results || []).filter((item) => !(item.extendedData || []).some((e) => e.name === "Number"));
-        setProductos(sellado);
+        const filtrados = (p.results || []).filter((item) => (soloSellado ? !looksLikeCard(item) : looksLikeCard(item)));
+        setProductos(filtrados);
         setPrecios(pr.results || []);
       })
       .catch(() => { setProductos([]); setPrecios([]); })
       .finally(() => setLoadingProductos(false));
-  }, [grupoId]);
+  }, [grupoId, categoriaId, soloSellado]);
 
   const filtrados = productos.filter((p) => p.name.toLowerCase().includes(busqueda.toLowerCase()));
+  const grupoSeleccionado = grupos.find((g) => String(g.groupId) === String(grupoId));
 
   const seleccionar = (p) => {
     const precioInfo = precios.find((x) => x.productId === p.productId && x.marketPrice);
     const precioRefMxn = precioInfo ? Math.round(precioInfo.marketPrice * USD_TO_MXN) : null;
-    onSelect({ producto: p.name, imagen_url: p.imageUrl, card_api_id: `tcgcsv-${p.productId}`, precio_ref_mxn: precioRefMxn });
+    onSelect({
+      name: p.name, producto: p.name, set_nombre: grupoSeleccionado?.name || "",
+      imagen_url: p.imageUrl, card_api_id: `tcgcsv-${p.productId}`, precio_ref_mxn: precioRefMxn,
+    });
     setOpen(false); setBusqueda("");
   };
+
+  if (categoriaId === null) {
+    return <p style={{ color: COLORS.muted }} className="text-xs">No encontramos el catálogo de {TCG_LABEL[tcg] || tcg} todavía — puedes publicar con nombre e imagen a mano más abajo (si el formulario lo permite) o intenta de nuevo más tarde.</p>;
+  }
 
   return (
     <div className="grid gap-2">
@@ -1322,7 +1546,7 @@ function SealedPicker({ onSelect }) {
       {grupoId && (
         <div className="relative">
           <input
-            placeholder="2. Busca el producto (ej. Elite Trainer Box)"
+            placeholder={soloSellado ? "2. Busca el producto (ej. Elite Trainer Box)" : "2. Busca la carta dentro de este set"}
             value={busqueda}
             onChange={(e) => { setBusqueda(e.target.value); setOpen(true); }}
             onFocus={() => setOpen(true)}
@@ -1350,11 +1574,22 @@ function SealedPicker({ onSelect }) {
   );
 }
 
+// ---- Despachador único: elige el buscador correcto según el TCG (y si es
+// carta suelta o producto sellado) — así los formularios de publicar no
+// necesitan saber de dónde viene cada catálogo. ----
+function CardPickerUniversal({ tcg = "pokemon", soloSellado = false, onSelect }) {
+  if (!soloSellado && TCG_CON_CATALOGO.includes(tcg)) {
+    return <CardPicker tcg={tcg} onSelect={onSelect} />;
+  }
+  return <TCGplayerPicker tcg={tcg} soloSellado={soloSellado} onSelect={onSelect} />;
+}
+
 function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda = false }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const info = planDe(perfil);
   const [instagram, setInstagram] = useState(perfil?.instagram || "");
   const [maps, setMaps] = useState(perfil?.google_maps_url || "");
+  const [telefono, setTelefono] = useState(perfil?.telefono || "");
   const [whatsapp, setWhatsapp] = useState(perfil?.whatsapp || "");
   const [facebook, setFacebook] = useState(perfil?.facebook || "");
   const [saving, setSaving] = useState(false);
@@ -1377,7 +1612,7 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda
     try {
       const cambios = esTienda
         ? { instagram: instagram || null, google_maps_url: maps || null }
-        : { instagram: instagram || null, whatsapp: whatsapp || null, facebook: facebook || null };
+        : { instagram: instagram || null, telefono: telefono || null, whatsapp: whatsapp || null, facebook: facebook || null };
       await sbWrite("PATCH", `perfiles?id=eq.${session.user.id}`, cambios, session);
       setOk(true);
       onUpdated?.();
@@ -1394,12 +1629,13 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda
           <input placeholder="Enlace de Google Maps" value={maps} onChange={(e) => setMaps(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
         ) : (
           <>
+            <input placeholder="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
             <input placeholder="WhatsApp (con código de país)" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
             <input placeholder="Enlace de Facebook" value={facebook} onChange={(e) => setFacebook(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           </>
         )}
       </div>
-      <button onClick={guardar} disabled={saving} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
+      <button onClick={guardar} disabled={saving} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
         {saving ? "Guardando..." : "Guardar"}
       </button>
       {ok && <p style={{ color: COLORS.azulPalido }} className="text-xs">Guardado.</p>}
@@ -1414,17 +1650,38 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const [saving, setSaving] = useState(false);
   const [tipo, setTipo] = useState("carta"); // carta | sellado
 
+  // ---- Entrega en buzón de tienda afiliada (opcional) ----
+  const [tiendasAfiliadas, setTiendasAfiliadas] = useState([]);
+  const [buzonDefault, setBuzonDefault] = useState(perfil?.buzon_default_tienda_id || "");
+  const [guardandoBuzonDefault, setGuardandoBuzonDefault] = useState(false);
+
+  useEffect(() => {
+    sb(`tiendas?select=id,nombre&afiliada=eq.true&order=nombre.asc`).then(setTiendasAfiliadas).catch(() => {});
+  }, []);
+
   const vacio = {
-    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
-    gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
+    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
+    gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "", buzon_tienda_id: "",
+    descripcion: "", etiquetas: "",
   };
-  const [nueva, setNueva] = useState(vacio);
+  const [nueva, setNueva] = useState({ ...vacio, buzon_tienda_id: buzonDefault });
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
+  // Guarda la preferencia de buzón por default (perfiles.buzon_default_tienda_id)
+  // para no tener que marcarla a mano en cada publicación nueva.
+  const guardarBuzonDefault = async (valor) => {
+    setGuardandoBuzonDefault(true); setError(null);
+    try {
+      await sbWrite("PATCH", `perfiles?id=eq.${session.user.id}`, { buzon_default_tienda_id: valor || null }, session);
+      setBuzonDefault(valor);
+      setNueva((n) => ({ ...n, buzon_tienda_id: valor }));
+    } catch (e) { setError(e.message); } finally { setGuardandoBuzonDefault(false); }
+  };
+
   const cargar = () => {
     setLoading(true); setError(null);
-    sb(`mercado_listings?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
+    sb(`mercado_listings?select=*,buzon_tienda:buzon_tienda_id(nombre)&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
       .then(setPublicaciones)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -1434,17 +1691,34 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
 
   const alLimite = limiteAlcanzado(perfil, publicaciones.length);
 
+  // Lista legible de lo que falta para poder publicar -- antes el botón
+  // simplemente se quedaba deshabilitado sin decir por qué (sobre todo
+  // confuso desde que las 2 fotos son obligatorias), así que ahora se le
+  // muestra a la persona exactamente qué le falta en vez de dejarla
+  // adivinando por qué "no pasa nada" al hacer clic.
+  const faltantes = [];
+  if (!nueva.carta) faltantes.push(tipo === "accesorio" ? "el nombre del accesorio" : "elegir la carta/producto");
+  if (!nueva.precio) faltantes.push("el precio");
+  if (!nueva.zona) faltantes.push("la zona");
+  if (tipo === "carta" && !nueva.condicion) faltantes.push("el estado de la carta");
+  if (tipo === "carta" && !nueva.idioma) faltantes.push("el idioma de la carta");
+  if (!nueva.foto_real_url) faltantes.push("la foto de frente");
+  if (!nueva.foto_real_reverso_url) faltantes.push("la foto de atrás");
+
   const agregar = async () => {
-    if (!nueva.carta || !nueva.precio || !nueva.zona || (tipo === "carta" && (!nueva.idioma || !nueva.condicion))) return;
+    if (faltantes.length > 0) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante para inventario ilimitado.`); return; }
-    setSaving(true);
+    setSaving(true); setError(null);
     try {
-      await sbWrite("POST", "mercado_listings", {
+      const etiquetasArr = tipo === "accesorio"
+        ? nueva.etiquetas.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean)
+        : [];
+      const payload = {
         perfil_id: session.user.id,
         tipo,
         tcg: nueva.tcg,
         carta: nueva.carta,
-        set_nombre: nueva.set_nombre || null,
+        set_nombre: tipo === "accesorio" ? null : (nueva.set_nombre || null),
         condicion: tipo === "carta" ? nueva.condicion : null,
         ...(tipo === "carta" ? { idioma: nueva.idioma } : {}),
         precio: Number(nueva.precio),
@@ -1454,15 +1728,30 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nueva.card_api_id || null,
         imagen_url: nueva.imagen_url || null,
         precio_ref_mxn: nueva.precio_ref_mxn || null,
-        // foto_real_url y los campos de gradeo solo se mandan si de verdad
-        // aplican: así publicar sigue funcionando aunque las migraciones que
-        // agregan esas columnas (036, 040) todavía no se hayan corrido.
-        ...(tipo === "carta" && nueva.foto_real_url ? { foto_real_url: nueva.foto_real_url } : {}),
+        // Las fotos reales (frente/reverso) son obligatorias para las tres
+        // publicaciones; el gradeo y el buzón solo se mandan si de verdad
+        // aplican, así publicar sigue funcionando aunque esas migraciones
+        // (040, 042) todavía no hayan corrido.
+        foto_real_url: nueva.foto_real_url,
+        foto_real_reverso_url: nueva.foto_real_reverso_url,
         ...(tipo === "carta" && nueva.gradeada
           ? { gradeada: true, grado_empresa: nueva.grado_empresa || null, grado_empresa_otro: nueva.grado_empresa === "OTRO" ? nueva.grado_empresa_otro || null : null, grado_calificacion: nueva.grado_calificacion || null }
           : {}),
-      }, session);
-      setNueva(vacio);
+        ...(tipo === "accesorio" ? { descripcion: nueva.descripcion || null, etiquetas: etiquetasArr, etiquetas_texto: etiquetasArr.join(" ") } : {}),
+        ...(tipo !== "sellado" && nueva.buzon_tienda_id ? { buzon_tienda_id: nueva.buzon_tienda_id } : {}),
+      };
+      try {
+        await sbWrite("POST", "mercado_listings", payload, session);
+      } catch (e) {
+        // Si la migración 049 (agrega foto_real_reverso_url) todavía no se
+        // corrió en la base de datos real, insertar con esa columna falla
+        // por completo -- en vez de dejar a la persona sin poder vender
+        // nada mientras se corre la migración pendiente, se reintenta una
+        // vez sin ese campo (la foto de frente sí se guarda).
+        const { foto_real_reverso_url, ...sinReverso } = payload;
+        await sbWrite("POST", "mercado_listings", sinReverso, session);
+      }
+      setNueva({ ...vacio, buzon_tienda_id: buzonDefault });
       cargar();
     } catch (e) { setError(e.message); } finally { setSaving(false); }
   };
@@ -1504,45 +1793,74 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
       {alLimite && (
         <div style={{ background: `${COLORS.azulPalido}11`, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
           <p style={{ color: COLORS.azulPalido }} className="text-sm">Alcanzaste el límite de tu plan. Mejora a Diamante para publicaciones ilimitadas.</p>
-          <button onClick={onIrAPlanes} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
+          <button onClick={onIrAPlanes} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
         </div>
       )}
 
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid gap-3">
         <div className="flex gap-2">
-          <button type="button" onClick={() => { setTipo("carta"); setNueva(vacio); }}
+          <button type="button" onClick={() => { setTipo("carta"); setNueva({ ...vacio, buzon_tienda_id: buzonDefault }); }}
             style={{ background: tipo === "carta" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "carta" ? COLORS.azulPalido : COLORS.surface2}`, color: tipo === "carta" ? COLORS.azulPalido : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Carta suelta</button>
-          <button type="button" onClick={() => { setTipo("sellado"); setNueva(vacio); }}
+          <button type="button" onClick={() => { setTipo("sellado"); setNueva({ ...vacio, buzon_tienda_id: "" }); }}
             style={{ background: tipo === "sellado" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "sellado" ? COLORS.azulClaro : COLORS.surface2}`, color: tipo === "sellado" ? COLORS.azulClaro : COLORS.muted }}
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Producto sellado</button>
+          <button type="button" onClick={() => { setTipo("accesorio"); setNueva({ ...vacio, buzon_tienda_id: buzonDefault }); }}
+            style={{ background: tipo === "accesorio" ? COLORS.surface2 : "transparent", border: `1px solid ${tipo === "accesorio" ? COLORS.gold : COLORS.surface2}`, color: tipo === "accesorio" ? COLORS.gold : COLORS.muted }}
+            className="px-3 py-1.5 rounded-full text-sm font-semibold">Accesorio</button>
         </div>
 
-        {tipo === "carta" ? (
-          <>
-            <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
-              <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
+        {tiendasAfiliadas.length > 0 && (
+          <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-2 flex-wrap">
+            <Package size={14} color={COLORS.muted} />
+            <p style={{ color: COLORS.muted }} className="text-xs">Usar este buzón en todas mis publicaciones nuevas:</p>
+            <select value={buzonDefault} onChange={(e) => guardarBuzonDefault(e.target.value)} disabled={guardandoBuzonDefault}
+              style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs">
+              <option value="">Ninguno (marcar manualmente cada vez)</option>
+              {tiendasAfiliadas.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
             </select>
-            {nueva.tcg === "pokemon" ? (
-              <div>
-                <CardPicker onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
-                {nueva.card_api_id && (
-                  <div className="flex items-center gap-3 mt-2">
-                    {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
-                    <div>
-                      <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
-                      {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-                      <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
-                    </div>
+            {guardandoBuzonDefault && <span style={{ color: COLORS.muted }} className="text-xs">Guardando...</span>}
+          </div>
+        )}
+
+        <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          {tipo === "accesorio" && <option value="general">General (cualquier TCG)</option>}
+        </select>
+
+        {tipo === "accesorio" ? (
+          <>
+            <input placeholder="Nombre del accesorio (ej. Playmat Sylveon Ilustración especial)" value={nueva.carta}
+              onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <textarea placeholder="Descripción (material, tamaño, detalles del producto...)" value={nueva.descripcion} rows={3}
+              onChange={(e) => setNueva({ ...nueva, descripcion: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <div>
+              <input placeholder="Etiquetas separadas por coma (ej. sylveon, playmat, eeveelution)" value={nueva.etiquetas}
+                onChange={(e) => setNueva({ ...nueva, etiquetas: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-full" />
+              <p style={{ color: COLORS.muted }} className="text-xs mt-1">Con estas palabras clave, tu accesorio aparece en Buscar aunque alguien no busque "accesorios" — por ejemplo, si pones "sylveon" aparece al buscar Sylveon.</p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} />
+              {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+            </div>
+          </>
+        ) : tipo === "carta" ? (
+          <>
+            <div>
+              <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+              {nueva.card_api_id && (
+                <div className="flex items-center gap-3 mt-2">
+                  {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                  <div>
+                    <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
+                    {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                    <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="grid sm:grid-cols-2 gap-2">
-                <input placeholder="Nombre de la carta" value={nueva.carta} onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-                <input placeholder="Set / número" value={nueva.set_nombre} onChange={(e) => setNueva({ ...nueva, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-              </div>
-            )}
+                </div>
+              )}
+            </div>
             <div>
               <p style={{ color: COLORS.muted }} className="text-xs mb-1">Estado de la carta (obligatorio)</p>
               <EstadoCartaSelector value={nueva.condicion} onChange={(v) => setNueva({ ...nueva, condicion: v })} />
@@ -1552,8 +1870,10 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               <IdiomaSelector value={nueva.idioma} onChange={(v) => setNueva({ ...nueva, idioma: v })} />
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto real subida" : "📷 Foto real de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
               {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} />
+              {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
             <GradeoFields
               gradeada={nueva.gradeada} empresa={nueva.grado_empresa} empresaOtro={nueva.grado_empresa_otro} calificacion={nueva.grado_calificacion}
@@ -1561,7 +1881,15 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             />
           </>
         ) : (
-          <SealedPicker onSelect={(p) => setNueva({ ...nueva, carta: p.producto, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
+          <>
+            <CardPickerUniversal tcg={nueva.tcg} soloSellado onSelect={(p) => setNueva({ ...nueva, carta: p.producto, set_nombre: p.set_nombre, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
+            <div className="flex items-center gap-2 flex-wrap">
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} />
+              {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+            </div>
+          </>
         )}
 
         {tipo === "sellado" && nueva.card_api_id && (
@@ -1575,14 +1903,38 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           </div>
         )}
 
+        {/* El buzón es para que un comprador recoja algo pequeño en una tienda
+            afiliada -- no tiene sentido para producto sellado (cajas/booster
+            boxes, más voluminoso), así que esta opción se salta por completo
+            para ese tipo en vez de solo ocultarse en la UI. */}
+        {tiendasAfiliadas.length > 0 && tipo !== "sellado" && (
+          <div className="grid gap-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer w-fit" style={{ color: COLORS.muted }}>
+              <input type="checkbox" checked={!!nueva.buzon_tienda_id}
+                onChange={(e) => setNueva({ ...nueva, buzon_tienda_id: e.target.checked ? (tiendasAfiliadas[0]?.id || "") : "" })} />
+              <Package size={14} /> Ofrezco entrega en buzón de una tienda afiliada (opcional)
+            </label>
+            {nueva.buzon_tienda_id && (
+              <select value={nueva.buzon_tienda_id} onChange={(e) => setNueva({ ...nueva, buzon_tienda_id: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
+                {tiendasAfiliadas.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+              </select>
+            )}
+          </div>
+        )}
+
         <div className="grid sm:grid-cols-4 gap-2">
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nueva.precio_antes} onChange={(e) => setNueva({ ...nueva, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Zona (ej. Centro, San Pedro)" value={nueva.zona} onChange={(e) => setNueva({ ...nueva, zona: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregar} disabled={saving || alLimite || (tipo === "carta" && (!nueva.idioma || !nueva.condicion))} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={agregar} disabled={saving || alLimite || faltantes.length > 0} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
           </button>
         </div>
+        {!alLimite && faltantes.length > 0 && (
+          <p style={{ color: COLORS.azulPalido }} className="text-xs">
+            Para publicar, falta: {faltantes.join(", ")}.
+          </p>
+        )}
       </div>
 
       <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Tus publicaciones</h3>
@@ -1590,27 +1942,35 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         {publicaciones.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has publicado nada en el mercado.</p>}
         {publicaciones.map((item) => (
           <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
-            {(item.foto_real_url || item.imagen_url) && <img src={item.foto_real_url || item.imagen_url} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
+            {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
-                <Badge color={item.tipo === "sellado" ? COLORS.azulClaro : COLORS.azulPalido}>{item.tipo === "sellado" ? "Sellado" : "Carta"}</Badge>
-                {item.tipo !== "sellado" && <IdiomaBadge idioma={item.idioma} />}
-                {item.tipo !== "sellado" && <EstadoCartaBadge condicion={item.condicion} />}
-                {item.tipo !== "sellado" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />}
+                <Badge color={item.tipo === "sellado" ? COLORS.azulClaro : item.tipo === "accesorio" ? COLORS.gold : COLORS.azulPalido}>
+                  {item.tipo === "sellado" ? "Sellado" : item.tipo === "accesorio" ? "Accesorio" : "Carta"}
+                </Badge>
+                {item.tipo === "carta" && <IdiomaBadge idioma={item.idioma} />}
+                {item.tipo === "carta" && <EstadoCartaBadge condicion={item.condicion} />}
+                {item.tipo === "carta" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />}
+                <BuzonBadge tienda={item.buzon_tienda} />
                 <BoostBadge item={item} />
               </div>
-              <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.zona}</p>
+              {item.tipo === "accesorio" ? (
+                <p style={{ color: COLORS.muted }} className="text-xs truncate">{item.etiquetas?.join(", ")}{item.etiquetas?.length ? " · " : ""}{item.zona}</p>
+              ) : (
+                <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.zona}</p>
+              )}
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
             <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
-            {!item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
-            <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
-            {item.tipo !== "sellado" && (
-              <SubirFotoManual session={session} label={item.foto_real_url ? "Cambiar foto real" : "📷 Foto real"} onSubido={async (url) => { await actualizar(item.id, "foto_real_url", url); cargar(); }} />
+            {item.tipo !== "accesorio" && !item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
+            {item.tipo !== "accesorio" && (
+              <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
             )}
+            <SubirFotoManual session={session} label={item.foto_real_url ? (item.tipo === "accesorio" ? "Cambiar frente" : "Cambiar foto real (frente)") : (item.tipo === "accesorio" ? "📷 Foto de frente" : "📷 Foto real (frente)")} onSubido={async (url) => { await actualizar(item.id, "foto_real_url", url); cargar(); }} />
+            <SubirFotoManual session={session} label={item.foto_real_reverso_url ? (item.tipo === "accesorio" ? "Cambiar atrás" : "Cambiar foto real (atrás)") : (item.tipo === "accesorio" ? "📷 Foto de atrás" : "📷 Foto real (atrás)")} onSubido={async (url) => { await actualizar(item.id, "foto_real_reverso_url", url); cargar(); }} />
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
-            <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} onVendida={cargar} />
+            <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} tipoItem={item.tipo} onVendida={cargar} />
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
@@ -1636,8 +1996,8 @@ function CambiarPlanAdmin({ session }) {
     if (!query.trim()) return;
     setBuscando(true); setError(null); setOk(null);
     try {
-      const q = encodeURIComponent(query.trim());
-      const rows = await sb(`perfiles?select=id,nombre,email,tipo,plan,plan_vence,mp_preapproval_id&or=(nombre.ilike.*${q}*,email.ilike.*${q}*)&limit=15`, session);
+      const q = encodeURIComponent(pgValor(`*${query.trim()}*`));
+      const rows = await sb(`perfiles?select=id,nombre,email,tipo,plan,plan_vence,mp_preapproval_id&or=(nombre.ilike.${q},email.ilike.${q})&limit=15`, session);
       setResultados(rows);
     } catch (e) { setError(e.message); } finally { setBuscando(false); }
   };
@@ -1687,7 +2047,7 @@ function CambiarPlanAdmin({ session }) {
       <div className="flex gap-2 mb-4">
         <input placeholder="Busca por nombre o correo..." value={query} onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && buscar()} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1" />
-        <button onClick={buscar} disabled={buscando || !query.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+        <button onClick={buscar} disabled={buscando || !query.trim()} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
           {buscando ? "Buscando..." : "Buscar"}
         </button>
       </div>
@@ -1736,7 +2096,7 @@ function CambiarPlanAdmin({ session }) {
             </label>
           )}
 
-          <button onClick={guardar} disabled={guardando} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={guardar} disabled={guardando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
             {guardando ? "Guardando..." : "Guardar cambios"}
           </button>
         </div>
@@ -1745,9 +2105,406 @@ function CambiarPlanAdmin({ session }) {
   );
 }
 
+// ---- Admin: lista completa de todos los usuarios registrados (sin contar
+// sub-perfiles, que ya tienen su propia pestaña), con cambio de plan y borrado. ----
+function UsuariosAdmin({ session }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [query, setQuery] = useState("");
+  const [mostrarSubperfiles, setMostrarSubperfiles] = useState(false);
+  const [cambiandoPlan, setCambiandoPlan] = useState(null);
+  const [confirmando, setConfirmando] = useState(null);
+  const [borrando, setBorrando] = useState(null);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`perfiles?select=id,nombre,email,tipo,plan,plan_vence,created_at,es_admin,gestionado_por,telefono,avatar_url&order=created_at.desc`, session)
+      .then(setUsuarios)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const cambiarPlan = async (id, nuevoPlan) => {
+    setCambiandoPlan(id); setError(null);
+    try {
+      await sbWrite("PATCH", `perfiles?id=eq.${id}`, { plan: nuevoPlan, plan_vence: null }, session);
+      setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, plan: nuevoPlan, plan_vence: null } : u)));
+    } catch (e) { setError(e.message); } finally { setCambiandoPlan(null); }
+  };
+
+  const borrar = async (u) => {
+    setBorrando(u.id); setError(null);
+    try {
+      const res = await fetch("/api/admin/usuarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ accion: "borrar", perfilId: u.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo borrar la cuenta");
+      setUsuarios((prev) => prev.filter((x) => x.id !== u.id));
+      setConfirmando(null);
+    } catch (e) { setError(e.message); } finally { setBorrando(null); }
+  };
+
+  const visibles = usuarios
+    .filter((u) => mostrarSubperfiles || !u.gestionado_por)
+    .filter((u) => {
+      const q = query.trim().toLowerCase();
+      if (!q) return true;
+      return u.nombre?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q);
+    });
+
+  if (loading) return <Loading label="Cargando usuarios..." />;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">👥 Todos los usuarios</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+        {visibles.length} de {usuarios.length} cuentas registradas. Cambia el plan o borra una cuenta por completo (borra también su tienda, publicaciones, mensajes, etc.).
+      </p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div className="flex gap-3 items-center mb-4 flex-wrap">
+        <input placeholder="Busca por nombre o correo..." value={query} onChange={(e) => setQuery(e.target.value)}
+          style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" />
+        <label className="flex items-center gap-2 text-xs whitespace-nowrap" style={{ color: COLORS.muted }}>
+          <input type="checkbox" checked={mostrarSubperfiles} onChange={(e) => setMostrarSubperfiles(e.target.checked)} />
+          Mostrar sub-perfiles
+        </label>
+      </div>
+
+      <div className="grid gap-2">
+        {visibles.map((u) => (
+          <div key={u.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
+              <AvatarImg url={u.avatar_url} size={32} />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-sm truncate">{u.nombre}</p>
+                  {u.es_admin && <Badge color={COLORS.gold}>Admin</Badge>}
+                  {u.gestionado_por && <Badge color={COLORS.muted}>Sub-perfil</Badge>}
+                </div>
+                <p style={{ color: COLORS.muted }} className="text-xs truncate">
+                  {u.email || "(sin correo)"} · {u.tipo}{u.telefono ? ` · ${u.telefono}` : ""}
+                </p>
+                <p style={{ color: COLORS.muted }} className="text-[11px]">Desde {new Date(u.created_at).toLocaleDateString("es-MX")}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <select value={u.plan} disabled={cambiandoPlan === u.id} onChange={(e) => cambiarPlan(u.id, e.target.value)}
+                style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs">
+                {PLAN_ORDER.map((p) => <option key={p} value={p}>{PLAN_INFO[p].nombre}</option>)}
+              </select>
+
+              {confirmando === u.id ? (
+                <div className="flex items-center gap-1">
+                  <span style={{ color: COLORS.muted }} className="text-xs">¿Seguro?</span>
+                  <button onClick={() => borrar(u)} disabled={borrando === u.id} style={{ background: "#C24444", color: "#fff" }} className="rounded-lg px-2 py-1.5 text-xs font-semibold">
+                    {borrando === u.id ? "Borrando..." : "Sí, borrar"}
+                  </button>
+                  <button onClick={() => setConfirmando(null)} style={{ color: COLORS.muted }} className="text-xs px-2">Cancelar</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmando(u.id)} disabled={u.es_admin}
+                  style={{ color: u.es_admin ? COLORS.muted : "#C24444", border: `1px solid ${u.es_admin ? COLORS.surface2 : "#C2444488"}`, opacity: u.es_admin ? 0.5 : 1 }}
+                  className="rounded-lg px-2 py-1.5 text-xs font-semibold whitespace-nowrap">
+                  🗑 Borrar
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        {visibles.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm text-center py-8">Sin resultados.</p>}
+      </div>
+    </div>
+  );
+}
+
+// ---- Estadísticas (Admin): piezas visuales reutilizables, sin ninguna
+// librería de gráficas nueva — solo SVG inline, mismo criterio minimalista
+// que el resto de la app (BackgroundField, etc.) ----
+function StatTile({ label, value, sub, color = COLORS.azulClaro }) {
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+      <p style={{ color: COLORS.muted }} className="text-xs uppercase font-semibold mb-1">{label}</p>
+      <p style={{ color, fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold">{value}</p>
+      {sub && <p style={{ color: COLORS.muted }} className="text-xs mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+// Gráfica de línea/área de una sola serie acumulada en el tiempo. Tooltip
+// nativo (title del navegador) en cada punto + etiqueta directa en el
+// último valor (el total actual) en vez de un número en cada punto.
+function MiniAreaChart({ puntos, color = COLORS.azulClaro, alto = 140 }) {
+  if (!puntos || puntos.length < 2) {
+    return <p style={{ color: COLORS.muted }} className="text-xs py-8 text-center">Todavía no hay suficientes datos para graficar.</p>;
+  }
+  const ancho = 600;
+  const padY = 18, padX = 4;
+  const maxValor = Math.max(1, ...puntos.map((p) => p.valor));
+  const x = (i) => padX + (i / (puntos.length - 1)) * (ancho - padX * 2);
+  const y = (v) => alto - padY - (v / maxValor) * (alto - padY * 2 - 10);
+  const linea = puntos.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(p.valor)}`).join(" ");
+  const area = `${linea} L ${x(puntos.length - 1)} ${alto - padY} L ${x(0)} ${alto - padY} Z`;
+  const gradId = `grad-${color.replace("#", "")}`;
+  const ultimo = puntos[puntos.length - 1];
+  return (
+    <svg viewBox={`0 0 ${ancho} ${alto}`} className="w-full" style={{ height: alto }} preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {[0.25, 0.5, 0.75].map((f) => (
+        <line key={f} x1={0} x2={ancho} y1={alto - padY - f * (alto - padY * 2 - 10)} y2={alto - padY - f * (alto - padY * 2 - 10)} stroke={COLORS.surface2} strokeWidth={1} />
+      ))}
+      <path d={area} fill={`url(#${gradId})`} stroke="none" />
+      <path d={linea} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      {puntos.map((p, i) => (
+        <circle key={i} cx={x(i)} cy={y(p.valor)} r={i === puntos.length - 1 ? 4 : 2.5} fill={color}>
+          <title>{p.etiqueta}: {p.valor.toLocaleString("es-MX")}</title>
+        </circle>
+      ))}
+      <text x={x(puntos.length - 1)} y={Math.max(11, y(ultimo.valor) - 8)} textAnchor="end" fontSize="11" fontWeight="700" fill={color}>
+        {ultimo.valor.toLocaleString("es-MX")}
+      </text>
+    </svg>
+  );
+}
+
+// Distribución de usuarios por plan — reutiliza los mismos colores que ya
+// tiene asignados cada plan en PLAN_INFO (los mismos de PlanBadge/RankIcon
+// en el resto de la app), en vez de inventar una paleta nueva.
+function BarrasPlan({ conteos }) {
+  const total = Math.max(1, PLAN_ORDER.reduce((s, p) => s + (conteos[p] || 0), 0));
+  return (
+    <div className="grid gap-2">
+      {PLAN_ORDER.map((p) => {
+        const n = conteos[p] || 0;
+        const pct = (n / total) * 100;
+        return (
+          <div key={p} className="flex items-center gap-3">
+            <p style={{ color: PLAN_INFO[p].color, width: 76 }} className="text-xs font-semibold shrink-0">{PLAN_INFO[p].nombre}</p>
+            <div style={{ background: COLORS.surface2 }} className="flex-1 rounded-full h-3 overflow-hidden">
+              <div style={{ background: PLAN_INFO[p].color, width: `${pct}%` }} className="h-full rounded-full" />
+            </div>
+            <p style={{ color: COLORS.muted }} className="text-xs w-10 text-right shrink-0">{n}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Agrupa una lista de fechas (created_at) en cubetas semanales (domingo a
+// sábado) y devuelve el conteo ACUMULADO hasta cada semana — así la
+// gráfica muestra crecimiento total en el tiempo, no solo lo nuevo de esa
+// semana en particular.
+function serieAcumuladaPorSemana(fechas) {
+  const validas = fechas.filter(Boolean).map((f) => new Date(f)).sort((a, b) => a - b);
+  if (validas.length === 0) return [];
+  const inicioSemana = (d) => {
+    const copia = new Date(d);
+    copia.setHours(0, 0, 0, 0);
+    copia.setDate(copia.getDate() - copia.getDay());
+    return copia;
+  };
+  const primera = inicioSemana(validas[0]);
+  const ultima = inicioSemana(validas[validas.length - 1]);
+  const semanas = [];
+  for (let d = new Date(primera); d <= ultima; d.setDate(d.getDate() + 7)) semanas.push(new Date(d));
+  let idx = 0, acumulado = 0;
+  return semanas.map((semana) => {
+    const finSemana = new Date(semana);
+    finSemana.setDate(finSemana.getDate() + 7);
+    while (idx < validas.length && validas[idx] < finSemana) { acumulado++; idx++; }
+    return { etiqueta: semana.toLocaleDateString("es-MX", { day: "2-digit", month: "short" }), valor: acumulado };
+  });
+}
+
+// ---- Panel de Admin → "Estadísticas": métricas de crecimiento de la
+// plataforma, con gráficas de progreso en el tiempo (ver arriba MiniAreaChart) ----
+function EstadisticasAdmin({ session }) {
+  const [datos, setDatos] = useState(null); // null = cargando
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    Promise.all([
+      sb(`perfiles?select=id,tipo,plan,gestionado_por,created_at`, session),
+      sb(`tiendas?select=id,afiliada,created_at`, session),
+      sb(`mercado_listings?select=id,tipo,created_at`, session),
+      sb(`inventario_tienda?select=id,created_at`, session),
+      sb(`sellado_tienda?select=id,created_at`, session),
+      sb(`ventas?select=id,estado,tipo,precio,created_at,confirmada_at`, session),
+      sb(`pagos?select=id,status,monto,created_at`, session).catch(() => []),
+      sb(`boosts?select=id,status,monto,created_at`, session).catch(() => []),
+      sb(`reportes?select=id,estado`, session).catch(() => []),
+      sb(`resenas?select=estrellas`, session).catch(() => []),
+    ])
+      .then(([perfiles, tiendas, mercado, inv, sellado, ventas, pagos, boosts, reportes, resenas]) =>
+        setDatos({ perfiles, tiendas, mercado, inv, sellado, ventas, pagos, boosts, reportes, resenas }))
+      .catch((e) => setError(e.message));
+  }, []);
+
+  if (error) return <ErrorBox message={error} />;
+  if (!datos) return <Loading label="Cargando estadísticas..." />;
+
+  const { perfiles, tiendas, mercado, inv, sellado, ventas, pagos, boosts, reportes, resenas } = datos;
+
+  const usuariosReales = perfiles.filter((p) => !p.gestionado_por);
+  const subperfiles = perfiles.filter((p) => p.gestionado_por);
+  const conteoPorPlan = {};
+  PLAN_ORDER.forEach((p) => { conteoPorPlan[p] = 0; });
+  usuariosReales.forEach((p) => { conteoPorPlan[p.plan] = (conteoPorPlan[p.plan] || 0) + 1; });
+
+  const cartasEnVenta = mercado.filter((m) => m.tipo !== "sellado").length + inv.length;
+  const selladoEnVenta = mercado.filter((m) => m.tipo === "sellado").length + sellado.length;
+
+  const ventasConfirmadas = ventas.filter((v) => v.estado === "confirmada");
+  const cartasVendidas = ventasConfirmadas.filter((v) => v.tipo !== "sellado").length;
+  const selladoVendido = ventasConfirmadas.filter((v) => v.tipo === "sellado").length;
+  const montoTotalVentas = ventasConfirmadas.reduce((s, v) => s + (Number(v.precio) || 0), 0);
+
+  const ingresosPlanes = pagos.filter((p) => p.status === "approved").reduce((s, p) => s + (Number(p.monto) || 0), 0);
+  const ingresosBoost = boosts.filter((b) => b.status === "approved").reduce((s, b) => s + (Number(b.monto) || 0), 0);
+
+  const reportesPendientes = reportes.filter((r) => r.estado === "pendiente").length;
+  const promedioEstrellas = resenas.length ? resenas.reduce((s, r) => s + r.estrellas, 0) / resenas.length : 0;
+
+  const serieUsuarios = serieAcumuladaPorSemana(usuariosReales.map((p) => p.created_at));
+  const serieVentas = serieAcumuladaPorSemana(ventasConfirmadas.map((v) => v.confirmada_at || v.created_at));
+  const seriePublicaciones = serieAcumuladaPorSemana([...mercado, ...inv, ...sellado].map((r) => r.created_at));
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Estadísticas</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">
+        Cifras al momento, para monitorear el crecimiento de la plataforma con el tiempo.
+      </p>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Usuarios y tiendas</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <StatTile label="Usuarios registrados" value={usuariosReales.length.toLocaleString("es-MX")} sub={`${subperfiles.length} sub-perfiles (no contados)`} color={COLORS.azulClaro} />
+        <StatTile label="Tiendas en el directorio" value={tiendas.length.toLocaleString("es-MX")} sub={`${tiendas.filter((t) => t.afiliada).length} afiliadas`} color={COLORS.azulMedio} />
+        <StatTile label="Reportes pendientes" value={reportesPendientes} color={reportesPendientes ? "#C24444" : COLORS.muted} />
+        <StatTile label="Calificación promedio" value={resenas.length ? `${promedioEstrellas.toFixed(1)} ★` : "—"} sub={`${resenas.length} reseñas`} color={COLORS.gold} />
+      </div>
+      <p style={{ color: COLORS.muted }} className="text-xs mb-2">Usuarios registrados por plan</p>
+      <div className="mb-8"><BarrasPlan conteos={conteoPorPlan} /></div>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Publicaciones</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+        <StatTile label="Cartas en venta ahora" value={cartasEnVenta.toLocaleString("es-MX")} color={COLORS.azulPalido} />
+        <StatTile label="Sellado en venta ahora" value={selladoEnVenta.toLocaleString("es-MX")} color={COLORS.azulClaro} />
+        <StatTile label="Cartas vendidas" value={cartasVendidas.toLocaleString("es-MX")} color={COLORS.gold} />
+        <StatTile label="Sellado vendido" value={selladoVendido.toLocaleString("es-MX")} color={COLORS.violeta} />
+      </div>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Ingresos</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+        <StatTile label="Ventas entre usuarios (monto)" value={`$${montoTotalVentas.toLocaleString("es-MX")}`} sub={`${ventasConfirmadas.length.toLocaleString("es-MX")} ventas confirmadas`} color={COLORS.azulClaro} />
+        <StatTile label="Ingresos por planes" value={`$${ingresosPlanes.toLocaleString("es-MX")}`} color={COLORS.violeta} />
+        <StatTile label="Ingresos por Boost" value={`$${ingresosBoost.toLocaleString("es-MX")}`} color={COLORS.gold} />
+      </div>
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-4 text-sm uppercase">Crecimiento en el tiempo</h3>
+      <div className="grid gap-8">
+        <div>
+          <p className="text-sm font-semibold mb-2">Usuarios registrados (acumulado, por semana)</p>
+          <MiniAreaChart puntos={serieUsuarios} color={COLORS.azulClaro} />
+        </div>
+        <div>
+          <p className="text-sm font-semibold mb-2">Ventas confirmadas (acumulado, por semana)</p>
+          <MiniAreaChart puntos={serieVentas} color={COLORS.gold} />
+        </div>
+        <div>
+          <p className="text-sm font-semibold mb-1">Publicaciones creadas en total (acumulado, por semana)</p>
+          <p style={{ color: COLORS.muted }} className="text-xs mb-2">Incluye las que ya se vendieron o borraron — mide actividad de publicación, no el inventario activo ahora mismo (eso está arriba, en "Publicaciones").</p>
+          <MiniAreaChart puntos={seriePublicaciones} color={COLORS.violeta} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Admin: revisar solicitudes de "Verificación de tienda" (trámite real,
+// distinto del badge automático de plan) -- aprobar/rechazar pega
+// directamente a verificaciones_tienda; la RLS de esa tabla (migración 048)
+// ya exige es_admin=true para poder actualizar, así que no hace falta un
+// endpoint de servidor aparte. ----
+function VerificacionesTiendaAdmin({ session }) {
+  const [pendientes, setPendientes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [resolviendo, setResolviendo] = useState(null);
+  const [notaRechazo, setNotaRechazo] = useState({});
+
+  const cargar = () => {
+    setLoading(true);
+    sb(`verificaciones_tienda?select=*,tiendas(nombre,direccion)&estado=eq.pendiente&order=created_at.asc`, session)
+      .then(setPendientes)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const resolver = async (id, estado) => {
+    setResolviendo(id);
+    try {
+      await sbWrite("PATCH", `verificaciones_tienda?id=eq.${id}`, { estado, nota: estado === "rechazada" ? (notaRechazo[id] || null) : null }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setResolviendo(null); }
+  };
+
+  if (loading) return <Loading label="Cargando solicitudes de verificación..." />;
+
+  return (
+    <div className="mb-8">
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">🛡️ Solicitudes de verificación de tienda</h3>
+      {error && <div className="mb-3"><ErrorBox message={error} /></div>}
+      {pendientes.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm mb-4">No hay solicitudes pendientes.</p>}
+      <div className="grid gap-2 mb-4">
+        {pendientes.map((v) => (
+          <div key={v.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.gold}55` }} className="rounded-lg p-3 grid gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <p className="font-semibold text-sm">{v.tiendas?.nombre || "Tienda"}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">{v.tiendas?.direccion}</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => resolver(v.id, "aprobada")} disabled={resolviendo === v.id}
+                  style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                  Aprobar
+                </button>
+                <button onClick={() => resolver(v.id, "rechazada")} disabled={resolviendo === v.id}
+                  style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                  Rechazar
+                </button>
+              </div>
+            </div>
+            <input placeholder="Motivo si la rechazas (opcional)" value={notaRechazo[v.id] || ""}
+              onChange={(e) => setNotaRechazo({ ...notaRechazo, [v.id]: e.target.value })}
+              style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
+              className="rounded-lg px-2 py-1.5 text-xs" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
-  const [tabAdmin, setTabAdmin] = useState("planes");
+  const [tabAdmin, setTabAdmin] = useState("estadisticas");
   const [tiendasSinDueno, setTiendasSinDueno] = useState([]);
   const [perfilesDisponibles, setPerfilesDisponibles] = useState([]);
   const [seleccion, setSeleccion] = useState({});
@@ -1903,9 +2660,9 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const cargarAnuncios = () => {
     setLoadingAnuncios(true);
     Promise.all([
-      sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.pendiente&order=created_at.desc`, session),
-      sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.programado&order=fecha_publicacion.asc`, session),
-      sb(`noticias?select=*,tiendas(nombre,perfiles(avatar_url))&estado=eq.publicado&order=fecha_publicacion.desc&limit=50`, session),
+      sb(`noticias?select=*,tiendas(nombre,perfiles!perfil_id(avatar_url))&estado=eq.pendiente&order=created_at.desc`, session),
+      sb(`noticias?select=*,tiendas(nombre,perfiles!perfil_id(avatar_url))&estado=eq.programado&order=fecha_publicacion.asc`, session),
+      sb(`noticias?select=*,tiendas(nombre,perfiles!perfil_id(avatar_url))&estado=eq.publicado&order=fecha_publicacion.desc&limit=50`, session),
     ])
       .then(([p, prog, pub]) => { setPendientes(p); setProgramados(prog); setPublicados(pub); })
       .catch((e) => setErrorAnuncio(e.message))
@@ -2097,10 +2854,11 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const [loadingTodasTiendas, setLoadingTodasTiendas] = useState(true);
   const [borrandoTienda, setBorrandoTienda] = useState(null);
   const [cambiandoAmatista, setCambiandoAmatista] = useState(null);
+  const [cambiandoAfiliada, setCambiandoAfiliada] = useState(null);
 
   const cargarTodasTiendas = () => {
     setLoadingTodasTiendas(true);
-    sb(`tiendas?select=*,perfiles(plan)&order=nombre.asc`, session)
+    sb(`tiendas?select=*,perfiles!perfil_id(plan)&order=nombre.asc`, session)
       .then(setTodasTiendas)
       .catch((e) => setError(e.message))
       .finally(() => setLoadingTodasTiendas(false));
@@ -2127,6 +2885,16 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
     } catch (e) { setError(e.message); } finally { setCambiandoAmatista(null); }
   };
 
+  // "Afiliada": habilita a esta tienda como opción de buzón para entregas
+  // de publicaciones del Mercado (independiente del plan/perfil vinculado).
+  const toggleAfiliada = async (t) => {
+    setCambiandoAfiliada(t.id);
+    try {
+      await sbWrite("PATCH", `tiendas?id=eq.${t.id}`, { afiliada: !t.afiliada }, session);
+      setTodasTiendas((prev) => prev.map((x) => (x.id === t.id ? { ...x, afiliada: !t.afiliada } : x)));
+    } catch (e) { setError(e.message); } finally { setCambiandoAfiliada(null); }
+  };
+
   const borrarTienda = async (t) => {
     if (!window.confirm(`¿Borrar la tienda "${t.nombre}"? Esto no se puede deshacer. Si tiene cartas o producto sellado, primero bórralos desde "Publicaciones".`)) return;
     setBorrandoTienda(t.id);
@@ -2146,11 +2914,11 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
     if (!buscarPub.trim()) return;
     setBuscandoPub(true); setError(null);
     try {
-      const q = encodeURIComponent(buscarPub.trim());
+      const q = encodeURIComponent(pgValor(`*${buscarPub.trim()}*`));
       const [inv, sel, merc] = await Promise.all([
-        sb(`inventario_tienda?select=*,tiendas(nombre)&carta=ilike.*${q}*&order=carta.asc`, session),
-        sb(`sellado_tienda?select=*,tiendas(nombre)&producto=ilike.*${q}*&order=producto.asc`, session),
-        sb(`mercado_listings?select=*,perfiles(nombre)&carta=ilike.*${q}*&order=carta.asc`, session),
+        sb(`inventario_tienda?select=*,tiendas(nombre)&carta=ilike.${q}&order=carta.asc`, session),
+        sb(`sellado_tienda?select=*,tiendas(nombre)&producto=ilike.${q}&order=producto.asc`, session),
+        sb(`mercado_listings?select=*,perfiles(nombre)&carta=ilike.${q}&order=carta.asc`, session),
       ]);
       setResultadosPub({ inventario: inv, sellado: sel, mercado: merc });
     } catch (e) { setError(e.message); } finally { setBuscandoPub(false); }
@@ -2192,7 +2960,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
     if (!nombreSubperfil.trim()) return;
     setCreandoSubperfil(true); setErrorSubperfil(null);
     try {
-      const res = await fetch("/api/admin/subperfiles", {
+      const res = await fetch("/api/admin/usuarios", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ accion: "crear", nombre: nombreSubperfil.trim(), tipo: tipoSubperfil }),
@@ -2215,7 +2983,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   const entrarComoSub = async (subperfilId) => {
     setEntrandoSub(subperfilId); setErrorSubperfil(null);
     try {
-      const res = await fetch("/api/admin/subperfiles", {
+      const res = await fetch("/api/admin/usuarios", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ accion: "entrar", subperfilId }),
@@ -2229,6 +2997,8 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
   if (loading) return <Loading label="Cargando panel de administración..." />;
 
   const tabs = [
+    { id: "estadisticas", label: "Estadísticas" },
+    { id: "usuarios", label: "Usuarios" },
     { id: "planes", label: "Planes" },
     { id: "tiendas", label: "Tiendas" },
     { id: "subperfiles", label: "Sub-perfiles" },
@@ -2258,10 +3028,14 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
 
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
+      {tabAdmin === "estadisticas" && <EstadisticasAdmin session={session} />}
+
+      {tabAdmin === "usuarios" && <UsuariosAdmin session={session} />}
       {tabAdmin === "planes" && <CambiarPlanAdmin session={session} />}
 
       {tabAdmin === "tiendas" && (
         <div>
+          <VerificacionesTiendaAdmin session={session} />
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Crear tienda</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-4">
             Da de alta una tienda nueva en el directorio con su nombre y dirección (la dirección se muestra sola en el mapa del perfil de la tienda, no requiere nada más). Opcionalmente puedes vincularla de una vez con una cuenta de tipo tienda.
@@ -2310,7 +3084,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
               {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
             </select>
             <button onClick={crearTienda} disabled={creandoTienda || !nuevaTienda.nombre.trim() || !nuevaTienda.direccion.trim()}
-              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
               {creandoTienda ? "Creando..." : "Crear tienda"}
             </button>
           </div>
@@ -2334,7 +3108,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                       {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                     </select>
                     <button onClick={() => vincular(t.id)} disabled={!seleccion[t.id] || vinculando === t.id}
-                      style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: seleccion[t.id] ? 1 : 0.5 }}
+                      style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: seleccion[t.id] ? 1 : 0.5 }}
                       className="rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap">
                       {vinculando === t.id ? "Vinculando..." : "Vincular"}
                     </button>
@@ -2363,6 +3137,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                         <p style={{ color: COLORS.muted }} className="text-xs">
                           {t.direccion}{t.zona ? ` · ${t.zona}` : ""}{t.perfil_id ? "" : " · sin cuenta vinculada"}
                           {t.lat && t.lng ? " · 📍 con ubicación" : " · sin ubicación"}
+                          {t.afiliada ? " · 📦 Afiliada (buzón)" : ""}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -2376,6 +3151,10 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                             {cambiandoAmatista === t.id ? "..." : t.perfiles?.plan === "ultraball" ? "🟣 Quitar Amatista" : "🟣 Dar Amatista"}
                           </button>
                         )}
+                        <button onClick={() => toggleAfiliada(t)} disabled={cambiandoAfiliada === t.id}
+                          style={{ color: COLORS.azulMedio, border: `1px solid ${COLORS.azulMedio}` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                          {cambiandoAfiliada === t.id ? "..." : t.afiliada ? "📦 Quitar afiliada" : "📦 Marcar afiliada"}
+                        </button>
                         <button onClick={() => borrarTienda(t)} disabled={borrandoTienda === t.id}
                           style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                           {borrandoTienda === t.id ? "Borrando..." : "Borrar tienda"}
@@ -2414,7 +3193,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                             <Navigation size={12} /> Mi ubicación
                           </button>
                           <button onClick={() => guardarTiendaEditada(t.id)} disabled={guardandoTienda === t.id || !tiendaEdit.nombre.trim() || !tiendaEdit.direccion.trim()}
-                            style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                            style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                             {guardandoTienda === t.id ? "Guardando..." : "Guardar cambios"}
                           </button>
                         </div>
@@ -2444,7 +3223,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
               <option value="tienda">Tienda</option>
             </select>
             <button onClick={crearSubperfil} disabled={creandoSubperfil || !nombreSubperfil.trim()}
-              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
               {creandoSubperfil ? "Creando..." : "Crear sub-perfil"}
             </button>
           </div>
@@ -2465,7 +3244,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                       {PLAN_ORDER.map((p) => <option key={p} value={p}>{PLAN_INFO[p].nombre}</option>)}
                     </select>
                     <button onClick={() => entrarComoSub(s.id)} disabled={entrandoSub === s.id}
-                      style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                      style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
                       {entrandoSub === s.id ? "Entrando..." : "Entrar como"}
                     </button>
                   </div>
@@ -2515,7 +3294,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
           )}
         </div>
         <button onClick={crearAnuncio} disabled={creandoAnuncio || !tituloAnuncio.trim() || !contenidoAnuncio.trim()}
-          style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
           {creandoAnuncio ? "Guardando..." : modoAnuncio === "programar" ? "Programar anuncio" : "Publicar ahora"}
         </button>
       </div>
@@ -2536,12 +3315,16 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                 <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => aprobarAnuncio(n)} disabled={procesando === n.id}
-                    style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                     {procesando === n.id ? "..." : "Aprobar y publicar"}
                   </button>
                   <button onClick={() => rechazarAnuncio(n)} disabled={procesando === n.id}
                     style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                     Rechazar
+                  </button>
+                  <button onClick={() => borrarAnuncio(n)} disabled={borrandoAnuncio === n.id}
+                    style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    {borrandoAnuncio === n.id ? "Borrando..." : "Borrar"}
                   </button>
                 </div>
               </div>
@@ -2559,6 +3342,10 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                 {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 140, objectFit: "cover" }} className="rounded-lg mb-2 w-full" />}
                 <p className="font-semibold">{n.titulo}</p>
                 <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
+                <button onClick={() => borrarAnuncio(n)} disabled={borrandoAnuncio === n.id}
+                  style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold mt-3">
+                  {borrandoAnuncio === n.id ? "Borrando..." : "Borrar"}
+                </button>
               </div>
             ))}
           </div>
@@ -2596,7 +3383,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => guardarAnuncioEditado(n.id)} disabled={guardandoAnuncio === n.id || !anuncioEdit.titulo.trim() || !anuncioEdit.contenido.trim()}
-                        style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                        style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                         {guardandoAnuncio === n.id ? "Guardando..." : "Guardar cambios"}
                       </button>
                       <button onClick={() => setEditandoAnuncio(null)} style={{ color: COLORS.muted }} className="text-xs px-3 py-1.5">Cancelar</button>
@@ -2641,7 +3428,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
               onChange={(e) => setBuscarPub(e.target.value)} onKeyDown={(e) => e.key === "Enter" && buscarPublicaciones()}
               style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1" />
             <button onClick={buscarPublicaciones} disabled={buscandoPub || !buscarPub.trim()}
-              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
               {buscandoPub ? "Buscando..." : "Buscar"}
             </button>
           </div>
@@ -3207,7 +3994,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
           </div>
           <div className="flex gap-2">
             <button onClick={publicarRevision} disabled={publicando || !idiomaCarpeta || !estadoCarpeta}
-              style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">
               {publicando ? "Publicando..." : "Publicar cartas incluidas"}
             </button>
             <button onClick={() => { setRevision(null); setIdiomaCarpeta(""); setEstadoCarpeta(""); }} style={{ color: COLORS.muted }} className="text-sm">Cancelar</button>
@@ -3218,18 +4005,79 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   );
 }
 
+// ---- "Mis estadísticas" para tiendas (Diamante+, ver info.diamante) --
+// reusa StatTile/MiniAreaChart/serieAcumuladaPorSemana, los mismos
+// componentes que ya construimos para el panel de Admin, pero con las
+// cifras de la propia tienda en vez de las de toda la plataforma. Usa solo
+// datos que ya existen de verdad (ventas, mensajes recibidos, seguidores,
+// reseñas) -- no hay un contador de "vistas de página" en el esquema
+// todavía, así que honestamente no se muestra esa métrica en vez de
+// inventarla.
+function MisEstadisticasTienda({ session, perfil, totalActivos, onIrAPlanes }) {
+  const info = planDe(perfil);
+  const [datos, setDatos] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!info.diamante) return;
+    Promise.all([
+      sb(`ventas?select=id,precio,created_at,confirmada_at,estado&vendedor_perfil_id=eq.${session.user.id}`, session),
+      sb(`mensajes?select=id,created_at,de_perfil_id&para_perfil_id=eq.${session.user.id}`, session).catch(() => []),
+      sb(`resenas?select=estrellas&objetivo_perfil_id=eq.${session.user.id}`, session).catch(() => []),
+      sb(`seguidores?select=id&seguido_perfil_id=eq.${session.user.id}`, session).catch(() => []),
+    ])
+      .then(([ventas, mensajes, resenas, seguidores]) => setDatos({ ventas, mensajes, resenas, seguidores }))
+      .catch((e) => setError(e.message));
+  }, [info.diamante]);
+
+  if (!info.diamante) {
+    return (
+      <div className="mb-6">
+        <UpsellCard requiere={PLAN_INFO.masterball} plan="masterball" onIrAPlanes={onIrAPlanes}>
+          Mira las ventas, contactos y seguidores de tu tienda con gráficas de crecimiento, exclusivo Diamante en adelante.
+        </UpsellCard>
+      </div>
+    );
+  }
+
+  if (error) return <div className="mb-6"><ErrorBox message={error} /></div>;
+  if (!datos) return <div className="mb-6"><Loading label="Cargando tus estadísticas..." /></div>;
+
+  const ventasConfirmadas = datos.ventas.filter((v) => v.estado === "confirmada");
+  const montoTotal = ventasConfirmadas.reduce((s, v) => s + (Number(v.precio) || 0), 0);
+  const contactosUnicos = new Set(datos.mensajes.map((m) => m.de_perfil_id)).size;
+  const promedioEstrellas = datos.resenas.length ? datos.resenas.reduce((s, r) => s + r.estrellas, 0) / datos.resenas.length : 0;
+  const serieVentas = serieAcumuladaPorSemana(ventasConfirmadas.map((v) => v.confirmada_at || v.created_at));
+
+  return (
+    <div className="mb-8">
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">📊 Mis estadísticas</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <StatTile label="Inventario activo" value={totalActivos.toLocaleString("es-MX")} color={COLORS.azulPalido} />
+        <StatTile label="Ventas confirmadas" value={ventasConfirmadas.length.toLocaleString("es-MX")} sub={`$${montoTotal.toLocaleString("es-MX")} MXN`} color={COLORS.gold} />
+        <StatTile label="Contactos recibidos" value={contactosUnicos.toLocaleString("es-MX")} sub={`${datos.mensajes.length} mensajes`} color={COLORS.azulClaro} />
+        <StatTile label="Seguidores" value={datos.seguidores.length.toLocaleString("es-MX")} sub={datos.resenas.length ? `${promedioEstrellas.toFixed(1)} ★ (${datos.resenas.length})` : "Sin reseñas"} color={COLORS.violeta} />
+      </div>
+      <p className="text-sm font-semibold mb-2">Ventas confirmadas (acumulado, por semana)</p>
+      <MiniAreaChart puntos={serieVentas} color={COLORS.gold} />
+    </div>
+  );
+}
+
 function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
   const [inventario, setInventario] = useState([]);
   const [sellado, setSellado] = useState([]);
+  const [verificacion, setVerificacion] = useState(null); // solicitud de verificación más reciente, o null
+  const [solicitandoVerificacion, setSolicitandoVerificacion] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const [nuevaCarta, setNuevaCarta] = useState({
-    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
+    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
     gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
   });
-  const [nuevoSellado, setNuevoSellado] = useState({ producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+  const [nuevoSellado, setNuevoSellado] = useState({ tcg: "pokemon", producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
@@ -3241,12 +4089,14 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         const t = rows[0] || null;
         setTienda(t);
         if (t) {
-          const [inv, sel] = await Promise.all([
+          const [inv, sel, verif] = await Promise.all([
             sb(`inventario_tienda?select=*&tienda_id=eq.${t.id}&order=carta.asc`, session),
             sb(`sellado_tienda?select=*&tienda_id=eq.${t.id}&order=producto.asc`, session),
+            sb(`verificaciones_tienda?select=*&tienda_id=eq.${t.id}&order=created_at.desc&limit=1`, session),
           ]);
           setInventario(inv);
           setSellado(sel);
+          setVerificacion(verif[0] || null);
         }
       })
       .catch((e) => setError(e.message))
@@ -3255,16 +4105,35 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
 
   useEffect(() => { cargar(); }, []);
 
+  const solicitarVerificacion = async () => {
+    if (!tienda) return;
+    setSolicitandoVerificacion(true);
+    try {
+      await sbWrite("POST", "verificaciones_tienda", { tienda_id: tienda.id, solicitada_por: session.user.id }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setSolicitandoVerificacion(false); }
+  };
+
   const totalActivos = inventario.length + sellado.length;
   const alLimite = limiteAlcanzado(perfil, totalActivos);
 
+  // Ver el comentario equivalente en MyMarketPanel: antes el botón solo se
+  // quedaba deshabilitado sin decir por qué.
+  const faltantesCarta = [];
+  if (!nuevaCarta.carta) faltantesCarta.push("elegir la carta");
+  if (!nuevaCarta.precio) faltantesCarta.push("el precio");
+  if (!nuevaCarta.idioma) faltantesCarta.push("el idioma de la carta");
+  if (!nuevaCarta.condicion) faltantesCarta.push("el estado de la carta");
+  if (!nuevaCarta.foto_real_url) faltantesCarta.push("la foto de frente");
+  if (!nuevaCarta.foto_real_reverso_url) faltantesCarta.push("la foto de atrás");
+
   const agregarCarta = async () => {
-    if (!nuevaCarta.carta || !nuevaCarta.precio || !nuevaCarta.idioma || !nuevaCarta.condicion) return;
+    if (faltantesCarta.length > 0) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.`); return; }
-    setSavingCarta(true);
+    setSavingCarta(true); setError(null);
     try {
-      const { foto_real_url, gradeada, grado_empresa, grado_empresa_otro, grado_calificacion, ...nuevaCartaBase } = nuevaCarta;
-      await sbWrite("POST", "inventario_tienda", {
+      const { gradeada, grado_empresa, grado_empresa_otro, grado_calificacion, ...nuevaCartaBase } = nuevaCarta;
+      const payload = {
         ...nuevaCartaBase,
         precio: Number(nuevaCarta.precio),
         precio_antes: nuevaCarta.precio_antes ? Number(nuevaCarta.precio_antes) : null,
@@ -3273,14 +4142,24 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nuevaCarta.card_api_id || null,
         imagen_url: nuevaCarta.imagen_url || null,
         precio_ref_mxn: nuevaCarta.precio_ref_mxn || null,
-        // foto_real_url y los campos de gradeo solo se mandan si de verdad
-        // aplican: así seguir agregando cartas no se rompe si las migraciones
-        // que agregan esas columnas (036, 040) aún no han corrido.
-        ...(foto_real_url ? { foto_real_url } : {}),
+        // Los campos de gradeo solo se mandan si de verdad aplican: así
+        // seguir agregando cartas no se rompe si la migración que los
+        // agrega (040) aún no ha corrido. Las fotos reales van siempre --
+        // son obligatorias desde la migración 036/049.
         ...(gradeada ? { gradeada: true, grado_empresa: grado_empresa || null, grado_empresa_otro: grado_empresa === "OTRO" ? grado_empresa_otro || null : null, grado_calificacion: grado_calificacion || null } : {}),
-      }, session);
+      };
+      try {
+        await sbWrite("POST", "inventario_tienda", payload, session);
+      } catch (e) {
+        // Ver el comentario equivalente en MyMarketPanel.agregar(): si la
+        // migración 049 (foto_real_reverso_url) no ha corrido todavía en la
+        // base de datos real, se reintenta una vez sin esa columna en vez de
+        // bloquear por completo el agregar cartas.
+        const { foto_real_reverso_url, ...sinReverso } = payload;
+        await sbWrite("POST", "inventario_tienda", sinReverso, session);
+      }
       setNuevaCarta({
-        tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "",
+        tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
         gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
       });
       cargar();
@@ -3313,7 +4192,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         imagen_url: nuevoSellado.imagen_url || null,
         precio_ref_mxn: nuevoSellado.precio_ref_mxn || null,
       }, session);
-      setNuevoSellado({ producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+      setNuevoSellado({ tcg: nuevoSellado.tcg, producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingSellado(false); }
   };
@@ -3354,6 +4233,25 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Administra tu inventario y producto sellado.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
+      <MisEstadisticasTienda session={session} perfil={perfil} totalActivos={totalActivos} onIrAPlanes={onIrAPlanes} />
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <p className="font-semibold text-sm flex items-center gap-2">🛡️ Verificación de tienda <TiendaVerificadaBadge tienda={{ verificaciones_tienda: verificacion ? [verificacion] : [] }} /></p>
+          <p style={{ color: COLORS.muted }} className="text-xs mt-1">
+            {!verificacion && "Pide que el equipo de Encuentra Cartas revise tu tienda para ganar esta insignia extra de confianza."}
+            {verificacion?.estado === "pendiente" && "Tu solicitud está en revisión."}
+            {verificacion?.estado === "aprobada" && "¡Tu tienda ya está verificada!"}
+            {verificacion?.estado === "rechazada" && `Tu solicitud fue rechazada${verificacion.nota ? `: ${verificacion.nota}` : "."} Puedes volver a intentarlo.`}
+          </p>
+        </div>
+        {(!verificacion || verificacion.estado === "rechazada") && (
+          <button onClick={solicitarVerificacion} disabled={solicitandoVerificacion} style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+            {solicitandoVerificacion ? "Enviando..." : "Solicitar verificación"}
+          </button>
+        )}
+      </div>
+
       <RedesSocialesEditor session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} esTienda />
 
       <p style={{ color: COLORS.muted }} className="text-xs mb-3">
@@ -3362,7 +4260,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       {alLimite && (
         <div style={{ background: `${COLORS.azulPalido}11`, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
           <p style={{ color: COLORS.azulPalido }} className="text-sm">Alcanzaste el límite de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.</p>
-          <button onClick={onIrAPlanes} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
+          <button onClick={onIrAPlanes} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Ver planes</button>
         </div>
       )}
 
@@ -3383,41 +4281,34 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
       <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-6">
         <select value={nuevaCarta.tcg} onChange={(e) => setNuevaCarta({ ...nuevaCarta, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1">
-          <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
         </select>
 
-        {nuevaCarta.tcg === "pokemon" ? (
-          <div className="sm:col-span-2">
-            <CardPicker onSelect={(c) => setNuevaCarta({
-              ...nuevaCarta,
-              carta: c.name,
-              set_nombre: c.set_nombre,
-              card_api_id: c.card_api_id,
-              imagen_url: c.imagen_url,
-              precio_ref_mxn: c.precio_ref_mxn,
-              precio: nuevaCarta.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : ""),
-            })} />
-            {nuevaCarta.card_api_id && (
-              <div className="flex items-center gap-3 mt-2">
-                {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
-                <div>
-                  <Badge color={COLORS.azulPalido}>{nuevaCarta.carta}</Badge>
-                  {nuevaCarta.precio_ref_mxn && (
-                    <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">
-                      Precio de referencia en mercado: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
-                    </p>
-                  )}
-                  <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
-                </div>
+        <div className="sm:col-span-2">
+          <CardPickerUniversal tcg={nuevaCarta.tcg} onSelect={(c) => setNuevaCarta({
+            ...nuevaCarta,
+            carta: c.name,
+            set_nombre: c.set_nombre,
+            card_api_id: c.card_api_id,
+            imagen_url: c.imagen_url,
+            precio_ref_mxn: c.precio_ref_mxn,
+            precio: nuevaCarta.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : ""),
+          })} />
+          {nuevaCarta.card_api_id && (
+            <div className="flex items-center gap-3 mt-2">
+              {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
+              <div>
+                <Badge color={COLORS.azulPalido}>{nuevaCarta.carta}</Badge>
+                {nuevaCarta.precio_ref_mxn && (
+                  <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">
+                    Precio de referencia en mercado: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
+                  </p>
+                )}
+                <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
               </div>
-            )}
-          </div>
-        ) : (
-          <>
-            <input placeholder="Nombre de la carta" value={nuevaCarta.carta} onChange={(e) => setNuevaCarta({ ...nuevaCarta, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
-            <input placeholder="Set / número" value={nuevaCarta.set_nombre} onChange={(e) => setNuevaCarta({ ...nuevaCarta, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
-          </>
-        )}
+            </div>
+          )}
+        </div>
 
         <input placeholder="Precio" type="number" value={nuevaCarta.precio} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio antes (oferta, opcional)" type="number" value={nuevaCarta.precio_antes} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" title="Si lo llenas, se muestra como oferta con el % de descuento" />
@@ -3430,8 +4321,10 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
           <IdiomaSelector value={nuevaCarta.idioma} onChange={(v) => setNuevaCarta({ ...nuevaCarta, idioma: v })} />
         </div>
         <div className="sm:col-span-6 flex items-center gap-2 flex-wrap">
-          <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Foto real subida" : "📷 Foto real de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} />
+          <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (obligatoria)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} />
           {nuevaCarta.foto_real_url && <img src={nuevaCarta.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+          <SubirFotoManual session={session} label={nuevaCarta.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (obligatoria)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_reverso_url: url })} />
+          {nuevaCarta.foto_real_reverso_url && <img src={nuevaCarta.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
         </div>
         <div className="sm:col-span-6">
           <GradeoFields
@@ -3439,15 +4332,20 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
             onChange={(patch) => setNuevaCarta({ ...nuevaCarta, ...patch })}
           />
         </div>
-        <button onClick={agregarCarta} disabled={savingCarta || alLimite || !nuevaCarta.idioma || !nuevaCarta.condicion} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
+        <button onClick={agregarCarta} disabled={savingCarta || alLimite || faltantesCarta.length > 0} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
           {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
+        {!alLimite && faltantesCarta.length > 0 && (
+          <p style={{ color: COLORS.azulPalido }} className="text-xs sm:col-span-6">
+            Para agregar la carta, falta: {faltantesCarta.join(", ")}.
+          </p>
+        )}
       </div>
       <div className="grid gap-2 mb-8">
         {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
         {inventario.map((item) => (
           <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
-            {(item.foto_real_url || item.imagen_url) && <img src={item.foto_real_url || item.imagen_url} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
+            {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.carta}</p>
@@ -3466,6 +4364,8 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
               style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
             {!item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />}
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />
+            <SubirFotoManual session={session} label={item.foto_real_url ? "Cambiar foto real (frente)" : "📷 Foto real (frente)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_url", url); cargar(); }} />
+            <SubirFotoManual session={session} label={item.foto_real_reverso_url ? "Cambiar foto real (atrás)" : "📷 Foto real (atrás)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_reverso_url", url); cargar(); }} />
             <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
             <MarcarVendidaBoton session={session} tabla="inventario_tienda" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} onVendida={cargar} />
             <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
@@ -3475,9 +4375,12 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
 
       <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2">
+        <select value={nuevoSellado.tcg} onChange={(e) => setNuevoSellado({ ...nuevoSellado, tcg: e.target.value, producto: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
         {!selladoManual ? (
           <>
-            <SealedPicker onSelect={(p) => setNuevoSellado({
+            <CardPickerUniversal tcg={nuevoSellado.tcg} soloSellado onSelect={(p) => setNuevoSellado({
               ...nuevoSellado,
               producto: p.producto,
               imagen_url: p.imagen_url,
@@ -3512,7 +4415,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         <div className="grid sm:grid-cols-3 gap-2">
           <input placeholder="Precio" type="number" value={nuevoSellado.precio} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nuevoSellado.precio_antes} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-          <button onClick={agregarSellado} disabled={savingSellado || alLimite} style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
+          <button onClick={agregarSellado} disabled={savingSellado || alLimite} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : savingSellado ? "Guardando..." : "+ Agregar"}
           </button>
         </div>
@@ -3617,7 +4520,7 @@ function ProponerAnuncio({ session, tiendaId }) {
           )}
         </div>
         <button onClick={enviar} disabled={enviando || !titulo.trim() || !contenido.trim()}
-          style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
           {enviando ? "Enviando..." : "Enviar para aprobación"}
         </button>
       </div>
@@ -3825,9 +4728,9 @@ function OnboardingTutorial({ onClose }) {
   const actual = ONBOARDING_STEPS[step];
 
   return createPortal(
-    <div style={{ background: "#00000099" }} className="fixed inset-0 z-[95] flex items-center justify-center p-4">
+    <div style={{ background: "#00000099", color: COLORS.text }} className="fixed inset-0 z-[95] flex items-center justify-center p-4">
       <div
-        style={{ background: "rgba(10,19,48,0.92)", border: `1px solid ${COLORS.azulMedio}44`, boxShadow: "0 30px 80px rgba(0,0,0,0.5)", backdropFilter: "blur(18px)" }}
+        style={{ background: conAlpha(COLORS.surface, 0.95), border: `1px solid ${COLORS.azulMedio}44`, boxShadow: "0 30px 80px rgba(0,0,0,0.5)", backdropFilter: "blur(18px)" }}
         className="w-full max-w-md rounded-[28px] relative"
       >
         <button onClick={finalizar} style={{ color: COLORS.muted }} className="absolute top-5 right-5 z-10 text-sm font-semibold">
@@ -4187,7 +5090,7 @@ function ComunidadView({ session, onVerPerfil }) {
           </div>
           <textarea value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Cuéntanos algo (opcional)"
             style={inputStyle} className="w-full rounded-lg px-3 py-2 text-sm outline-none" rows={2} />
-          <button onClick={publicar} disabled={!archivo || publicando} style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: archivo ? 1 : 0.5 }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
+          <button onClick={publicar} disabled={!archivo || publicando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: archivo ? 1 : 0.5 }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
             {publicando ? "Publicando..." : "Publicar"}
           </button>
         </div>
@@ -4284,7 +5187,7 @@ function ArmarMazoView({ session, onAbrirChat, onVerTienda }) {
     try {
       const [mercado, inventario] = await Promise.all([
         sb(`mercado_listings?select=*,perfiles(nombre,avatar_url)&order=precio.asc`),
-        sb(`inventario_tienda?select=*,tiendas(id,nombre,perfil_id,perfiles(avatar_url))&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(id,nombre,perfil_id,perfiles!perfil_id(avatar_url))&order=precio.asc`),
       ]);
 
       const vendedores = {}; // key -> { tipo, nombre, avatar, perfilId, tiendaId, coincidencias: Map(carta -> mejor item) }
@@ -4348,7 +5251,7 @@ function ArmarMazoView({ session, onAbrirChat, onVerTienda }) {
         </div>
       )}
 
-      <button onClick={buscar} disabled={buscando || !texto.trim()} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold mb-6">
+      <button onClick={buscar} disabled={buscando || !texto.trim()} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold mb-6">
         {buscando ? "Buscando..." : "Buscar en el mercado"}
       </button>
 
@@ -4400,6 +5303,35 @@ function ArmarMazoView({ session, onAbrirChat, onVerTienda }) {
 // las cartas se agregan con el mismo CardPicker que usa el resto de la
 // app (buscador con imagen y precio de referencia) y cada una lleva su
 // propia cantidad, incrementable/decrementable.
+// Avisos de legalidad de mazo por TCG (no bloquean guardar, solo avisan —
+// cada juego real tiene varios formatos con sus propias variantes, así que
+// esto valida el criterio "constructed" más común de cada uno, no todos los
+// formatos posibles). Copias máximas y tamaño de mazo son datos públicos de
+// las reglas oficiales de cada juego.
+const MAZO_MAX_COPIAS = { pokemon: 4, magic: 4, yugioh: 3, lorcana: 4, onepiece: 4 };
+const MAZO_TAMANO = {
+  pokemon: { min: 60, max: 60, texto: "60 cartas exactas" },
+  magic: { min: 60, max: null, texto: "mínimo 60 cartas (constructed)" },
+  yugioh: { min: 40, max: 60, texto: "entre 40 y 60 cartas (mazo principal, sin contar Extra/Side Deck)" },
+  lorcana: { min: 60, max: null, texto: "mínimo 60 cartas" },
+  onepiece: { min: 50, max: 50, texto: "50 cartas (sin contar tu carta Líder)" },
+};
+function avisosLegalidadMazo(tcg, mazoCartas, totalCartas) {
+  const avisos = [];
+  const maxCopias = MAZO_MAX_COPIAS[tcg] || 4;
+  const nombreTcg = TCG_LABEL[tcg] || tcg;
+  const exceso = mazoCartas.filter((mc) => mc.cantidad > maxCopias && !(tcg === "pokemon" && esEnergiaBasica(mc.nombre)));
+  if (exceso.length > 0) {
+    avisos.push(`Un mazo de ${nombreTcg} normalmente permite máximo ${maxCopias} copias de una misma carta${tcg === "pokemon" ? " (la Energía Básica no cuenta para este límite)" : ""} — revisa: ${exceso.map((mc) => mc.nombre).join(", ")}.`);
+  }
+  const t = MAZO_TAMANO[tcg];
+  if (t) {
+    if (t.min != null && totalCartas < t.min) avisos.push(`Un mazo de ${nombreTcg} normalmente necesita ${t.texto} (llevas ${totalCartas}).`);
+    else if (t.max != null && totalCartas > t.max) avisos.push(`Un mazo de ${nombreTcg} normalmente necesita ${t.texto} (llevas ${totalCartas}).`);
+  }
+  return avisos;
+}
+
 function MazosView({ session, perfil, onIrAPlanes }) {
   const info = planDe(perfil);
   const [mazos, setMazos] = useState([]);
@@ -4408,12 +5340,14 @@ function MazosView({ session, perfil, onIrAPlanes }) {
   const [mazoAbierto, setMazoAbierto] = useState(null);
   const [nombreNuevo, setNombreNuevo] = useState("");
   const [etiquetasNuevo, setEtiquetasNuevo] = useState("");
+  const [tcgNuevo, setTcgNuevo] = useState("pokemon");
   const [creando, setCreando] = useState(false);
   const [borrandoMazo, setBorrandoMazo] = useState(null);
   const [guardandoCarta, setGuardandoCarta] = useState(false);
   const [editandoNombre, setEditandoNombre] = useState(false);
   const [nombreEdit, setNombreEdit] = useState("");
   const [etiquetasEdit, setEtiquetasEdit] = useState("");
+  const [tcgFiltroMazos, setTcgFiltroMazos] = useState("todos");
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
@@ -4445,7 +5379,7 @@ function MazosView({ session, perfil, onIrAPlanes }) {
     setCreando(true); setError(null);
     try {
       const etiquetas = etiquetasNuevo.split(",").map((s) => s.trim()).filter(Boolean);
-      const creados = await sbWrite("POST", "mazos", { perfil_id: session.user.id, nombre: nombreNuevo.trim(), etiquetas }, session);
+      const creados = await sbWrite("POST", "mazos", { perfil_id: session.user.id, nombre: nombreNuevo.trim(), etiquetas, tcg: tcgNuevo }, session);
       setNombreNuevo(""); setEtiquetasNuevo("");
       cargar();
       if (creados?.[0]?.id) setMazoAbierto(creados[0].id);
@@ -4501,7 +5435,7 @@ function MazosView({ session, perfil, onIrAPlanes }) {
   // ---- Vista de un mazo abierto ----
   if (actual) {
     const totalCartas = actual.mazo_cartas.reduce((s, mc) => s + mc.cantidad, 0);
-    const exceso = actual.mazo_cartas.filter((mc) => mc.cantidad > 4 && !esEnergiaBasica(mc.nombre));
+    const avisos = avisosLegalidadMazo(actual.tcg || "pokemon", actual.mazo_cartas, totalCartas);
     return (
       <div>
         <button onClick={() => setMazoAbierto(null)} style={{ color: COLORS.azulPalido }} className="text-sm mb-4 flex items-center gap-1">← Mis mazos</button>
@@ -4511,7 +5445,7 @@ function MazosView({ session, perfil, onIrAPlanes }) {
           <div className="flex flex-wrap gap-2 mb-3">
             <input value={nombreEdit} onChange={(e) => setNombreEdit(e.target.value)} placeholder="Nombre del mazo" style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
             <input value={etiquetasEdit} onChange={(e) => setEtiquetasEdit(e.target.value)} placeholder="Etiquetas separadas por coma" style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-            <button onClick={guardarNombreEtiquetas} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-3 py-2 text-sm font-semibold">Guardar</button>
+            <button onClick={guardarNombreEtiquetas} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-2 text-sm font-semibold">Guardar</button>
           </div>
         ) : (
           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -4521,18 +5455,19 @@ function MazosView({ session, perfil, onIrAPlanes }) {
           </div>
         )}
         <div className="flex items-center gap-2 flex-wrap mb-6">
+          <Badge color={COLORS.azulClaro}>{TCG_LABEL[actual.tcg] || "Pokémon"}</Badge>
           {(actual.etiquetas || []).map((e) => <Badge key={e} color={COLORS.violeta}>{e}</Badge>)}
           <p style={{ color: COLORS.muted }} className="text-xs">{totalCartas} carta{totalCartas === 1 ? "" : "s"}</p>
         </div>
 
-        {exceso.length > 0 && (
-          <div style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55`, color: COLORS.gold }} className="rounded-lg p-3 mb-4 text-xs">
-            ⚠️ Un mazo oficial de Pokémon TCG permite máximo 4 copias de una carta que no sea Energía Básica — revisa: {exceso.map((mc) => mc.nombre).join(", ")}.
+        {avisos.map((aviso, i) => (
+          <div key={i} style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55`, color: COLORS.gold }} className="rounded-lg p-3 mb-3 text-xs">
+            ⚠️ {aviso}
           </div>
-        )}
+        ))}
 
         <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-2 text-sm uppercase">Agregar carta</p>
-        <div className="mb-6"><CardPicker onSelect={agregarCarta} /></div>
+        <div className="mb-6"><CardPickerUniversal tcg={actual.tcg || "pokemon"} onSelect={agregarCarta} /></div>
         {guardandoCarta && <p style={{ color: COLORS.muted }} className="text-xs mb-4">Guardando...</p>}
 
         {actual.mazo_cartas.length === 0 ? (
@@ -4554,7 +5489,7 @@ function MazosView({ session, perfil, onIrAPlanes }) {
                   <div className="flex items-center justify-between gap-1 mt-auto pt-1">
                     <button onClick={() => cambiarCantidad(mc, -1)} style={{ background: COLORS.surface2, color: COLORS.text }} className="w-6 h-6 rounded-md text-sm font-bold">−</button>
                     <span style={{ fontFamily: "'Space Mono', monospace" }} className="text-sm font-semibold">{mc.cantidad}</span>
-                    <button onClick={() => cambiarCantidad(mc, 1)} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="w-6 h-6 rounded-md text-sm font-bold">+</button>
+                    <button onClick={() => cambiarCantidad(mc, 1)} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="w-6 h-6 rounded-md text-sm font-bold">+</button>
                   </div>
                 </div>
               </div>
@@ -4572,25 +5507,45 @@ function MazosView({ session, perfil, onIrAPlanes }) {
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Arma tus mazos con un selector visual de cartas: elige la cantidad de cada una y ponles nombre y etiquetas.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
-      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-8 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-8 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+        <select value={tcgNuevo} onChange={(e) => setTcgNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
         <input placeholder="Nombre del mazo (ej. Charizard ex)" value={nombreNuevo} onChange={(e) => setNombreNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
         <input placeholder="Etiquetas (ej. Estándar, Torneo)" value={etiquetasNuevo} onChange={(e) => setEtiquetasNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-        <button onClick={crearMazo} disabled={creando || !nombreNuevo.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+        <button onClick={crearMazo} disabled={creando || !nombreNuevo.trim()} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
           {creando ? "Creando..." : "+ Nuevo mazo"}
         </button>
       </div>
 
+      {mazos.length > 0 && (
+        <div className="flex gap-2 flex-wrap mb-4">
+          {[{ key: "todos", label: "Todos" }, ...TCG_OPCIONES].map((o) => (
+            <button key={o.key} onClick={() => setTcgFiltroMazos(o.key)}
+              style={{ background: tcgFiltroMazos === o.key ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${tcgFiltroMazos === o.key ? COLORS.azulPalido : COLORS.surface2}`, color: tcgFiltroMazos === o.key ? COLORS.azulPalido : COLORS.muted }}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {mazos.length === 0 ? (
         <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Todavía no tienes mazos. Crea el primero arriba.</p>
+      ) : mazos.filter((m) => tcgFiltroMazos === "todos" || (m.tcg || "pokemon") === tcgFiltroMazos).length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">No tienes mazos de {TCG_LABEL[tcgFiltroMazos] || tcgFiltroMazos} todavía.</p>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {mazos.map((m) => {
+          {mazos.filter((m) => tcgFiltroMazos === "todos" || (m.tcg || "pokemon") === tcgFiltroMazos).map((m) => {
             const total = (m.mazo_cartas || []).reduce((s, mc) => s + mc.cantidad, 0);
             return (
               <div key={m.id} onClick={() => setMazoAbierto(m.id)}
                 style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
                 className="rounded-xl p-4 cursor-pointer transition-transform duration-200 hover:-translate-y-1">
-                <p className="font-semibold mb-1">{m.nombre}</p>
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <p className="font-semibold">{m.nombre}</p>
+                  <Badge color={COLORS.azulClaro}>{TCG_LABEL[m.tcg] || "Pokémon"}</Badge>
+                </div>
                 <div className="flex items-center gap-1 flex-wrap mb-2">
                   {(m.etiquetas || []).map((e) => <Badge key={e} color={COLORS.violeta}>{e}</Badge>)}
                 </div>
@@ -4668,7 +5623,7 @@ function SiguiendoView({ session, onVerPerfil, onVerTienda }) {
         }
         let tiendaIds = [];
         if (tiendas.length) {
-          const filasT = await sb(`tiendas?select=id,nombre,perfil_id,perfiles(avatar_url)&perfil_id=in.(${tiendas.join(",")})`);
+          const filasT = await sb(`tiendas?select=id,nombre,perfil_id,perfiles!perfil_id(avatar_url)&perfil_id=in.(${tiendas.join(",")})`);
           tiendaIds = filasT;
         }
         const idsSoloTiendas = tiendaIds.map((t) => t.id);
@@ -4770,17 +5725,9 @@ function AparienciaView({ perfil, onCambio, onIrAPlanes }) {
   const [modo, setModo] = useState(() => localStorage.getItem(TEMA_MODO_KEY) || "noche");
   const [tipo, setTipo] = useState(() => localStorage.getItem(TEMA_TIPO_KEY) || "default");
 
-  if (!info.redesExtra) {
-    return (
-      <div>
-        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">🎨 Apariencia</h2>
-        <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
-          Elige entre modo día y modo noche, y desde Amatista también puedes cambiar los colores de la página según tipos de Pokémon.
-        </UpsellCard>
-      </div>
-    );
-  }
-
+  // Modo día/noche es gratis para todos los planes (ya no exclusivo Zafiro+)
+  // -- es cosmético y no le quita empuje real a los planes de pago. Solo el
+  // color según tipo de Pokémon (más abajo) se queda exclusivo Amatista+.
   const cambiarModo = (nuevo) => {
     setModo(nuevo);
     localStorage.setItem(TEMA_MODO_KEY, nuevo);
@@ -4922,7 +5869,7 @@ function ComprasVentasView({ session }) {
                 {tab === "compras" && v.estado === "pendiente" && (
                   <>
                     <button onClick={() => resolver(v.id, "confirmada")} disabled={procesando === v.id}
-                      style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap">
+                      style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap">
                       {procesando === v.id ? "..." : "Confirmar compra"}
                     </button>
                     <button onClick={() => resolver(v.id, "rechazada")} disabled={procesando === v.id}
@@ -4987,7 +5934,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
         const tareas = [];
         if (p.tipo === "individual" && vis.publicaciones !== false) {
           tareas.push(
-            sb(`mercado_listings?select=*&perfil_id=eq.${perfilId}&order=created_at.desc`).then((filas) => {
+            sb(`mercado_listings?select=*,buzon_tienda:buzon_tienda_id(nombre)&perfil_id=eq.${perfilId}&order=created_at.desc`).then((filas) => {
               setCartas(filas.filter((f) => f.tipo !== "sellado"));
               setSellado(filas.filter((f) => f.tipo === "sellado"));
             })
@@ -5123,12 +6070,18 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
           )}
         </div>
 
-        {perfil.tipo === "individual" && (perfil.instagram || perfil.whatsapp || perfil.facebook) && (
+        {perfil.tipo === "individual" && (perfil.instagram || perfil.telefono || perfil.whatsapp || perfil.facebook) && (
           <div className="flex gap-2 mt-4 flex-wrap">
             {perfil.instagram && (
               <a href={perfil.instagram} target="_blank" rel="noreferrer"
                 style={{ border: `1px solid ${COLORS.azulMedio}88`, color: COLORS.azulMedio }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
                 Instagram <ExternalLink size={12} />
+              </a>
+            )}
+            {perfil.telefono && (
+              <a href={`tel:${perfil.telefono.replace(/\s+/g, "")}`}
+                style={{ border: `1px solid ${COLORS.azulClaro}88`, color: COLORS.azulClaro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                <Phone size={12} /> {perfil.telefono}
               </a>
             )}
             {perfil.whatsapp && (
@@ -5164,7 +6117,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
                 {[...cartas, ...sellado].map((r) => (
                   <div key={r.id} onClick={() => onAbrirDetalle?.(r.id, "mercado_listings")} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}`, cursor: onAbrirDetalle ? "pointer" : "default" }} className="rounded-xl overflow-hidden flex flex-col">
                     <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
-                      {(r.foto_real_url || r.imagen_url) ? <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
+                      {miniaturaListing(r) ? <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
                     </div>
                     <div className="p-2">
                       <div className="flex items-center gap-1 flex-wrap mb-1">
@@ -5172,6 +6125,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
                         {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                         {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
                         {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
+                        <BuzonBadge tienda={r.buzon_tienda} />
                         <BoostBadge item={r} />
                       </div>
                       <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
@@ -5184,7 +6138,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
           ),
           wishlist: vis.wishlist !== false && wishlist.length > 0 && (
             <div key="wishlist" className="mb-8">
-              <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">Wishlist</h3>
+              <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">Lista de deseos</h3>
               <div className="grid gap-2">
                 {wishlist.map((a) => (
                   <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3">
@@ -5231,7 +6185,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
 // a una sola forma para que CartaDetalleView no tenga que saber de dónde vino.
 async function cargarDetalleListing(tabla, id) {
   if (tabla === "mercado_listings") {
-    const rows = await sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&id=eq.${id}`);
+    const rows = await sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&id=eq.${id}`);
     const r = rows[0];
     if (!r) return null;
     return {
@@ -5239,13 +6193,15 @@ async function cargarDetalleListing(tabla, id) {
       nombre: r.carta, setNombre: r.set_nombre, tipo: r.tipo, condicion: r.condicion, idioma: r.idioma,
       gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.zona,
-      imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
+      imagen: miniaturaListing(r), fotoRealFrente: r.foto_real_url || null, fotoRealReverso: r.foto_real_reverso_url || null,
+      cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
+      buzonTienda: r.buzon_tienda || null, descripcion: r.descripcion || null, etiquetas: r.etiquetas || [],
       vendedor: { perfilId: r.perfil_id, nombre: r.perfiles?.nombre || "Usuario", avatarUrl: r.perfiles?.avatar_url, whatsapp: r.perfiles?.whatsapp, facebook: r.perfiles?.facebook, perfil: r.perfiles, esTienda: false },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""}`,
     };
   }
   if (tabla === "inventario_tienda") {
-    const rows = await sb(`inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
+    const rows = await sb(`inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
     const r = rows[0];
     if (!r) return null;
     return {
@@ -5253,13 +6209,14 @@ async function cargarDetalleListing(tabla, id) {
       nombre: r.carta, setNombre: r.set_nombre, tipo: "carta", condicion: r.condicion, idioma: r.idioma,
       gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
-      imagen: r.foto_real_url || r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
+      imagen: miniaturaListing(r), fotoRealFrente: r.foto_real_url || null, fotoRealReverso: r.foto_real_reverso_url || null,
+      cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
       vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""} en ${r.tiendas?.nombre}`,
     };
   }
   if (tabla === "sellado_tienda") {
-    const rows = await sb(`sellado_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
+    const rows = await sb(`sellado_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
     const r = rows[0];
     if (!r) return null;
     return {
@@ -5324,7 +6281,7 @@ function OfertasPanel({ session, listingTabla, listingId }) {
             style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
           <div className="flex gap-2 items-center flex-wrap">
             <input type="number" placeholder="Tu oferta en $ (opcional)" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[140px]" />
-            <button onClick={publicar} disabled={enviando || (!texto.trim() && !monto)} style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+            <button onClick={publicar} disabled={enviando || (!texto.trim() && !monto)} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
               {enviando ? "Enviando..." : "Publicar"}
             </button>
           </div>
@@ -5364,7 +6321,7 @@ function OfertasPanel({ session, listingTabla, listingId }) {
 // pokemontcg.io), vendedor, botón de contacto y comentarios/ofertas. Se
 // llega por click en cualquier tarjeta o por un link compartido
 // (?listing=<id>&tabla=<tabla>, ver abrirDetalle en el componente raíz).
-function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerfil }) {
+function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerfil, onAgregarCarrito, enCarrito }) {
   const [item, setItem] = useState(undefined); // undefined = cargando, null = no encontrada
   const [precioVivo, setPrecioVivo] = useState(null);
   const [cargandoPrecio, setCargandoPrecio] = useState(false);
@@ -5378,8 +6335,8 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
   useEffect(() => {
     if (!item?.cardApiId) return;
     setCargandoPrecio(true);
-    obtenerPrecioRefActual(item.cardApiId).then(setPrecioVivo).finally(() => setCargandoPrecio(false));
-  }, [item?.cardApiId]);
+    obtenerPrecioRefActualPorTcg(item.tcg, item.cardApiId).then(setPrecioVivo).finally(() => setCargandoPrecio(false));
+  }, [item?.cardApiId, item?.tcg]);
 
   const volver = (
     <button onClick={onVolver} style={{ color: COLORS.azulPalido }} className="flex items-center gap-1 text-sm mb-4">
@@ -5396,46 +6353,77 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
     <div>
       {volver}
       <div className="grid sm:grid-cols-[minmax(0,340px)_1fr] gap-6">
-        <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4 sm:sticky sm:top-24 self-start">
-          {item.imagen ? (
-            <img src={item.imagen} alt={item.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-          ) : (
-            <Package size={64} color={COLORS.muted} />
+        <div className="grid gap-3 sm:sticky sm:top-24 self-start">
+          <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
+            {item.imagen ? (
+              <img src={item.imagen} alt={item.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            ) : (
+              <Package size={64} color={COLORS.muted} />
+            )}
+          </div>
+          {(item.fotoRealFrente || item.fotoRealReverso) && (
+            <div className="grid grid-cols-2 gap-3">
+              {item.fotoRealFrente && (
+                <div>
+                  <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
+                    <img src={item.fotoRealFrente} alt={`${item.nombre} (foto real, frente)`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  </div>
+                  <p style={{ color: COLORS.muted }} className="text-xs text-center mt-1">Foto real (frente)</p>
+                </div>
+              )}
+              {item.fotoRealReverso && (
+                <div>
+                  <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
+                    <img src={item.fotoRealReverso} alt={`${item.nombre} (foto real, atrás)`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  </div>
+                  <p style={{ color: COLORS.muted }} className="text-xs text-center mt-1">Foto real (atrás)</p>
+                </div>
+              )}
+            </div>
           )}
         </div>
         <div>
           <div className="flex items-center gap-2 flex-wrap mb-2">
-            <Badge color={item.tipo === "sellado" ? COLORS.azulMedio : item.vendedor.esTienda ? COLORS.azulPalido : COLORS.azulClaro}>
-              {item.tipo === "sellado" ? "Sellado" : item.vendedor.esTienda ? "Tienda" : "Vendedor individual"}
+            <Badge color={item.tipo === "sellado" ? COLORS.azulMedio : item.tipo === "accesorio" ? COLORS.gold : item.vendedor.esTienda ? COLORS.azulPalido : COLORS.azulClaro}>
+              {item.tipo === "sellado" ? "Sellado" : item.tipo === "accesorio" ? "Accesorio" : item.vendedor.esTienda ? "Tienda" : "Vendedor individual"}
             </Badge>
-            <IdiomaBadge idioma={item.idioma} />
-            <EstadoCartaBadge condicion={item.condicion} />
-            <GradeoBadge gradeada={item.gradeada} grado_empresa={item.gradoEmpresa} grado_empresa_otro={item.gradoEmpresaOtro} grado_calificacion={item.gradoCalificacion} />
+            {item.tipo === "carta" && <IdiomaBadge idioma={item.idioma} />}
+            {item.tipo === "carta" && <EstadoCartaBadge condicion={item.condicion} />}
+            {item.tipo === "carta" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.gradoEmpresa} grado_empresa_otro={item.gradoEmpresaOtro} grado_calificacion={item.gradoCalificacion} />}
+            <BuzonBadge tienda={item.buzonTienda} />
           </div>
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold mb-1">{item.nombre}</h2>
           {item.setNombre && <p style={{ color: COLORS.muted }} className="text-sm mb-4">{item.setNombre}</p>}
+          {item.tipo === "accesorio" && item.descripcion && <p style={{ color: COLORS.text }} className="text-sm mb-3 whitespace-pre-line">{item.descripcion}</p>}
+          {item.tipo === "accesorio" && item.etiquetas?.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-4">
+              {item.etiquetas.map((et) => <Badge key={et} color={COLORS.muted}>#{et}</Badge>)}
+            </div>
+          )}
 
           <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4">
             <PrecioConOferta precio={item.precio} precioAntes={item.precioAntes} size="lg" />
             {item.cantidad > 1 && <p style={{ color: COLORS.muted }} className="text-xs mt-1">{item.cantidad} disponibles</p>}
-            <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="mt-3 pt-3">
-              <p style={{ color: COLORS.muted }} className="text-xs uppercase font-semibold mb-1">Precio de referencia en el mercado</p>
-              {cargandoPrecio ? (
-                <p style={{ color: COLORS.muted }} className="text-xs">Consultando TCGplayer / Cardmarket...</p>
-              ) : precioVivo?.precioRefMxn ? (
-                <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-lg font-bold">~${precioVivo.precioRefMxn.toLocaleString("es-MX")} MXN</p>
-              ) : item.precioRefGuardado ? (
-                <p style={{ color: COLORS.muted }} className="text-sm">~${Number(item.precioRefGuardado).toLocaleString("es-MX")} MXN <span className="text-xs">(guardado al publicar)</span></p>
-              ) : (
-                <p style={{ color: COLORS.muted }} className="text-xs">Sin precio de referencia disponible para esta carta.</p>
-              )}
-              {(precioVivo?.tcgplayerUrl || precioVivo?.cardmarketUrl) && (
-                <div className="flex gap-3 mt-1">
-                  {precioVivo.tcgplayerUrl && <a href={precioVivo.tcgplayerUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulClaro }} className="text-xs flex items-center gap-1">TCGplayer <ExternalLink size={10} /></a>}
-                  {precioVivo.cardmarketUrl && <a href={precioVivo.cardmarketUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulClaro }} className="text-xs flex items-center gap-1">Cardmarket <ExternalLink size={10} /></a>}
-                </div>
-              )}
-            </div>
+            {item.tipo !== "accesorio" && (
+              <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="mt-3 pt-3">
+                <p style={{ color: COLORS.muted }} className="text-xs uppercase font-semibold mb-1">Precio de referencia en el mercado</p>
+                {cargandoPrecio ? (
+                  <p style={{ color: COLORS.muted }} className="text-xs">Consultando TCGplayer / Cardmarket...</p>
+                ) : precioVivo?.precioRefMxn ? (
+                  <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-lg font-bold">~${precioVivo.precioRefMxn.toLocaleString("es-MX")} MXN</p>
+                ) : item.precioRefGuardado ? (
+                  <p style={{ color: COLORS.muted }} className="text-sm">~${Number(item.precioRefGuardado).toLocaleString("es-MX")} MXN <span className="text-xs">(guardado al publicar)</span></p>
+                ) : (
+                  <p style={{ color: COLORS.muted }} className="text-xs">Sin precio de referencia disponible para esta carta.</p>
+                )}
+                {(precioVivo?.tcgplayerUrl || precioVivo?.cardmarketUrl) && (
+                  <div className="flex gap-3 mt-1">
+                    {precioVivo.tcgplayerUrl && <a href={precioVivo.tcgplayerUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulClaro }} className="text-xs flex items-center gap-1">TCGplayer <ExternalLink size={10} /></a>}
+                    {precioVivo.cardmarketUrl && <a href={precioVivo.cardmarketUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulClaro }} className="text-xs flex items-center gap-1">Cardmarket <ExternalLink size={10} /></a>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <button onClick={() => onVerPerfil(item.vendedor.perfilId)} disabled={!item.vendedor.perfilId}
@@ -5452,13 +6440,22 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
           </button>
 
           {!esMio && (
-            <button
-              onClick={() => onAbrirChat(item.vendedor.perfilId, item.vendedor.nombre, item.contexto, item.vendedor.whatsapp, item.vendedor.facebook, item.vendedor.avatarUrl)}
-              disabled={!item.vendedor.perfilId}
-              style={{ background: COLORS.azulClaro, color: COLORS.bg, opacity: item.vendedor.perfilId ? 1 : 0.5 }}
-              className="rounded-xl py-3 text-sm font-bold w-full flex items-center justify-center gap-2 mb-8">
-              <MessageCircle size={16} /> Contactar vendedor
-            </button>
+            <div className="grid grid-cols-[1fr_auto] gap-2 mb-8">
+              <button
+                onClick={() => onAbrirChat(item.vendedor.perfilId, item.vendedor.nombre, item.contexto, item.vendedor.whatsapp, item.vendedor.facebook, item.vendedor.avatarUrl)}
+                disabled={!item.vendedor.perfilId}
+                style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: item.vendedor.perfilId ? 1 : 0.5 }}
+                className="rounded-xl py-3 text-sm font-bold w-full flex items-center justify-center gap-2">
+                <MessageCircle size={16} /> Contactar vendedor
+              </button>
+              <button
+                onClick={() => onAgregarCarrito({ tabla, id, nombre: item.nombre, precio: item.precio, imagen_url: item.imagen, contexto: item.contexto, vendedorId: item.vendedor.perfilId, vendedorNombre: item.vendedor.nombre, vendedorAvatar: item.vendedor.avatarUrl, vendedorWhatsapp: item.vendedor.whatsapp, vendedorFacebook: item.vendedor.facebook })}
+                disabled={!item.vendedor.perfilId || enCarrito}
+                style={{ background: COLORS.surface2, color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: item.vendedor.perfilId ? 1 : 0.5 }}
+                className="rounded-xl px-4 text-sm font-bold flex items-center justify-center gap-2">
+                {enCarrito ? <Check size={16} /> : <ShoppingCart size={16} />}
+              </button>
+            </div>
           )}
 
           <OfertasPanel session={session} listingTabla={tabla} listingId={id} />
@@ -5480,7 +6477,7 @@ function TorneosView({ session, onRequireLogin }) {
     setLoading(true); setError(null);
     const ahora = new Date().toISOString();
     Promise.all([
-      sb(`torneos?select=*,tiendas(nombre,direccion,lat,lng,perfiles(avatar_url))&fecha=gte.${ahora}&order=fecha.asc`, session),
+      sb(`torneos?select=*,tiendas(nombre,direccion,lat,lng,perfiles!perfil_id(avatar_url))&fecha=gte.${ahora}&order=fecha.asc`, session),
       sb(`torneo_interes?select=torneo_id`, session),
       session ? sb(`torneo_interes?select=torneo_id&perfil_id=eq.${session.user.id}`, session) : Promise.resolve([]),
     ])
@@ -5546,7 +6543,7 @@ function TorneosView({ session, onRequireLogin }) {
               {t.costo != null && <p style={{ color: COLORS.muted }} className="text-xs mt-1">Costo: ${Number(t.costo).toLocaleString("es-MX")} MXN</p>}
               <div className="flex items-center gap-3 mt-3">
                 <button onClick={() => toggleInteres(t.id)} disabled={marcando === t.id}
-                  style={{ background: interesado ? COLORS.azulPalido : "transparent", border: `1px solid ${COLORS.azul}66`, color: interesado ? COLORS.bg : COLORS.azulPalido }}
+                  style={{ background: interesado ? COLORS.azulPalido : "transparent", border: `1px solid ${COLORS.azul}66`, color: interesado ? COLORS.textoOscuro : COLORS.azulPalido }}
                   className="rounded-lg px-4 py-1.5 text-xs font-semibold">
                   {interesado ? "✓ Me interesa" : "Me interesa"}
                 </button>
@@ -5613,7 +6610,7 @@ function CalendarioPicker({ value, onChange }) {
                   <button key={i} type="button" disabled={esPasado} onClick={() => elegir(d)}
                     style={{
                       background: esSeleccionado ? COLORS.azulPalido : "transparent",
-                      color: esSeleccionado ? COLORS.bg : esPasado ? COLORS.muted : COLORS.text,
+                      color: esSeleccionado ? COLORS.textoOscuro : esPasado ? COLORS.muted : COLORS.text,
                       opacity: esPasado ? 0.35 : 1,
                     }}
                     className="rounded-lg py-1.5 text-xs">
@@ -5696,7 +6693,7 @@ function CrearTorneo({ session, tiendaId }) {
           <input type="number" placeholder="Costo de inscripción (opcional)" value={costo} onChange={(e) => setCosto(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
         </div>
         <button onClick={crear} disabled={enviando || !nombre.trim() || !fechaDia || !fechaHora}
-          style={{ background: COLORS.azulClaro, color: COLORS.bg }} className="rounded-lg py-2 text-sm font-semibold">
+          style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
           {enviando ? "Publicando..." : "Publicar torneo"}
         </button>
       </div>
@@ -5745,6 +6742,27 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
   const vacio = { tcg: "pokemon", carta: "", precio_max: "", zona: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null };
   const [nueva, setNueva] = useState(vacio);
 
+  // "Mi Wishlist" (tabla wishlist, cartas marcadas "quiero" desde el Catálogo)
+  // es gratis para cualquiera con sesión -- distinto de las alertas de precio
+  // con push de más abajo, que siguen siendo exclusivas Amatista+.
+  const [misDeseos, setMisDeseos] = useState([]);
+  const [loadingDeseos, setLoadingDeseos] = useState(true);
+
+  const cargarDeseos = () => {
+    setLoadingDeseos(true);
+    sb(`wishlist?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
+      .then(setMisDeseos)
+      .catch(() => setMisDeseos([]))
+      .finally(() => setLoadingDeseos(false));
+  };
+
+  useEffect(() => { cargarDeseos(); }, []);
+
+  const borrarDeseo = async (id) => {
+    setMisDeseos((prev) => prev.filter((d) => d.id !== id));
+    try { await sbWrite("DELETE", `wishlist?id=eq.${id}`, {}, session); } catch (e) { setError(e.message); }
+  };
+
   const cargar = () => {
     setLoading(true); setError(null);
     sb(`alertas?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
@@ -5754,17 +6772,6 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
   };
 
   useEffect(() => { if (info.wishlistPremium) cargar(); }, []);
-
-  if (!info.wishlistPremium) {
-    return (
-      <div>
-        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">Wishlist Premium</h2>
-        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
-          Configura alertas como "avísame si sale Charizard a menos de $500" y recibe una notificación push apenas alguien lo publique.
-        </UpsellCard>
-      </div>
-    );
-  }
 
   const agregar = async () => {
     if (!nueva.carta.trim()) return;
@@ -5803,10 +6810,37 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Wishlist Premium</h2>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Te avisamos apenas alguien publique lo que buscas.</p>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Lista de deseos</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Cartas que marcaste como "quiero" en el Catálogo, y tus alertas de precio.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Mi lista de deseos</h3>
+      {loadingDeseos ? <Loading label="Cargando tu wishlist..." /> : (
+        <div className="grid gap-2 mb-8">
+          {misDeseos.length === 0 && (
+            <p style={{ color: COLORS.muted }} className="text-sm">
+              Aún no has marcado ninguna carta como "quiero". Hazlo desde el Catálogo para verla aquí.
+            </p>
+          )}
+          {misDeseos.map((d) => (
+            <div key={d.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
+              <div className="flex-1 min-w-[140px]">
+                <p className="font-medium text-sm">{d.carta}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">{TCG_LABEL[d.tcg] || d.tcg}</p>
+              </div>
+              <button onClick={() => borrarDeseo(d.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Alertas de precio con notificación push</h3>
+      {!info.wishlistPremium ? (
+        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
+          Configura alertas como "avísame si sale Charizard a menos de $500" y recibe una notificación push apenas alguien lo publique.
+        </UpsellCard>
+      ) : (
+        <>
       {!pushOk && (
         <div style={{ background: `${COLORS.azulMedio}11`, border: `1px solid ${COLORS.azulMedio}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
           <p className="text-sm">Activa las notificaciones push en este navegador para recibir tus alertas.</p>
@@ -5826,44 +6860,22 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
             className="px-3 py-1.5 rounded-full text-sm font-semibold">Producto sellado</button>
         </div>
 
-        {tipo === "carta" ? (
-          <>
-            <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
-              <option value="pokemon">Pokémon</option><option value="yugioh">Yu-Gi-Oh!</option><option value="lorcana">Lorcana</option><option value="magic">Magic</option><option value="onepiece">One Piece</option>
-            </select>
-            {nueva.tcg === "pokemon" ? (
+        <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+        <div>
+          <CardPickerUniversal tcg={nueva.tcg} soloSellado={tipo === "sellado"} onSelect={(c) => setNueva({ ...nueva, carta: c.name, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_max: nueva.precio_max || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+          {nueva.card_api_id && (
+            <div className="flex items-center gap-3 mt-2">
+              {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
               <div>
-                <CardPicker onSelect={(c) => setNueva({ ...nueva, carta: c.name, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_max: nueva.precio_max || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
-                {nueva.card_api_id && (
-                  <div className="flex items-center gap-3 mt-2">
-                    {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
-                    <div>
-                      <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
-                      {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-                      <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
-                    </div>
-                  </div>
-                )}
+                <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
+                {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
               </div>
-            ) : (
-              <input placeholder="Nombre de la carta" value={nueva.carta} onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
-            )}
-          </>
-        ) : (
-          <div>
-            <SealedPicker onSelect={(p) => setNueva({ ...nueva, carta: p.producto, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio_max: nueva.precio_max || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
-            {nueva.card_api_id && (
-              <div className="flex items-center gap-3 mt-2">
-                {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
-                <div>
-                  <Badge color={COLORS.azulClaro}>{nueva.carta}</Badge>
-                  {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-                  <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
         <div className="grid sm:grid-cols-2 gap-2">
           <input placeholder="Precio máximo (MXN)" type="number" value={nueva.precio_max} onChange={(e) => setNueva({ ...nueva, precio_max: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
@@ -5896,6 +6908,8 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
             </div>
           ))}
         </div>
+      )}
+        </>
       )}
     </div>
   );
@@ -6061,7 +7075,7 @@ function MisPagosPanel({ session }) {
 
 const SECCIONES_PERFIL_LABEL = {
   publicaciones: "Mis cartas y producto sellado en venta",
-  wishlist: "Mi Wishlist",
+  wishlist: "Mi lista de deseos",
   carpetas: "Mis carpetas",
 };
 const SECCIONES_PERFIL_ORDEN_DEFAULT = ["publicaciones", "wishlist", "carpetas"];
@@ -6238,7 +7252,7 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil
             <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-1">Qué se ve en tu perfil público</p>
             {[
               { key: "publicaciones", label: "Mis cartas y producto sellado en venta" },
-              { key: "wishlist", label: "Mi Wishlist" },
+              { key: "wishlist", label: "Mi lista de deseos" },
               { key: "favoritos", label: "Mis Pokémon favoritos" },
               { key: "carpetas", label: "Mis carpetas" },
             ].map((op) => (
@@ -6296,7 +7310,7 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil
             </p>
           )}
 
-          <button onClick={guardar} disabled={saving || !nombre.trim()} style={{ background: COLORS.azulPalido, color: COLORS.bg, opacity: saving ? 0.6 : 1 }} className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
+          <button onClick={guardar} disabled={saving || !nombre.trim()} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: saving ? 0.6 : 1 }} className="rounded-lg py-2 font-semibold mt-1 flex items-center justify-center gap-2">
             {saving && <Loader2 size={16} className="animate-spin" />} Guardar cambios
           </button>
         </div>
@@ -6504,7 +7518,7 @@ function NotificationBell({ session, onNavigate }) {
       <button ref={btnRef} onClick={abrir} style={{ color: COLORS.muted }} className="relative p-2 rounded-lg">
         <Bell size={18} />
         {noLeidas > 0 && (
-          <span style={{ background: COLORS.azulPalido, color: COLORS.bg }}
+          <span style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }}
             className="absolute -top-1 -right-1 rounded-full text-[10px] font-bold w-4 h-4 flex items-center justify-center">
             {noLeidas > 9 ? "9+" : noLeidas}
           </span>
@@ -6523,7 +7537,7 @@ function NotificationBell({ session, onNavigate }) {
               el portal, ya no comparten el mismo contexto de apilamiento. */}
           <div
             style={{
-              background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33`,
+              background: COLORS.surface2, color: COLORS.text, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 24px ${COLORS.azulMedio}33`,
               position: "fixed", top: pos.top, left: pos.left, width: pos.ancho,
             }}
             className="rounded-xl overflow-hidden z-[91]"
@@ -6561,7 +7575,17 @@ function NotificationBell({ session, onNavigate }) {
   );
 }
 
-function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil, onVerTutorial, onLogout, onLogin, onClose }) {
+// Menú lateral: todo lo que no cupo en el encabezado, organizado en pestañas
+// claras (Vender / Comunidad / Mi cuenta / Ayuda) en vez de una lista larga
+// sin agrupar -- así nadie tiene que hacer scroll adivinando dónde está algo.
+// El perfil (editar/cerrar sesión) queda fuera de las pestañas, siempre
+// visible abajo, porque no pertenece a ninguna categoría de navegación.
+function Drawer({ session, perfil, grupos, view, onNavigate, onEditarPerfil, onVerTutorial, onLogout, onLogin, onClose }) {
+  const [tabActiva, setTabActiva] = useState(
+    () => grupos.find((g) => g.items.some((it) => it.id === view))?.id || grupos[0]?.id
+  );
+  const grupo = grupos.find((g) => g.id === tabActiva) || grupos[0];
+
   const renglon = (id, label, Icon, onClick) => (
     <button
       key={id}
@@ -6576,9 +7600,9 @@ function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil
   return (
     <div className="fixed inset-0 z-50">
       <div style={{ background: "#00000099" }} className="absolute inset-0" onClick={onClose} />
-      <div style={{ background: COLORS.surface, borderLeft: `1px solid ${COLORS.azulMedio}66` }}
-        className="absolute right-0 top-0 bottom-0 w-72 max-w-[85vw] overflow-y-auto">
-        <div className="flex items-center justify-between p-4" style={{ borderBottom: `1px solid ${COLORS.surface2}` }}>
+      <div style={{ background: COLORS.surface, color: COLORS.text, borderLeft: `1px solid ${COLORS.azulMedio}66` }}
+        className="absolute right-0 top-0 bottom-0 w-80 max-w-[85vw] overflow-y-auto flex flex-col">
+        <div className="flex items-center justify-between p-4 shrink-0" style={{ borderBottom: `1px solid ${COLORS.surface2}` }}>
           {session ? (
             <div className="flex items-center gap-2 min-w-0">
               <AvatarImg url={perfil?.avatar_url} size={36} />
@@ -6593,17 +7617,36 @@ function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil
           <button onClick={onClose} style={{ color: COLORS.muted }}><X size={20} /></button>
         </div>
 
-        <div className="py-2">
-          {secundarios.map((item) => renglon(item.id, item.label, item.icon, () => onNavigate(item.id)))}
+        <div className="flex gap-1.5 p-3 flex-wrap shrink-0" style={{ borderBottom: `1px solid ${COLORS.surface2}` }}>
+          {grupos.map((g) => {
+            const GIcon = g.icon;
+            const activa = g.id === tabActiva;
+            return (
+              <button key={g.id} onClick={() => setTabActiva(g.id)}
+                style={{ background: activa ? COLORS.surface2 : "transparent", border: `1px solid ${activa ? COLORS.azulPalido : COLORS.surface2}`, color: activa ? COLORS.azulPalido : COLORS.muted }}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap">
+                <GIcon size={13} /> {g.label}
+              </button>
+            );
+          })}
         </div>
 
-        <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="py-2">
-          <button onClick={onVerTutorial} style={{ color: COLORS.text }} className="flex items-center gap-3 w-full text-left px-4 py-3 text-sm font-medium hover:brightness-125">
-            <Sparkles size={18} /> Ver tutorial
-          </button>
+        <div className="py-2 flex-1">
+          {grupo.items.length === 0 ? (
+            <div className="px-4 py-8 text-center">
+              <p style={{ color: COLORS.muted }} className="text-sm mb-4">Inicia sesión para ver esta sección.</p>
+              <button onClick={onLogin} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-bold">
+                Iniciar sesión / Crear cuenta
+              </button>
+            </div>
+          ) : (
+            grupo.items.map((item) =>
+              renglon(item.id, item.label, item.icon, item.accion === "tutorial" ? onVerTutorial : () => onNavigate(item.id))
+            )
+          )}
         </div>
 
-        <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="py-2">
+        <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="py-2 shrink-0">
           {session ? (
             <>
               {renglon("editarPerfil", "Editar perfil", User, onEditarPerfil)}
@@ -6612,7 +7655,7 @@ function Drawer({ session, perfil, secundarios, view, onNavigate, onEditarPerfil
               </button>
             </>
           ) : (
-            <button onClick={onLogin} style={{ background: COLORS.azulPalido, color: COLORS.bg }} className="mx-4 rounded-lg px-4 py-2 text-sm font-bold w-[calc(100%-2rem)]">
+            <button onClick={onLogin} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="mx-4 rounded-lg px-4 py-2 text-sm font-bold w-[calc(100%-2rem)]">
               Iniciar sesión / Crear cuenta
             </button>
           )}
@@ -6694,7 +7737,7 @@ function BackgroundField() {
           background: `radial-gradient(60% 50% at 15% 8%, rgba(79,127,209,.28), transparent 60%),
             radial-gradient(50% 45% at 85% 15%, rgba(139,92,246,.16), transparent 60%),
             radial-gradient(70% 60% at 50% 95%, rgba(255,211,77,.08), transparent 60%),
-            linear-gradient(180deg, ${COLORS.bg} 0%, ${COLORS.surface} 45%, #070c1c 100%)`,
+            linear-gradient(180deg, ${COLORS.bg} 0%, ${COLORS.surface} 45%, ${COLORS.fondoProfundo} 100%)`,
         }}
       />
       <div
@@ -6737,14 +7780,22 @@ const formatoDistancia = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.
 // encuentren una publicación sin importar el orden: cada palabra debe aparecer
 // en el nombre de la carta O en su set_nombre (que ya guarda cosas como
 // "Journey Together 016/159"), sin exigir que toda la frase esté en un solo campo.
-function filtroPalabrasCartaOSet(texto) {
+function filtroPalabrasCartaOSet(texto, campoExtra) {
   const palabras = (texto || "")
     .trim()
     .split(/\s+/)
     .map((w) => w.replace(/^#/, ""))
     .filter(Boolean);
   if (!palabras.length) return "";
-  const grupos = palabras.map((w) => `or(carta.ilike.*${encodeURIComponent(w)}*,set_nombre.ilike.*${encodeURIComponent(w)}*)`);
+  const grupos = palabras.map((w) => {
+    const valor = encodeURIComponent(pgValor(`*${w}*`));
+    const campos = [`carta.ilike.${valor}`, `set_nombre.ilike.${valor}`];
+    // etiquetas_texto: para que un accesorio (mercado_listings.tipo="accesorio")
+    // aparezca al buscar una palabra clave (ej. "sylveon") aunque no sea el
+    // nombre del producto ni exista como carta — ver migración 046.
+    if (campoExtra) campos.push(`${campoExtra}.ilike.${valor}`);
+    return `or(${campos.join(",")})`;
+  });
   return `and=(${grupos.join(",")})`;
 }
 
@@ -6783,16 +7834,505 @@ async function crearConSlugUnico(tabla, datosBase, nombreParaSlug, session, fall
     try {
       return await sbWrite("POST", tabla, { ...datosBase, slug }, session);
     } catch (e) {
-      if (!/duplicate key|already exists/i.test(e.message || "") || intento === 20) throw e;
+      if (e.code !== "23505" || intento === 20) throw e;
     }
   }
+}
+
+// ---- Carrito: agrupa lo agregado por vendedor y manda un solo mensaje por
+// vendedor (con la lista de lo que le interesa) en vez de chatear uno por uno. ----
+function CarritoView({ carrito, onQuitar, onRequireLogin, onEnviado, session }) {
+  const [mensaje, setMensaje] = useState("Hola, me interesa lo siguiente que tienes publicado, ¿sigue disponible?");
+  const [enviando, setEnviando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [error, setError] = useState(null);
+
+  if (!session) {
+    return (
+      <div className="text-center py-16">
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">Inicia sesión para usar el carrito.</p>
+        <button onClick={onRequireLogin} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">Iniciar sesión</button>
+      </div>
+    );
+  }
+
+  if (resultado) {
+    return <p style={{ color: COLORS.azulPalido }} className="text-sm text-center py-16">{resultado}</p>;
+  }
+
+  if (carrito.length === 0) {
+    return <p style={{ color: COLORS.muted }} className="text-center py-16 text-sm">Tu carrito está vacío. Agrega cartas o producto sellado desde Buscar, Mercado o el directorio de tiendas con el botón 🛒.</p>;
+  }
+
+  const grupos = {};
+  for (const it of carrito) {
+    const key = it.vendedorId || "sin-vendedor";
+    if (!grupos[key]) grupos[key] = { vendedorId: it.vendedorId, nombre: it.vendedorNombre, avatar: it.vendedorAvatar, whatsapp: it.vendedorWhatsapp, facebook: it.vendedorFacebook, items: [] };
+    grupos[key].items.push(it);
+  }
+  const listaGrupos = Object.values(grupos);
+  const total = carrito.reduce((s, it) => s + Number(it.precio || 0), 0);
+
+  const enviarATodos = async () => {
+    if (!mensaje.trim()) return;
+    setEnviando(true); setError(null);
+    try {
+      for (const g of listaGrupos) {
+        if (!g.vendedorId) continue;
+        const listado = g.items.map((it) => `• ${it.nombre}${it.precio ? ` — $${Number(it.precio).toLocaleString("es-MX")}` : ""}`).join("\n");
+        await sbWrite("POST", "mensajes", {
+          de_perfil_id: session.user.id,
+          para_perfil_id: g.vendedorId,
+          texto: `${mensaje.trim()}\n\n${listado}`,
+          contexto: "Carrito",
+          listing_id: g.items[0].tabla === "mercado_listings" ? g.items[0].id : null,
+        }, session);
+      }
+      setResultado(`Listo: mandamos tu mensaje a ${listaGrupos.length} vendedor${listaGrupos.length === 1 ? "" : "es"}.`);
+      onEnviado();
+    } catch (e) { setError(e.message); } finally { setEnviando(false); }
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🛒 Carrito</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+        Un mensaje por vendedor, con todo lo que te interesa de él, en vez de escribirle uno por uno.
+      </p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div className="grid gap-4 mb-6">
+        {listaGrupos.map((g) => (
+          <div key={g.vendedorId || "sin-vendedor"} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <AvatarImg url={g.avatar} size={24} />
+              <p className="text-sm font-semibold">{g.nombre || "Vendedor"}</p>
+            </div>
+            <div className="grid gap-1">
+              {g.items.map((it) => (
+                <div key={`${it.tabla}-${it.id}`} className="flex items-center justify-between gap-2 text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 32, height: 44, objectFit: "contain" }} />}
+                    <p className="truncate">{it.nombre}</p>
+                  </div>
+                  <div className="flex items-center gap-2 whitespace-nowrap">
+                    {it.precio != null && <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulPalido }}>${Number(it.precio).toLocaleString("es-MX")}</p>}
+                    <button onClick={() => onQuitar(it.tabla, it.id)} style={{ color: "#C24444" }}><X size={14} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p style={{ color: COLORS.muted }} className="text-sm mb-3">
+        Total aproximado: <span style={{ color: COLORS.gold, fontFamily: "'Space Mono', monospace" }}>${total.toLocaleString("es-MX")}</span>
+      </p>
+      <textarea value={mensaje} onChange={(e) => setMensaje(e.target.value)} rows={3}
+        style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }}
+        className="rounded-lg px-3 py-2 text-sm w-full outline-none mb-3" placeholder="Escribe tu mensaje..." />
+      <button onClick={enviarATodos} disabled={enviando || !mensaje.trim()}
+        style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: enviando ? 0.6 : 1 }}
+        className="rounded-lg py-2.5 px-4 text-sm font-semibold flex items-center gap-2">
+        {enviando && <Loader2 size={16} className="animate-spin" />} Enviar mensaje a {listaGrupos.length} vendedor{listaGrupos.length === 1 ? "" : "es"}
+      </button>
+    </div>
+  );
+}
+
+// ---- Catálogo: era > set > cartas, con marcado Tengo/Quiero (Amatista+).
+// Navega en 3 niveles con el mismo state (eraSel/setSel null = nivel
+// anterior) en vez de un router — mismo patrón que el resto de la app
+// (view/selectedX en el componente raíz). One Piece no usa
+// obtenerErasYSetsCatalogo (no tiene buscador de texto libre todavía, ver
+// TCG_CON_CATALOGO) — sus sets salen de TCGCSV, igual que TCGplayerPicker.
+function CatalogoView({ session, perfil, onIrAPlanes }) {
+  const info = planDe(perfil);
+  const [tcgSel, setTcgSel] = useState("pokemon");
+  const [eras, setEras] = useState([]);
+  const [loadingEras, setLoadingEras] = useState(true);
+  const [eraSel, setEraSel] = useState(null);
+  const [setSel, setSetSel] = useState(null);
+  const [cartas, setCartas] = useState([]);
+  const [loadingCartas, setLoadingCartas] = useState(false);
+  const [categoriaIdOP, setCategoriaIdOP] = useState(null);
+  const [coleccion, setColeccion] = useState({}); // card_api_id -> "tengo" | "quiero"
+  const [error, setError] = useState(null);
+  const [modo, setModo] = useState("explorar"); // explorar | masterSets
+  const [volverAMasterSets, setVolverAMasterSets] = useState(false);
+  const [misMazosTcg, setMisMazosTcg] = useState([]);
+  const [mazoDestino, setMazoDestino] = useState("");
+  const [agregandoMazoId, setAgregandoMazoId] = useState(null);
+  const [misTengoSets, setMisTengoSets] = useState({}); // set_nombre -> cantidad marcada "tengo"
+
+  useEffect(() => {
+    setEraSel(null); setSetSel(null); setCartas([]); setError(null);
+    setLoadingEras(true);
+    (async () => {
+      if (tcgSel === "onepiece") {
+        const catId = await categoriaIdTCGplayer("onepiece");
+        setCategoriaIdOP(catId);
+        if (!catId) { setEras([]); setLoadingEras(false); return; }
+        try {
+          const res = await fetch(`/api/tcgcsv?path=tcgplayer/${catId}/groups`);
+          const data = await res.json();
+          const sets = (data.results || [])
+            .slice()
+            .sort((a, b) => (b.publishedOn || "").localeCompare(a.publishedOn || ""))
+            .map((g) => ({ id: g.groupId, nombre: g.name, cardCount: null, imagen: null }));
+          setEras([{ era: null, sets }]);
+        } catch { setEras([]); }
+        setLoadingEras(false);
+        return;
+      }
+      try {
+        setEras(await obtenerErasYSetsCatalogo(tcgSel));
+      } catch {
+        setEras([]);
+      } finally {
+        setLoadingEras(false);
+      }
+    })();
+  }, [tcgSel]);
+
+  useEffect(() => {
+    if (!session) { setColeccion({}); return; }
+    sb(`coleccion_usuario?select=card_api_id,estado&perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}`, session)
+      .then((rows) => setColeccion(Object.fromEntries(rows.map((r) => [r.card_api_id, r.estado]))))
+      .catch(() => setColeccion({}));
+  }, [tcgSel, session]);
+
+  // Mazos de este TCG (para poder agregar una carta del catálogo directo a uno) —
+  // Deck Builder es Amatista+ (info.mazoBuilder), igual que en "Armar mazo".
+  useEffect(() => {
+    if (!session || !info.mazoBuilder) { setMisMazosTcg([]); setMazoDestino(""); return; }
+    sb(`mazos?select=id,nombre&perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}&order=nombre.asc`, session)
+      .then((rows) => { setMisMazosTcg(rows); setMazoDestino((prev) => (rows.some((r) => r.id === prev) ? prev : (rows[0]?.id || ""))); })
+      .catch(() => setMisMazosTcg([]));
+  }, [tcgSel, session, info.mazoBuilder]);
+
+  // Master Sets: cuántas cartas de cada set ya marcaste como "tengo".
+  useEffect(() => {
+    if (!session || !info.wishlistPremium) { setMisTengoSets({}); return; }
+    sb(`coleccion_usuario?select=set_nombre&perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}&estado=eq.tengo`, session)
+      .then((rows) => {
+        const conteo = {};
+        for (const r of rows) { if (!r.set_nombre) continue; conteo[r.set_nombre] = (conteo[r.set_nombre] || 0) + 1; }
+        setMisTengoSets(conteo);
+      })
+      .catch(() => setMisTengoSets({}));
+  }, [tcgSel, session, info.wishlistPremium]);
+
+  const agregarAMazo = async (carta) => {
+    if (!mazoDestino || !session) return;
+    setAgregandoMazoId(carta.id);
+    try {
+      const existentes = await sb(`mazo_cartas?select=id,cantidad&mazo_id=eq.${mazoDestino}&card_api_id=eq.${encodeURIComponent(carta.id)}`, session);
+      if (existentes[0]) {
+        await sbWrite("PATCH", `mazo_cartas?id=eq.${existentes[0].id}`, { cantidad: existentes[0].cantidad + 1 }, session);
+      } else {
+        await sbWrite("POST", "mazo_cartas", { mazo_id: mazoDestino, nombre: carta.name, set_nombre: setSel?.nombre || null, card_api_id: carta.id, imagen_url: carta.image, cantidad: 1 }, session);
+      }
+    } catch (e) { setError(e.message); } finally { setAgregandoMazoId(null); }
+  };
+
+  const abrirSetDesdeMasterSets = (s) => {
+    const eraDelSet = eras.find((g) => g.sets.some((x) => x.id === s.id))?.era;
+    setEraSel(eraDelSet ?? null);
+    setModo("explorar");
+    setVolverAMasterSets(true);
+    abrirSet(s);
+  };
+
+  const abrirSet = async (set) => {
+    setSetSel(set); setLoadingCartas(true); setCartas([]); setError(null);
+    try {
+      if (tcgSel === "onepiece") {
+        const [dataProd, dataPrecios] = await Promise.all([
+          fetch(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/products`).then((r) => r.json()),
+          fetch(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/prices`).then((r) => r.json()),
+        ]);
+        const productos = (dataProd.results || []).filter(looksLikeCard);
+        const precios = dataPrecios.results || [];
+        setCartas(productos.map((p) => {
+          const precioInfo = precios.find((x) => x.productId === p.productId && x.marketPrice);
+          return {
+            id: `tcgcsv-${p.productId}`, name: p.name, localId: "", image: p.imageUrl || null,
+            precioRefMxn: precioInfo ? Math.round(precioInfo.marketPrice * USD_TO_MXN) : null,
+          };
+        }));
+      } else {
+        setCartas(await obtenerCartasDeSetCatalogo(tcgSel, set.id));
+      }
+    } catch (e) { setError(e.message); } finally { setLoadingCartas(false); }
+  };
+
+  const marcar = async (carta, estado) => {
+    if (!session) { onIrAPlanes?.(); return; }
+    // "Quiero" (wishlist básica) es gratis para todos los que tengan sesión;
+    // "Tengo" (para llevar el progreso real en Master Sets) sigue exclusivo
+    // Amatista+, ver info.wishlistPremium.
+    if (estado === "tengo" && !info.wishlistPremium) { onIrAPlanes?.(); return; }
+    const actual = coleccion[carta.id];
+    const nuevoEstado = actual === estado ? null : estado;
+    setColeccion((prev) => {
+      const n = { ...prev };
+      if (nuevoEstado) n[carta.id] = nuevoEstado; else delete n[carta.id];
+      return n;
+    });
+    try {
+      if (actual) {
+        await sbWrite("DELETE", `coleccion_usuario?perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}&card_api_id=eq.${encodeURIComponent(carta.id)}`, {}, session);
+      }
+      if (nuevoEstado) {
+        await sbWrite("POST", "coleccion_usuario", {
+          perfil_id: session.user.id, tcg: tcgSel, card_api_id: carta.id, carta: carta.name,
+          set_nombre: setSel?.nombre || null, imagen_url: carta.image || null, estado: nuevoEstado,
+        }, session);
+        if (nuevoEstado === "quiero") {
+          const existe = await sb(`wishlist?select=id&perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}&carta=eq.${encodeURIComponent(carta.name)}`, session);
+          if (!existe.length) await sbWrite("POST", "wishlist", { perfil_id: session.user.id, tcg: tcgSel, carta: carta.name }, session);
+        }
+      }
+    } catch (e) { setError(e.message); }
+  };
+
+  const grupoUnico = eras.length === 1 && eras[0].era === null ? eras[0] : null;
+  const tengoCount = cartas.filter((c) => coleccion[c.id] === "tengo").length;
+  const quieroCount = cartas.filter((c) => coleccion[c.id] === "quiero").length;
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">📚 Catálogo</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+        Paso 1: elige el juego. Paso 2: elige una era y un set. Paso 3: marca cada carta con ✅ Tengo o ⭐ Quiero.
+      </p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 1 · Elige el juego</p>
+      <div className="flex gap-2 flex-wrap mb-6">
+        {TCG_OPCIONES.map((o) => (
+          <button key={o.key} onClick={() => setTcgSel(o.key)}
+            style={{ background: tcgSel === o.key ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${tcgSel === o.key ? COLORS.azulPalido : COLORS.surface2}`, color: tcgSel === o.key ? COLORS.azulPalido : COLORS.muted }}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      {!info.wishlistPremium && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+          <p style={{ color: COLORS.muted }} className="text-sm">🔒 Marcar ✅ "Tengo" (y ver tu progreso en "Mi progreso por set") es exclusivo del plan Amatista en adelante — marcar ⭐ "Quiero" ya es gratis para todos.</p>
+          <button onClick={onIrAPlanes} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">Ver planes</button>
+        </div>
+      )}
+
+      {info.wishlistPremium && (
+        <div className="mb-6">
+          <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">¿Qué quieres hacer?</p>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => { setModo("explorar"); setVolverAMasterSets(false); }}
+              style={{ background: modo === "explorar" ? COLORS.surface2 : "transparent", border: `1px solid ${modo === "explorar" ? COLORS.azulPalido : COLORS.surface2}`, color: modo === "explorar" ? COLORS.azulPalido : COLORS.muted }}
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-left">
+              📖 Ver cartas y marcar<br />
+              <span style={{ color: COLORS.muted, fontWeight: 400 }} className="text-xs">Buscar un set y marcar Tengo/Quiero</span>
+            </button>
+            <button onClick={() => { setModo("masterSets"); setVolverAMasterSets(false); setSetSel(null); setCartas([]); }}
+              style={{ background: modo === "masterSets" ? COLORS.surface2 : "transparent", border: `1px solid ${modo === "masterSets" ? COLORS.azulPalido : COLORS.surface2}`, color: modo === "masterSets" ? COLORS.azulPalido : COLORS.muted }}
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-left">
+              🏆 Mi progreso por set<br />
+              <span style={{ color: COLORS.muted, fontWeight: 400 }} className="text-xs">Ver qué tan completa tienes cada colección</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {modo === "masterSets" && info.wishlistPremium && (
+        <div className="grid gap-3">
+          <p style={{ color: COLORS.muted }} className="text-sm -mt-2 mb-1">Qué tan completa tienes cada colección, según las cartas que marcaste ✅ Tengo.</p>
+          {loadingEras && <Loading label="Cargando sets..." />}
+          {!loadingEras && eras.flatMap((g) => g.sets).length === 0 && (
+            <p style={{ color: COLORS.muted }} className="text-sm">No pudimos cargar los sets de {TCG_LABEL[tcgSel]} en este momento.</p>
+          )}
+          {!loadingEras && eras.flatMap((g) => g.sets).map((s) => {
+            const tengo = misTengoSets[s.nombre] || 0;
+            const total = s.cardCount || null;
+            const pct = total ? Math.min(100, Math.round((tengo / total) * 100)) : null;
+            return (
+              <div key={s.id} style={{ background: COLORS.surface, border: `1px solid ${pct === 100 ? COLORS.gold + "88" : COLORS.surface2}` }} className="rounded-xl p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                  <div className="flex items-center gap-2">
+                    {s.imagen && <img src={s.imagen} alt="" style={{ maxHeight: 28, maxWidth: 70, objectFit: "contain" }} />}
+                    <p className="font-semibold text-sm">{s.nombre}</p>
+                  </div>
+                  <button onClick={() => abrirSetDesdeMasterSets(s)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="text-xs px-3 py-1.5 rounded-lg">Ver cartas</button>
+                </div>
+                {total ? (
+                  <>
+                    <div style={{ background: COLORS.surface2, height: 8, borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: pct === 100 ? COLORS.gold : COLORS.azulPalido }} />
+                    </div>
+                    <p style={{ color: COLORS.muted }} className="text-xs mt-1">{tengo} / {total} cartas ({pct}%){pct === 100 ? " 🏆 ¡Completo!" : ""}</p>
+                  </>
+                ) : (
+                  <p style={{ color: COLORS.muted }} className="text-xs">{tengo} carta{tengo === 1 ? "" : "s"} marcada{tengo === 1 ? "" : "s"} como "tengo" (el total de este set no está disponible).</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {modo === "explorar" && !grupoUnico && (eraSel || setSel) && (
+        <div className="flex items-center gap-1 flex-wrap text-xs mb-4" style={{ color: COLORS.muted }}>
+          <span>📍</span>
+          <button onClick={() => { setEraSel(null); setSetSel(null); setCartas([]); }} style={{ color: COLORS.azulPalido }} className="hover:underline">{TCG_LABEL[tcgSel]}</button>
+          <span>›</span>
+          <button onClick={() => { setSetSel(null); setCartas([]); }} style={{ color: setSel ? COLORS.azulPalido : COLORS.text }} className={setSel ? "hover:underline" : "font-semibold"}>{eraSel}</button>
+          {setSel && (<><span>›</span><span style={{ color: COLORS.text }} className="font-semibold">{setSel.nombre}</span></>)}
+        </div>
+      )}
+
+      {modo === "explorar" && loadingEras && <Loading label="Cargando sets..." />}
+
+      {modo === "explorar" && !loadingEras && !setSel && (
+        <>
+          {!grupoUnico && !eraSel && (
+            <div>
+              <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 2 · Elige una era (agrupa varios sets de esa etapa del juego)</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {eras.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">No pudimos cargar el catálogo de {TCG_LABEL[tcgSel]} en este momento.</p>}
+                {eras.map((g) => (
+                  <button key={g.era} onClick={() => setEraSel(g.era)}
+                    style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                    className="rounded-xl p-4 text-left hover:brightness-125 flex items-center gap-3">
+                    {g.imagen && <img src={g.imagen} alt="" style={{ maxHeight: 36, maxWidth: 90, objectFit: "contain" }} />}
+                    <div>
+                      <p className="font-semibold">{g.era}</p>
+                      <p style={{ color: COLORS.muted }} className="text-xs">{g.sets.length} set{g.sets.length === 1 ? "" : "s"}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(grupoUnico || eraSel) && (
+            <div>
+              <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 2 · Elige un set</p>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {(grupoUnico || eras.find((g) => g.era === eraSel))?.sets.map((s) => (
+                  <button key={s.id} onClick={() => abrirSet(s)}
+                    style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                    className="rounded-xl p-4 text-left hover:brightness-125 flex items-center gap-3">
+                    {s.imagen && <img src={s.imagen} alt="" style={{ maxHeight: 32, maxWidth: 80, objectFit: "contain" }} />}
+                    <div>
+                      <p className="font-semibold text-sm">{s.nombre}</p>
+                      {s.cardCount && <p style={{ color: COLORS.muted }} className="text-xs">{s.cardCount} cartas</p>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {modo === "explorar" && setSel && (
+        <div>
+          <button
+            onClick={() => {
+              setSetSel(null); setCartas([]);
+              if (volverAMasterSets) { setModo("masterSets"); setVolverAMasterSets(false); }
+            }}
+            style={{ color: COLORS.muted }} className="text-xs mb-3 flex items-center gap-1">
+            <ChevronLeft size={14} /> {volverAMasterSets ? "Volver a Mi progreso" : "Volver a todos los sets"}
+          </button>
+          <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 3 · Marca cada carta</p>
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+            <h3 className="font-semibold">{setSel.nombre}</h3>
+            {session && info.wishlistPremium && cartas.length > 0 && (
+              <p style={{ color: COLORS.muted }} className="text-xs">✅ Tengo: {tengoCount} · ⭐ Quiero: {quieroCount} de {cartas.length}</p>
+            )}
+          </div>
+
+          {info.mazoBuilder && (
+            misMazosTcg.length > 0 ? (
+              <div className="flex items-center gap-2 flex-wrap mb-4">
+                <p style={{ color: COLORS.muted }} className="text-xs">🧩 Agregar cartas al mazo:</p>
+                <select value={mazoDestino} onChange={(e) => setMazoDestino(e.target.value)} style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-1.5 text-xs">
+                  {misMazosTcg.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                </select>
+              </div>
+            ) : (
+              <p style={{ color: COLORS.muted }} className="text-xs mb-4">Crea un mazo de {TCG_LABEL[tcgSel]} en "Armar mazo" para poder agregar cartas directo desde aquí.</p>
+            )
+          )}
+
+          {loadingCartas && <Loading label="Cargando cartas..." />}
+          {!loadingCartas && !error && cartas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin cartas para este set.</p>}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {cartas.map((c) => {
+              const estado = coleccion[c.id];
+              return (
+                <div key={c.id} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estado === "tengo" ? "#2E8B5766" : estado === "quiero" ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}` }} className="rounded-xl overflow-hidden flex flex-col">
+                  <div style={{ background: COLORS.surface2 }} className="aspect-[3/4] flex items-center justify-center p-2">
+                    {c.image ? <img src={c.image} alt={c.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={32} color={COLORS.muted} />}
+                  </div>
+                  <div className="p-2 flex flex-col gap-1">
+                    <p className="text-xs font-semibold leading-snug line-clamp-2">{c.name}{c.localId ? ` (${c.localId})` : ""}</p>
+                    {c.precioRefMxn ? (
+                      <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-xs font-bold">~${c.precioRefMxn.toLocaleString("es-MX")} MXN</p>
+                    ) : (
+                      <p style={{ color: COLORS.muted }} className="text-xs">Sin precio de referencia</p>
+                    )}
+                    <div className="flex gap-1">
+                      <button onClick={() => marcar(c, "tengo")}
+                        style={{ background: estado === "tengo" ? "#2E8B57" : "transparent", border: "1px solid #2E8B5788", color: estado === "tengo" ? "#fff" : "#2E8B57" }}
+                        className="flex-1 rounded-lg py-1 text-[11px] font-semibold">
+                        ✅ Tengo
+                      </button>
+                      <button onClick={() => marcar(c, "quiero")}
+                        style={{ background: estado === "quiero" ? COLORS.azulPalido : "transparent", border: `1px solid ${COLORS.azulPalido}88`, color: estado === "quiero" ? COLORS.textoOscuro : COLORS.azulPalido }}
+                        className="flex-1 rounded-lg py-1 text-[11px] font-semibold">
+                        ⭐ Quiero
+                      </button>
+                    </div>
+                    {info.mazoBuilder && misMazosTcg.length > 0 && (
+                      <button onClick={() => agregarAMazo(c)} disabled={agregandoMazoId === c.id}
+                        style={{ border: `1px solid ${COLORS.violeta}88`, color: COLORS.violeta }}
+                        className="rounded-lg py-1 text-[11px] font-semibold flex items-center justify-center gap-1">
+                        <Layers size={11} /> {agregandoMazoId === c.id ? "Agregando..." : "Agregar a mazo"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function EncuentraCartas() {
   const [view, setView] = useState("search");
   const [query, setQuery] = useState("");
+  // Qué TCG le interesa ver (botón en el inicio): se guarda solo en este
+  // dispositivo (localStorage), igual que el tema — no requiere sesión ni
+  // columna nueva en la base de datos. "todos" no filtra nada.
+  const [tcgFiltro, setTcgFiltro] = useState(() => localStorage.getItem("ec_tcg_filtro") || "todos");
+  useEffect(() => { localStorage.setItem("ec_tcg_filtro", tcgFiltro); }, [tcgFiltro]);
+  const pasaFiltroTcg = (item) => tcgFiltro === "todos" || item.tcg === tcgFiltro;
   const [session, setSession] = useState(null);
   const [perfil, setPerfil] = useState(null);
+  // Se pone en true cuando ya terminamos de buscar/crear el perfil de la sesión
+  // actual — así distinguimos "todavía cargando" de "de verdad no tiene perfil"
+  // (este segundo caso pasa tras un login social nuevo) sin mostrar el modal
+  // de completar registro de más.
+  const [perfilChecked, setPerfilChecked] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showEditarPerfil, setShowEditarPerfil] = useState(false);
   const [logoError, setLogoError] = useState(false);
@@ -6804,6 +8344,24 @@ export default function EncuentraCartas() {
     const s = localStorage.getItem("ec_session_admin_stash");
     return s ? JSON.parse(s) : null;
   });
+
+  // ---- Carrito: guarda las cartas/sellado que alguien quiere pedir, para
+  // luego mandar un solo mensaje a cada vendedor en vez de uno por uno. Vive
+  // solo en este dispositivo (localStorage), como el tema o el filtro de TCG —
+  // no necesita sincronizarse entre dispositivos ni sobrevivir en el servidor.
+  const [carrito, setCarrito] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ec_carrito") || "[]"); } catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem("ec_carrito", JSON.stringify(carrito)); }, [carrito]);
+
+  const enElCarrito = (tabla, id) => carrito.some((it) => it.tabla === tabla && it.id === id);
+
+  const agregarAlCarrito = (item) => {
+    if (!session) { setShowAccountModal(true); return; }
+    setCarrito((prev) => (prev.some((it) => it.tabla === item.tabla && it.id === item.id) ? prev : [...prev, item]));
+  };
+
+  const quitarDelCarrito = (tabla, id) => setCarrito((prev) => prev.filter((it) => !(it.tabla === tabla && it.id === id)));
 
   // Cuando sb()/sbWrite() renuevan la sesión sola (el token expiró), nos enteramos aquí.
   useEffect(() => {
@@ -6841,6 +8399,22 @@ export default function EncuentraCartas() {
     }
   }, []);
 
+  // Si venimos de vuelta de un login social (Google/Facebook), Supabase nos
+  // regresa aquí con los tokens en el fragmento de la URL en vez de una sesión
+  // guardada. Los leemos una sola vez (leerSesionDeUrl limpia el hash).
+  useEffect(() => {
+    const tokens = leerSesionDeUrl();
+    if (!tokens) return;
+    obtenerUsuarioDeToken(tokens.access_token)
+      .then((user) => {
+        const s = { access_token: tokens.access_token, refresh_token: tokens.refresh_token, user };
+        localStorage.setItem("ec_session", JSON.stringify(s));
+        setSession(s);
+        cargarOCrearPerfil(s);
+      })
+      .catch(() => {});
+  }, []);
+
   // Tutorial de bienvenida: se muestra una sola vez, la primera vez que alguien
   // abre la web (con o sin cuenta); se puede volver a ver desde el menú lateral.
   useEffect(() => {
@@ -6860,6 +8434,7 @@ export default function EncuentraCartas() {
           id: s.user.id,
           tipo: s.user.user_metadata.tipo,
           nombre: s.user.user_metadata.nombre,
+          telefono: s.user.user_metadata.telefono || null,
           whatsapp: s.user.user_metadata.whatsapp || null,
           facebook: s.user.user_metadata.facebook || null,
           avatar_url: s.user.user_metadata.avatar_url || randomPokemonAvatar(),
@@ -6870,6 +8445,8 @@ export default function EncuentraCartas() {
       setPerfil(p || null);
     } catch {
       setPerfil(null);
+    } finally {
+      setPerfilChecked(true);
     }
   };
 
@@ -6886,6 +8463,7 @@ export default function EncuentraCartas() {
     setAdminStash(null);
     setSession(null);
     setPerfil(null);
+    setPerfilChecked(false);
   };
 
   // Un admin puede "entrar" a un sub-perfil que administra (ver AdminPanel > Sub-perfiles):
@@ -6913,6 +8491,25 @@ export default function EncuentraCartas() {
   const [loadingTiendas, setLoadingTiendas] = useState(true);
   const [errorTiendas, setErrorTiendas] = useState(null);
 
+  // Qué TCG vende cada tienda (a partir de su inventario/sellado real), para
+  // poder filtrar el Directorio por TCG igual que Buscar/Mercado.
+  const [tiendasTcgMap, setTiendasTcgMap] = useState({});
+  useEffect(() => {
+    Promise.all([
+      sb("inventario_tienda?select=tienda_id,tcg").catch(() => []),
+      // sellado_tienda.tcg es columna nueva (migración 044) — si todavía no se
+      // corrió, esta consulta falla sola sin tumbar el mapa de inventario.
+      sb("sellado_tienda?select=tienda_id,tcg").catch(() => []),
+    ]).then(([inv, sel]) => {
+      const mapa = {};
+      [...inv, ...sel].forEach((r) => {
+        if (!mapa[r.tienda_id]) mapa[r.tienda_id] = new Set();
+        mapa[r.tienda_id].add(r.tcg);
+      });
+      setTiendasTcgMap(mapa);
+    }).catch(() => {});
+  }, []);
+
   // ---- Directorio: filtro por zona + tienda más cercana (Zafiro+) ----
   const [filtroZona, setFiltroZona] = useState("");
   const [ubicacionUsuario, setUbicacionUsuario] = useState(null); // { lat, lng }
@@ -6936,6 +8533,7 @@ export default function EncuentraCartas() {
   }));
   const tiendasFiltradas = tiendasConDistancia
     .filter((t) => !filtroZona || t.zona === filtroZona)
+    .filter((t) => tcgFiltro === "todos" || tiendasTcgMap[t.id]?.has(tcgFiltro))
     .sort((a, b) => {
       if (!ubicacionUsuario) return 0;
       if (a._distanciaKm == null && b._distanciaKm == null) return 0;
@@ -6964,6 +8562,7 @@ export default function EncuentraCartas() {
 
   const [market, setMarket] = useState([]);
   const [loadingMarket, setLoadingMarket] = useState(false);
+  const [tipoMercadoTab, setTipoMercadoTab] = useState("todos"); // todos | carta | sellado | accesorio
   const [news, setNews] = useState([]);
   const [loadingNews, setLoadingNews] = useState(false);
   const [inicioTienda, setInicioTienda] = useState([]);
@@ -6972,7 +8571,7 @@ export default function EncuentraCartas() {
   // Carga inicial: lista de tiendas reales
   useEffect(() => {
     setLoadingTiendas(true);
-    sb("tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&order=nombre.asc")
+    sb("tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&order=nombre.asc")
       .then(setTiendas)
       .catch((e) => setErrorTiendas(e.message))
       .finally(() => setLoadingTiendas(false));
@@ -6984,15 +8583,19 @@ export default function EncuentraCartas() {
       setSearchResults({ tiendas: [], mercado: [], sellado: [] });
       return;
     }
-    const q = encodeURIComponent(query.trim());
+    const q = encodeURIComponent(pgValor(`*${query.trim()}*`));
     const filtroCartaSet = filtroPalabrasCartaOSet(query);
+    // mercado_listings también incluye accesorios (tipo="accesorio") — se buscan
+    // además por sus etiquetas_texto, para que "sylveon" encuentre un accesorio
+    // con esa palabra clave aunque no sea una carta (ver migración 046).
+    const filtroMercado = filtroPalabrasCartaOSet(query, "etiquetas_texto");
     setSearching(true);
     setSearchError(null);
     const t = setTimeout(() => {
       Promise.all([
-        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&${filtroCartaSet}&order=precio.asc`),
-        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&${filtroCartaSet}&order=precio.asc`),
-        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles(plan,plan_vence,avatar_url))&producto=ilike.*${q}*&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&${filtroCartaSet}&order=precio.asc`),
+        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&${filtroMercado}&order=precio.asc`),
+        sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&producto=ilike.${q}&order=precio.asc`),
       ])
         .then(([inv, merc, sel]) => setSearchResults({ tiendas: conBoostPrimero(inv), mercado: conBoostPrimero(merc), sellado: conBoostPrimero(sel) }))
         .catch((e) => { setSearchResults({ tiendas: [], mercado: [], sellado: [] }); setSearchError(e.message); })
@@ -7006,15 +8609,15 @@ export default function EncuentraCartas() {
     const necesitaVitrina = view === "search" && !query.trim();
     if ((view === "market" || necesitaVitrina) && market.length === 0) {
       setLoadingMarket(true);
-      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url)&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
+      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
     }
     if ((view === "news" || necesitaVitrina) && news.length === 0) {
       setLoadingNews(true);
-      sb("noticias?select=*,tiendas(nombre,perfiles(avatar_url))&publicado=eq.true&order=fecha_publicacion.desc").then(setNews).finally(() => setLoadingNews(false));
+      sb("noticias?select=*,tiendas(nombre,perfiles!perfil_id(avatar_url))&publicado=eq.true&order=fecha_publicacion.desc").then(setNews).finally(() => setLoadingNews(false));
     }
     if (necesitaVitrina && inicioTienda.length === 0) {
       setLoadingInicio(true);
-      sb("inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles(plan,plan_vence,avatar_url))&order=created_at.desc&limit=10")
+      sb("inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&order=created_at.desc&limit=10")
         .then((rows) => setInicioTienda(conBoostPrimero(rows)))
         .finally(() => setLoadingInicio(false));
     }
@@ -7181,41 +8784,71 @@ export default function EncuentraCartas() {
         .then((rows) => { if (rows[0]) verPerfil(rows[0].id); })
         .catch(() => {});
     } else if (tiendaSlug) {
-      sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
+      sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
         .then((rows) => { if (rows[0]) openStore(rows[0]); })
         .catch(() => {});
     }
   }, []);
 
   const verTiendaDesdePerfil = (tiendaId) => {
-    sb(`tiendas?select=*,perfiles(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at)&id=eq.${tiendaId}`)
+    sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&id=eq.${tiendaId}`)
       .then((rows) => { if (rows[0]) openStore(rows[0]); });
   };
 
-  // Esenciales: siempre visibles, en cualquier tamaño de pantalla.
+  // Esenciales: siempre visibles arriba, máximo 5 para no saturar el
+  // encabezado -- las mismas 4 para cualquier persona (comprar es lo que
+  // hace todo el mundo) más "Mensajes" si ya inició sesión. Todo lo demás
+  // vive en el menú lateral, organizado por pestañas (ver navGrupos) para
+  // que siga siendo fácil de encontrar sin ocupar espacio arriba.
   const navEsenciales = [
     { id: "search", label: "Buscar", icon: Search },
-    { id: "directory", label: "Tiendas", icon: Store },
     { id: "market", label: "Mercado", icon: ShoppingBag },
+    { id: "directory", label: "Tiendas", icon: Store },
+    { id: "catalogo", label: "Catálogo", icon: BookOpen },
     ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
   ];
-  // Secundarios: en escritorio se ven inline; en celular viven en el menú lateral.
-  const navSecundarios = [
-    { id: "news", label: "Anuncios y noticias", icon: Megaphone },
-    { id: "torneos", label: "Torneos", icon: Calendar },
-    { id: "armarMazo", label: "Armar mazo", icon: Layers },
-    { id: "comunidad", label: "Comunidad", icon: Newspaper },
-    ...(session ? [{ id: "alertas", label: "Wishlist", icon: Sparkles }] : []),
-    ...(session ? [{ id: "siguiendo", label: "Siguiendo", icon: User }] : []),
-    ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
-    ...(session ? [{ id: "recompensas", label: "Recompensas", icon: Sparkles }] : []),
-    ...(session ? [{ id: "apariencia", label: "Apariencia", icon: Palette }] : []),
-    { id: "planes", label: "Planes", icon: Shield },
-    ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
-    ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
-    ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: ShoppingBag }] : []),
-    { id: "ayuda", label: "Ayuda", icon: HelpCircle },
-    ...(perfil?.es_admin ? [{ id: "admin", label: "Admin", icon: Shield }] : []),
+  // El resto vive en el menú lateral (Drawer), agrupado en pestañas claras
+  // (ver Drawer) para que nada se sienta "perdido" ni sature al usuario:
+  // "Vender" (acciones de vendedor), "Comunidad" (torneos, mazos, noticias),
+  // "Mi cuenta" (beneficios de plan) y "Ayuda". El perfil (editar/cerrar
+  // sesión) se queda fuera de las pestañas, siempre visible abajo del todo.
+  const navGrupos = [
+    {
+      id: "vender", label: "Vender", icon: Tag,
+      items: [
+        ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
+        ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: Tag }] : []),
+        ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
+      ],
+    },
+    {
+      id: "comunidad", label: "Comunidad", icon: Newspaper,
+      items: [
+        { id: "torneos", label: "Torneos", icon: Calendar },
+        { id: "armarMazo", label: "Armar mazo", icon: Layers },
+        { id: "comunidad", label: "Comunidad", icon: Newspaper },
+        { id: "news", label: "Noticias", icon: Megaphone },
+        ...(session ? [{ id: "siguiendo", label: "Tiendas que sigo", icon: User }] : []),
+      ],
+    },
+    {
+      id: "cuenta", label: "Mi cuenta", icon: Sparkles,
+      items: [
+        ...(session ? [{ id: "alertas", label: "Lista de deseos", icon: Sparkles }] : []),
+        ...(session ? [{ id: "recompensas", label: "Recompensas", icon: Sparkles }] : []),
+        ...(session ? [{ id: "apariencia", label: "Apariencia", icon: Palette }] : []),
+        ...(session ? [{ id: "misPagos", label: "Mis pagos", icon: Receipt }] : []),
+        { id: "planes", label: "Planes y precios", icon: Shield },
+      ],
+    },
+    {
+      id: "ayuda", label: "Ayuda", icon: HelpCircle,
+      items: [
+        { id: "ayuda", label: "Centro de ayuda", icon: HelpCircle },
+        { id: "tutorial", label: "Ver el tutorial de bienvenida", icon: Sparkles, accion: "tutorial" },
+        ...(perfil?.es_admin ? [{ id: "admin", label: "Admin", icon: Shield }] : []),
+      ],
+    },
   ];
   const navButton = (item) => {
     const Icon = item.icon;
@@ -7223,8 +8856,8 @@ export default function EncuentraCartas() {
     return (
       <button key={item.id} onClick={() => setView(item.id)}
         style={{ background: active ? COLORS.surface2 : "transparent", border: `1px solid ${active ? COLORS.azulPalido : COLORS.surface2}`, color: active ? COLORS.azulPalido : COLORS.muted }}
-        className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
-        <Icon size={15} /> <span className="hidden sm:inline">{item.label}</span>
+        className="px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 whitespace-nowrap">
+        <Icon size={15} /> <span>{item.label}</span>
       </button>
     );
   };
@@ -7244,7 +8877,7 @@ export default function EncuentraCartas() {
       <style>{FONTS}</style>
       <BackgroundField />
 
-      <header style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: `1px solid ${COLORS.azulClaro}2e`, background: "rgba(5,8,16,0.66)", backdropFilter: "blur(14px)" }}
+      <header style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: `1px solid ${COLORS.azulClaro}2e`, background: conAlpha(COLORS.bg, 0.66), backdropFilter: "blur(14px)" }}
         className="px-4 sm:px-8 py-6">
         <div className="max-w-5xl mx-auto flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-2">
@@ -7259,23 +8892,38 @@ export default function EncuentraCartas() {
               </>
             )}
           </div>
-          <nav className="relative flex gap-2 items-center">
+          <nav className="relative flex flex-wrap gap-2 items-center">
             {navEsenciales.map(navButton)}
 
             <NotificationBell session={session} onNavigate={setView} />
 
-            {/* Todo lo demás (Anuncios, Torneos, Wishlist, Planes, Mis pagos, Mi
-                tienda/Vender, Ayuda, Admin, Editar perfil, Cerrar sesión) vive en
-                el menú lateral, para no saturar el encabezado con botones. */}
+            <button onClick={() => setView("carrito")} style={{ color: view === "carrito" ? COLORS.azulPalido : COLORS.muted }} className="relative p-2 rounded-lg">
+              <ShoppingCart size={18} />
+              {carrito.length > 0 && (
+                <span style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }}
+                  className="absolute -top-1 -right-1 rounded-full text-[10px] font-bold w-4 h-4 flex items-center justify-center">
+                  {carrito.length > 9 ? "9+" : carrito.length}
+                </span>
+              )}
+            </button>
+
+            {/* Foto de perfil: acceso directo a "Editar perfil" (o a crear cuenta si
+                no hay sesión) — separado del menú de tres líneas, que abre el resto
+                (Torneos, Wishlist, Planes, Mis pagos, Ayuda, Admin, Cerrar sesión). */}
+            {session && (
+              <button onClick={() => setShowEditarPerfil(true)} style={{ color: COLORS.muted }} className="p-1 rounded-lg flex items-center">
+                <AvatarImg url={perfil?.avatar_url} size={32} />
+              </button>
+            )}
             <button onClick={() => setShowDrawer(true)} style={{ color: COLORS.muted }} className="p-1 rounded-lg flex items-center">
-              {session ? <AvatarImg url={perfil?.avatar_url} size={32} /> : <Menu size={20} />}
+              <Menu size={20} />
             </button>
           </nav>
         </div>
       </header>
 
       {adminStash && (
-        <div style={{ position: "relative", zIndex: 10, background: COLORS.gold, color: COLORS.bg }}
+        <div style={{ position: "relative", zIndex: 10, background: COLORS.gold, color: COLORS.textoOscuro }}
           className="px-4 py-2 text-sm font-semibold flex items-center justify-center gap-3 flex-wrap text-center">
           <span>🔀 Estás usando el sub-perfil "{perfil?.nombre}"</span>
           <button onClick={volverAMiCuentaAdmin} className="underline whitespace-nowrap">Volver a mi cuenta admin</button>
@@ -7286,7 +8934,7 @@ export default function EncuentraCartas() {
         <Drawer
           session={session}
           perfil={perfil}
-          secundarios={navSecundarios}
+          grupos={navGrupos}
           view={view}
           onNavigate={(id) => { setView(id); setShowDrawer(false); }}
           onEditarPerfil={() => { setShowEditarPerfil(true); setShowDrawer(false); }}
@@ -7300,6 +8948,9 @@ export default function EncuentraCartas() {
       {showOnboarding && <OnboardingTutorial onClose={() => setShowOnboarding(false)} />}
 
       {showAccountModal && <AccountModal onClose={() => setShowAccountModal(false)} onAuthed={handleAuthed} />}
+      {session && perfilChecked && !perfil && (
+        <CompletarPerfilOAuthModal session={session} onCreado={(p) => setPerfil(p)} onCancelar={handleLogout} />
+      )}
       {showEditarPerfil && session && (
         <EditarPerfilModal
           session={session}
@@ -7353,6 +9004,21 @@ export default function EncuentraCartas() {
                   placeholder="Busca una carta..." style={{ color: COLORS.text }}
                   className="bg-transparent outline-none w-full py-2 text-lg" />
               </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-1.5 mt-4">
+                <p style={{ color: COLORS.muted }} className="text-xs mr-1">¿Qué TCG te interesa?</p>
+                {[{ key: "todos", label: "Todos" }, ...TCG_OPCIONES].map((o) => (
+                  <button key={o.key} type="button" onClick={() => setTcgFiltro(o.key)}
+                    style={{
+                      background: tcgFiltro === o.key ? COLORS.surface2 : "transparent",
+                      border: `1px solid ${tcgFiltro === o.key ? COLORS.azulClaro : COLORS.surface2}`,
+                      color: tcgFiltro === o.key ? COLORS.azulClaro : COLORS.muted,
+                    }}
+                    className="px-3 py-1 rounded-full text-xs font-semibold">
+                    {o.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {searching && <Loading label="Buscando en tiendas y mercado..." />}
@@ -7396,14 +9062,14 @@ export default function EncuentraCartas() {
                   <Loading label="Cargando lo más reciente..." />
                 )}
 
-                {(market.length > 0 || inicioTienda.length > 0) && (
+                {(market.filter(pasaFiltroTcg).length > 0 || inicioTienda.filter(pasaFiltroTcg).length > 0) && (
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h3 style={{ color: COLORS.azulClaro }} className="font-semibold text-sm uppercase">🔥 Recién publicado</h3>
                       <button onClick={() => setView("market")} style={{ color: COLORS.azulPalido }} className="text-xs font-semibold">Ver Mercado</button>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-                      {[...market.map((r) => ({ ...r, _esTienda: false })), ...inicioTienda.map((r) => ({ ...r, _esTienda: true }))]
+                      {[...market.filter(pasaFiltroTcg).map((r) => ({ ...r, _esTienda: false })), ...inicioTienda.filter(pasaFiltroTcg).map((r) => ({ ...r, _esTienda: true }))]
                         .sort((a, b) => {
                           const da = estaDestacado(a) ? 1 : 0, db = estaDestacado(b) ? 1 : 0;
                           if (da !== db) return db - da;
@@ -7419,8 +9085,8 @@ export default function EncuentraCartas() {
                             style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}` }}
                             className="text-left rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                             <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
-                              {(r.foto_real_url || r.imagen_url) ? (
-                                <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                              {miniaturaListing(r) ? (
+                                <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                               ) : (
                                 <Package size={28} color={COLORS.muted} />
                               )}
@@ -7431,6 +9097,7 @@ export default function EncuentraCartas() {
                                 {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
                                 {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
                                 {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
+                                {!r._esTienda && <BuzonBadge tienda={r.buzon_tienda} />}
                                 <BoostBadge item={r} />
                               </div>
                               <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
@@ -7444,18 +9111,24 @@ export default function EncuentraCartas() {
               </div>
             )}
 
-            {!searching && query.trim() && searchResults.tiendas.length === 0 && searchResults.mercado.length === 0 && searchResults.sellado.length === 0 && (
-              <p style={{ color: COLORS.muted }} className="text-center py-16 text-sm">
-                Nadie tiene "{query}" registrado todavía.
-              </p>
-            )}
+            {(() => {
+              const selladoVisible = searchResults.sellado.filter(pasaFiltroTcg);
+              const tiendasVisibles = searchResults.tiendas.filter(pasaFiltroTcg);
+              const mercadoVisible = searchResults.mercado.filter(pasaFiltroTcg);
+              return (
+                <>
+                  {!searching && query.trim() && tiendasVisibles.length === 0 && mercadoVisible.length === 0 && selladoVisible.length === 0 && (
+                    <p style={{ color: COLORS.muted }} className="text-center py-16 text-sm">
+                      Nadie tiene "{query}" registrado todavía{tcgFiltro !== "todos" ? ` en ${TCG_LABEL[tcgFiltro] || tcgFiltro}` : ""}.
+                    </p>
+                  )}
 
-            <div className="grid gap-4">
-              {searchResults.tiendas.map((r) => (
+                  <div className="grid gap-4">
+                    {tiendasVisibles.map((r) => (
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
-                    {(r.foto_real_url || r.imagen_url) && <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                    {miniaturaListing(r) && <img src={miniaturaListing(r)} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
                       <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><IdiomaBadge idioma={r.idioma} /><EstadoCartaBadge condicion={r.condicion} /><GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} /><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
@@ -7468,24 +9141,37 @@ export default function EncuentraCartas() {
                   <div className="text-right">
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
-                      disabled={!r.tiendas?.perfil_id}
-                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
-                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
-                      <MessageCircle size={12} /> Contactar
-                    </button>
+                    <div className="flex gap-1 mt-2 justify-end">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
+                        disabled={!r.tiendas?.perfil_id}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
+                        className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                        <MessageCircle size={12} /> Contactar
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "inventario_tienda", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: miniaturaListing(r), contexto: `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, vendedorId: r.tiendas?.perfil_id, vendedorNombre: r.tiendas?.nombre, vendedorAvatar: r.tiendas?.perfiles?.avatar_url }); }}
+                        disabled={!r.tiendas?.perfil_id || enElCarrito("inventario_tienda", r.id)}
+                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.3 }}
+                        className="text-xs px-2 py-1.5 rounded-lg flex items-center">
+                        {enElCarrito("inventario_tienda", r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
-              {searchResults.mercado.map((r) => (
+              {mercadoVisible.map((r) => (
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
-                    {(r.foto_real_url || r.imagen_url) && <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                    {miniaturaListing(r) && <img src={miniaturaListing(r)} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
-                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}{r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}{r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}<PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
-                      <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
+                      <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}{r.tipo === "accesorio" && <Badge color={COLORS.gold}>Accesorio</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo === "carta" && <IdiomaBadge idioma={r.idioma} />}{r.tipo === "carta" && <EstadoCartaBadge condicion={r.condicion} />}{r.tipo === "carta" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}<BuzonBadge tienda={r.buzon_tienda} /><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
+                      {r.tipo === "accesorio" ? (
+                        <p style={{ color: COLORS.muted }} className="text-sm line-clamp-2">{r.descripcion}</p>
+                      ) : (
+                        <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
+                      )}
                       <p style={{ color: COLORS.muted }} className="text-xs mt-1">{r.zona}</p>
                       <button onClick={(e) => { e.stopPropagation(); verPerfil(r.perfil_id); }} className="flex items-center gap-2 mt-2 hover:brightness-125">
                         <AvatarImg url={r.perfiles?.avatar_url} size={22} />
@@ -7496,16 +9182,25 @@ export default function EncuentraCartas() {
                   <div className="text-right">
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
-                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
-                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
-                      <MessageCircle size={12} /> Contactar
-                    </button>
+                    <div className="flex gap-1 mt-2 justify-end">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                        className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                        <MessageCircle size={12} /> Contactar
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "mercado_listings", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: miniaturaListing(r), contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r.perfil_id, vendedorNombre: r.perfiles?.nombre, vendedorAvatar: r.perfiles?.avatar_url, vendedorWhatsapp: r.perfiles?.whatsapp, vendedorFacebook: r.perfiles?.facebook }); }}
+                        disabled={!r.perfil_id || r.perfil_id === session?.user?.id || enElCarrito("mercado_listings", r.id)}
+                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: (!r.perfil_id || r.perfil_id === session?.user?.id) ? 0.3 : 1 }}
+                        className="text-xs px-2 py-1.5 rounded-lg flex items-center">
+                        {enElCarrito("mercado_listings", r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
-              {searchResults.sellado.map((r) => (
+              {selladoVisible.map((r) => (
                 <div key={`sel-${r.id}`} onClick={() => abrirDetalle(r.id, "sellado_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
@@ -7521,24 +9216,50 @@ export default function EncuentraCartas() {
                   <div className="text-right">
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
                     {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
-                      disabled={!r.tiendas?.perfil_id}
-                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
-                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center gap-1 ml-auto">
-                      <MessageCircle size={12} /> Contactar
-                    </button>
+                    <div className="flex gap-1 mt-2 justify-end">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
+                        disabled={!r.tiendas?.perfil_id}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.4 }}
+                        className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                        <MessageCircle size={12} /> Contactar
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "sellado_tienda", id: r.id, nombre: r.producto, precio: r.precio, imagen_url: r.imagen_url, contexto: `${r.producto} en ${r.tiendas?.nombre}`, vendedorId: r.tiendas?.perfil_id, vendedorNombre: r.tiendas?.nombre, vendedorAvatar: r.tiendas?.perfiles?.avatar_url }); }}
+                        disabled={!r.tiendas?.perfil_id || enElCarrito("sellado_tienda", r.id)}
+                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: r.tiendas?.perfil_id ? 1 : 0.3 }}
+                        className="text-xs px-2 py-1.5 rounded-lg flex items-center">
+                        {enElCarrito("sellado_tienda", r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
-            </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
         {/* DIRECTORY */}
         {view === "directory" && (
           <div>
-            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">Directorio de tiendas</h2>
+            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-3">Directorio de tiendas</h2>
+            <div className="flex flex-wrap items-center gap-1.5 mb-6">
+              <p style={{ color: COLORS.muted }} className="text-xs mr-1">TCG:</p>
+              {[{ key: "todos", label: "Todos" }, ...TCG_OPCIONES].map((o) => (
+                <button key={o.key} type="button" onClick={() => setTcgFiltro(o.key)}
+                  style={{
+                    background: tcgFiltro === o.key ? COLORS.surface2 : "transparent",
+                    border: `1px solid ${tcgFiltro === o.key ? COLORS.azulClaro : COLORS.surface2}`,
+                    color: tcgFiltro === o.key ? COLORS.azulClaro : COLORS.muted,
+                  }}
+                  className="px-3 py-1 rounded-full text-xs font-semibold">
+                  {o.label}
+                </button>
+              ))}
+            </div>
             {loadingTiendas && <Loading label="Cargando tiendas desde Supabase..." />}
             {errorTiendas && <ErrorBox message={errorTiendas} />}
 
@@ -7588,6 +9309,7 @@ export default function EncuentraCartas() {
                       <p className="font-semibold text-lg">{store.nombre}</p>
                       <PlanBadge perfil={store.perfiles} />
                       <VerificadoBadge perfil={store.perfiles} />
+                      <TiendaVerificadaBadge tienda={store} />
                     </button>
                     <div className="flex items-center gap-1 flex-wrap">
                       {store._distanciaKm != null && <Badge color={COLORS.gold}>📍 {formatoDistancia(store._distanciaKm)}</Badge>}
@@ -7606,19 +9328,31 @@ export default function EncuentraCartas() {
         {/* MARKET */}
         {view === "market" && (
           <div>
-            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">Mercado entre usuarios</h2>
+            <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-4">Mercado entre usuarios</h2>
+            <TiendasAuroraCarrusel onAbrirTienda={openStore} />
+            <div className="flex gap-2 flex-wrap mb-6">
+              {[{ id: "todos", label: "Todo" }, { id: "carta", label: "Cartas" }, { id: "sellado", label: "Sellado" }, { id: "accesorio", label: "Accesorios" }].map((t) => (
+                <button key={t.id} onClick={() => setTipoMercadoTab(t.id)}
+                  style={{ background: tipoMercadoTab === t.id ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${tipoMercadoTab === t.id ? COLORS.azulPalido : COLORS.surface2}`, color: tipoMercadoTab === t.id ? COLORS.azulPalido : COLORS.muted }}
+                  className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                  {t.label}
+                </button>
+              ))}
+            </div>
             {loadingMarket && <Loading label="Cargando publicaciones..." />}
-            {!loadingMarket && market.length === 0 && (
+            {!loadingMarket && market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).length === 0 && (
               <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
-                Todavía no hay publicaciones de usuarios en el mercado. En cuanto alguien se registre como cuenta individual y publique una carta, aparecerá aquí automáticamente.
+                {market.length === 0
+                  ? "Todavía no hay publicaciones de usuarios en el mercado. En cuanto alguien se registre como cuenta individual y publique una carta, aparecerá aquí automáticamente."
+                  : "Nadie ha publicado nada así todavía en el Mercado."}
               </p>
             )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {market.map((r) => (
+              {market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).map((r) => (
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                   <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
-                    {(r.foto_real_url || r.imagen_url) ? (
-                      <img src={r.foto_real_url || r.imagen_url} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    {miniaturaListing(r) ? (
+                      <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                     ) : (
                       <Package size={40} color={COLORS.muted} />
                     )}
@@ -7626,14 +9360,20 @@ export default function EncuentraCartas() {
                   <div className="p-3 flex flex-col flex-1 gap-1">
                     <div className="flex items-center gap-1 flex-wrap">
                       {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
-                      {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
-                      {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
-                      {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
+                      {r.tipo === "accesorio" && <Badge color={COLORS.gold}>Accesorio</Badge>}
+                      {r.tipo === "carta" && <IdiomaBadge idioma={r.idioma} />}
+                      {r.tipo === "carta" && <EstadoCartaBadge condicion={r.condicion} />}
+                      {r.tipo === "carta" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
+                      <BuzonBadge tienda={r.buzon_tienda} />
                       <PlanBadge perfil={r.perfiles} />
                       <BoostBadge item={r} />
                     </div>
                     <p className="font-semibold text-sm leading-snug line-clamp-2">{r.carta}</p>
-                    <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.set_nombre}{r.set_nombre && r.zona ? " · " : ""}{r.zona}</p>
+                    {r.tipo === "accesorio" ? (
+                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.descripcion || r.zona}</p>
+                    ) : (
+                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.set_nombre}{r.set_nombre && r.zona ? " · " : ""}{r.zona}</p>
+                    )}
                     <div className="mt-1">
                       <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="md" />
                     </div>
@@ -7642,18 +9382,38 @@ export default function EncuentraCartas() {
                       <AvatarImg url={r.perfiles?.avatar_url} size={20} />
                       <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.perfiles?.nombre || "Usuario"}</p>
                     </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
-                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
-                      className="text-xs px-3 py-1.5 rounded-lg mt-2 flex items-center justify-center gap-1 w-full"
-                    >
-                      <MessageCircle size={12} /> Contactar
-                    </button>
+                    <div className="flex gap-1 mt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                        className="text-xs px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 flex-1"
+                      >
+                        <MessageCircle size={12} /> Contactar
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "mercado_listings", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: miniaturaListing(r), contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r.perfil_id, vendedorNombre: r.perfiles?.nombre, vendedorAvatar: r.perfiles?.avatar_url, vendedorWhatsapp: r.perfiles?.whatsapp, vendedorFacebook: r.perfiles?.facebook }); }}
+                        disabled={!r.perfil_id || r.perfil_id === session?.user?.id || enElCarrito("mercado_listings", r.id)}
+                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: (!r.perfil_id || r.perfil_id === session?.user?.id) ? 0.3 : 1 }}
+                        className="text-xs px-2 py-1.5 rounded-lg flex items-center justify-center">
+                        {enElCarrito("mercado_listings", r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
+        )}
+
+        {/* CARRITO */}
+        {view === "carrito" && (
+          <CarritoView
+            carrito={carrito}
+            onQuitar={quitarDelCarrito}
+            onRequireLogin={() => setShowAccountModal(true)}
+            onEnviado={() => setCarrito([])}
+            session={session}
+          />
         )}
 
         {/* NEWS */}
@@ -7840,6 +9600,11 @@ export default function EncuentraCartas() {
           <TorneosView session={session} onRequireLogin={() => setShowAccountModal(true)} />
         )}
 
+        {/* CATÁLOGO */}
+        {view === "catalogo" && (
+          <CatalogoView session={session} perfil={perfil} onIrAPlanes={() => (session ? setView("planes") : setShowAccountModal(true))} />
+        )}
+
         {/* MIS PAGOS */}
         {view === "misPagos" && session && <MisPagosPanel session={session} />}
 
@@ -7875,6 +9640,7 @@ export default function EncuentraCartas() {
                   <div className="flex items-center gap-2 pb-1.5">
                     <PlanBadge perfil={selectedStore.perfiles} size="lg" />
                     <VerificadoBadge perfil={selectedStore.perfiles} />
+                    <TiendaVerificadaBadge tienda={selectedStore} />
                     <NivelBadge total={storeDestellos} />
                     <VendedorBadge ventasCompletadas={storeVentasCompletadas} resenas={storeResenas} />
                     <CopiarLinkBoton param="tienda" slug={selectedStore.slug} />
@@ -7942,11 +9708,11 @@ export default function EncuentraCartas() {
               <>
                 <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
                 <div className="grid gap-3 mb-8">
-                  {storeInventory.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Esta tienda todavía no ha subido inventario.</p>}
-                  {storeInventory.map((item) => (
+                  {storeInventory.filter(pasaFiltroTcg).length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">{storeInventory.length === 0 ? "Esta tienda todavía no ha subido inventario." : `Esta tienda no tiene cartas de ${TCG_LABEL[tcgFiltro] || tcgFiltro} registradas.`}</p>}
+                  {storeInventory.filter(pasaFiltroTcg).map((item) => (
                     <div key={item.id} onClick={() => abrirDetalle(item.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
                       <div className="flex items-center gap-3">
-                        {(item.foto_real_url || item.imagen_url) && <img src={item.foto_real_url || item.imagen_url} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                        {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium">{item.carta}</p>
@@ -7961,21 +9727,30 @@ export default function EncuentraCartas() {
                       <div className="text-right">
                         <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
-                          disabled={!selectedStore.perfil_id}
-                          style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
-                          className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
-                          <MessageCircle size={12} /> Contactar
-                        </button>
+                        <div className="flex gap-1 mt-1 justify-end">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
+                            disabled={!selectedStore.perfil_id}
+                            style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
+                            className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                            <MessageCircle size={12} /> Contactar
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "inventario_tienda", id: item.id, nombre: item.carta, precio: item.precio, imagen_url: miniaturaListing(item), contexto: `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, vendedorId: selectedStore.perfil_id, vendedorNombre: selectedStore.nombre, vendedorAvatar: selectedStore.perfiles?.avatar_url }); }}
+                            disabled={!selectedStore.perfil_id || enElCarrito("inventario_tienda", item.id)}
+                            style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: selectedStore.perfil_id ? 1 : 0.3 }}
+                            className="text-xs px-2 py-1.5 rounded-lg flex items-center">
+                            {enElCarrito("inventario_tienda", item.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
                 <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
                 <div className="grid gap-3">
-                  {storeSellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin producto sellado registrado.</p>}
-                  {storeSellado.map((item) => (
+                  {storeSellado.filter(pasaFiltroTcg).length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">{storeSellado.length === 0 ? "Sin producto sellado registrado." : `Sin producto sellado de ${TCG_LABEL[tcgFiltro] || tcgFiltro}.`}</p>}
+                  {storeSellado.filter(pasaFiltroTcg).map((item) => (
                     <div key={item.id} onClick={() => abrirDetalle(item.id, "sellado_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
                       <div className="flex items-center gap-3">
                         {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
@@ -7987,13 +9762,22 @@ export default function EncuentraCartas() {
                       <div className="text-right">
                         <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
                         {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
-                          disabled={!selectedStore.perfil_id}
-                          style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
-                          className="text-xs px-3 py-1.5 rounded-lg mt-1 flex items-center gap-1 ml-auto">
-                          <MessageCircle size={12} /> Contactar
-                        </button>
+                        <div className="flex gap-1 mt-1 justify-end">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
+                            disabled={!selectedStore.perfil_id}
+                            style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: selectedStore.perfil_id ? 1 : 0.4 }}
+                            className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                            <MessageCircle size={12} /> Contactar
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "sellado_tienda", id: item.id, nombre: item.producto, precio: item.precio, imagen_url: item.imagen_url, contexto: `${item.producto} en ${selectedStore.nombre}`, vendedorId: selectedStore.perfil_id, vendedorNombre: selectedStore.nombre, vendedorAvatar: selectedStore.perfiles?.avatar_url }); }}
+                            disabled={!selectedStore.perfil_id || enElCarrito("sellado_tienda", item.id)}
+                            style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: selectedStore.perfil_id ? 1 : 0.3 }}
+                            className="text-xs px-2 py-1.5 rounded-lg flex items-center">
+                            {enElCarrito("sellado_tienda", item.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -8023,6 +9807,8 @@ export default function EncuentraCartas() {
             onVolver={cerrarDetalle}
             onAbrirChat={abrirChat}
             onVerPerfil={verPerfil}
+            onAgregarCarrito={agregarAlCarrito}
+            enCarrito={enElCarrito(selectedListing.tabla, selectedListing.id)}
           />
         )}
 

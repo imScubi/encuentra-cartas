@@ -1,7 +1,11 @@
 // Corre una vez al día (ver vercel.json) y manda notificaciones push de
 // aviso cuando: (a) el plan de un perfil está por vencer, (b) un boost
 // (publicación destacada) está por dejar de estar destacado, o (c) un
-// torneo que marcaste con "Me interesa" es en los próximos 3 días.
+// torneo que marcaste con "Me interesa" es en los próximos 3 días. El día 1
+// de cada mes, de paso, otorga el regalo mensual de Destellos por plan (ver
+// otorgarDestellosMensuales más abajo) -- va aquí en vez de en su propio
+// archivo de cron para no sumar una función serverless más (Vercel Hobby
+// limita a 12 por despliegue, y ya estábamos justo en el límite).
 //
 // Requiere: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, VAPID_PUBLIC_KEY,
 // VAPID_PRIVATE_KEY, VAPID_SUBJECT, y CRON_SECRET (Vercel la manda sola
@@ -17,6 +21,64 @@ const NOMBRES_PLAN = {
   enteball: "Ente Ball",
 };
 const TABLAS = ["mercado_listings", "inventario_tienda", "sellado_tienda"];
+
+// Destellos gratis del mes por plan -- el monto equivale a lo que cuesta
+// canjear un Boost gratis en api/recompensas/canjear.js (150 Destellos = 1
+// boost de 3 días): Amatista 150 (1 boost), Diamante 300 (2), Aurora 450
+// (3). Es un regalo -- se suma al ledger de destellos_movimientos y el
+// usuario decide en qué publicación canjearlo, no se aplica un boost
+// automático a una publicación elegida por el cron.
+const DESTELLOS_POR_PLAN = { ultraball: 150, masterball: 300, enteball: 450 };
+
+async function otorgarDestellosMensuales(ahora, supabaseUrl, headers) {
+  if (ahora.getDate() !== 1) return 0;
+  const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString();
+  let otorgados = 0;
+
+  const perfilesRes = await fetch(
+    `${supabaseUrl}/rest/v1/perfiles?select=id,plan,plan_vence&plan=in.(ultraball,masterball,enteball)`,
+    { headers }
+  );
+  const perfiles = await perfilesRes.json();
+
+  for (const p of perfiles || []) {
+    // Plan vencido: planDe() (theme.js) lo trata como Cuarzo en el resto de
+    // la app, así que tampoco le toca regalo este mes.
+    if (p.plan_vence && new Date(p.plan_vence) < ahora) continue;
+    const cantidad = DESTELLOS_POR_PLAN[p.plan];
+    if (!cantidad) continue;
+    const motivo = `regalo_mensual_${p.plan}`;
+
+    // Idempotencia: si el cron se reintenta o corre dos veces el mismo día,
+    // no duplica el regalo -- busca un movimiento con este motivo ya
+    // registrado desde el día 1 de este mes.
+    const yaRes = await fetch(
+      `${supabaseUrl}/rest/v1/destellos_movimientos?select=id&perfil_id=eq.${p.id}&motivo=eq.${motivo}&created_at=gte.${inicioMes}`,
+      { headers }
+    );
+    const ya = await yaRes.json();
+    if ((ya || []).length > 0) continue;
+
+    await fetch(`${supabaseUrl}/rest/v1/destellos_movimientos`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ perfil_id: p.id, cantidad, motivo }),
+    });
+    await fetch(`${supabaseUrl}/rest/v1/notificaciones`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({
+        perfil_id: p.id,
+        tipo: "boost",
+        titulo: "Destellos gratis de tu plan",
+        mensaje: `Recibiste ${cantidad} Destellos gratis este mes por tu plan -- canjéalos por un Boost gratis en Recompensas.`,
+        url: "/",
+      }),
+    });
+    otorgados++;
+  }
+  return otorgados;
+}
 
 export default async function handler(req, res) {
   if (process.env.CRON_SECRET && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -109,7 +171,10 @@ export default async function handler(req, res) {
       }
     }
 
-    res.status(200).json({ ok: true, avisos });
+    // ---- Regalo mensual de Destellos por plan (solo el día 1) ----
+    const destellosOtorgados = await otorgarDestellosMensuales(ahora, supabaseUrl, headers);
+
+    res.status(200).json({ ok: true, avisos, destellosOtorgados });
   } catch (e) {
     console.error("Error en cron de recordatorios:", e);
     res.status(200).json({ ok: true, error: e.message });

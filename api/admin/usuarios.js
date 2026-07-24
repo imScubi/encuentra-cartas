@@ -1,6 +1,8 @@
-// Junta crear-subperfil / entrar-subperfil en un solo archivo (con "accion"
-// en el body) — Vercel Hobby limita a 12 funciones serverless por
-// despliegue, y separarlos en 2 archivos ya no cabía.
+// Junta crear-subperfil / entrar-subperfil / borrar-usuario en un solo archivo
+// (con "accion" en el body) — Vercel Hobby limita a 12 funciones serverless
+// por despliegue, y separarlos en varios archivos ya no cabía.
+// (Antes se llamaba api/admin/subperfiles.js; se renombró al agregar "borrar"
+// porque ya no es solo de sub-perfiles.)
 import crypto from "crypto";
 
 // Mismo criterio que slugify() en el navegador (src/App.jsx) y en Postgres
@@ -107,13 +109,41 @@ async function entrar(req, res, { supabaseUrl, headers, serviceKey, caller }) {
   });
 }
 
+// Borra una cuenta por completo: el usuario, su perfil y todo lo asociado
+// (tienda, publicaciones, mensajes, reseñas, etc. — casi todas las FK hacia
+// perfiles son ON DELETE CASCADE). La única excepción es "mensajes", cuya FK
+// es NO ACTION, así que hay que vaciarla a mano antes de borrar al usuario o
+// la base de datos rechaza el borrado.
+async function borrar(req, res, { supabaseUrl, headers, caller }) {
+  const { perfilId } = req.body || {};
+  if (!perfilId) return res.status(400).json({ error: "Datos incompletos" });
+  if (perfilId === caller.id) return res.status(400).json({ error: "No puedes borrar tu propia cuenta desde aquí." });
+
+  const targetRes = await fetch(`${supabaseUrl}/rest/v1/perfiles?select=id,nombre,es_admin&id=eq.${perfilId}`, { headers });
+  const targetRows = await targetRes.json();
+  const target = targetRows?.[0];
+  if (!target) return res.status(404).json({ error: "Ese usuario no existe" });
+  if (target.es_admin) return res.status(400).json({ error: "No se puede borrar a otro administrador desde aquí." });
+
+  await fetch(`${supabaseUrl}/rest/v1/mensajes?de_perfil_id=eq.${perfilId}`, { method: "DELETE", headers });
+  await fetch(`${supabaseUrl}/rest/v1/mensajes?para_perfil_id=eq.${perfilId}`, { method: "DELETE", headers });
+
+  const delRes = await fetch(`${supabaseUrl}/auth/v1/admin/users/${perfilId}`, { method: "DELETE", headers });
+  if (!delRes.ok) {
+    const data = await delRes.json().catch(() => ({}));
+    return res.status(500).json({ error: data?.msg || "No se pudo borrar la cuenta" });
+  }
+
+  res.status(200).json({ ok: true, nombre: target.nombre });
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido" });
 
   const authHeader = req.headers.authorization || "";
   const token = authHeader.replace(/^Bearer /, "");
   const { accion } = req.body || {};
-  if (!token || !["crear", "entrar"].includes(accion)) return res.status(400).json({ error: "Datos incompletos o inválidos" });
+  if (!token || !["crear", "entrar", "borrar"].includes(accion)) return res.status(400).json({ error: "Datos incompletos o inválidos" });
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -130,7 +160,8 @@ export default async function handler(req, res) {
 
     const ctx = { supabaseUrl, headers, serviceKey, caller };
     if (accion === "crear") return await crear(req, res, ctx);
-    return await entrar(req, res, ctx);
+    if (accion === "entrar") return await entrar(req, res, ctx);
+    return await borrar(req, res, ctx);
   } catch (e) {
     res.status(500).json({ error: e.message || "No se pudo procesar la solicitud." });
   }

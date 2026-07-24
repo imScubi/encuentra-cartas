@@ -1,5 +1,33 @@
 import { USD_TO_MXN, EUR_TO_MXN } from "../theme.js";
 
+// ---- Reintentos para llamadas a APIs externas (pokemontcg.io, Scryfall,
+// YGOPRODeck, lorcana-api) ----
+// Ninguna de estas APIs usa llave (para no pedirle una cuenta al usuario),
+// así que están sujetas a límites de tasa (429) o caídas breves (5xx) más
+// seguido que una API con llave paga. Antes, cualquier error en una de
+// estas llamadas se atrapaba y devolvía silenciosamente una lista vacía —
+// eso se veía, del lado del usuario, como "no se encontraron cartas" o
+// "no hay resultados" de forma intermitente, aunque la carta/set sí
+// existiera. Con reintento + espera creciente, la enorme mayoría de esos
+// fallos transitorios se resuelven solos sin que el usuario note nada.
+async function fetchConReintento(url, intentos = 3, esperaBaseMs = 500) {
+  let ultimoError;
+  for (let i = 0; i < intentos; i++) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return res;
+      // Un 429 (límite de tasa) o 5xx vale la pena reintentar; un 4xx normal
+      // (ej. 404 de "sin resultados") no va a cambiar si lo repetimos.
+      if (res.status !== 429 && res.status < 500) return res;
+      ultimoError = new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      ultimoError = e;
+    }
+    if (i < intentos - 1) await new Promise((r) => setTimeout(r, esperaBaseMs * (i + 1)));
+  }
+  throw ultimoError || new Error("No se pudo conectar");
+}
+
 // ---- Foto de perfil: Pokémon (PokeAPI, pública) o foto propia (Supabase Storage) ----
 export const POKEMON_MAX_ID = 1025;
 export const pokemonSpriteUrl = (id) =>
@@ -129,22 +157,26 @@ function generarCombinacionesNombreSet(restante) {
   return combos;
 }
 
-// Una sola palabra: coincidencia parcial con comodín (útil mientras se
-// sigue escribiendo). Varias palabras: frase exacta entre comillas (ya
-// se asume completa, como cuando se termina de escribir el set/nombre).
-function terminoDeCampo(frase) {
+// Coincidencia parcial con comodín en cada palabra por separado (en vez de
+// exigir la frase completa entre comillas cuando hay más de una palabra).
+// Antes, un nombre o set de dos o más palabras ("Pikachu VMAX", "Journey
+// Together") solo encontraba algo si coincidía EXACTO -- mientras alguien
+// seguía escribiendo ("Pikachu V", "Journey Toge...") no salía nada, como si
+// el buscador estuviera roto. Con un comodín por palabra, cada una se busca
+// por separado (con AND implícito entre ellas) y ya no hace falta terminar
+// de escribir la frase completa para empezar a ver resultados.
+function terminoDeCampo(campo, frase) {
   if (!frase) return null;
   const palabras = frase.trim().split(/\s+/).filter(Boolean);
-  if (palabras.length === 1) return `${palabras[0]}*`;
-  return `"${frase.trim()}"`;
+  return palabras.map((p) => `${campo}:${p}*`).join(" ");
 }
 
 function construirQueryPokemonTCG({ nombre, set, numero }) {
   const partes = [];
-  const nombreTerm = terminoDeCampo(nombre);
-  if (nombreTerm) partes.push(`name:${nombreTerm}`);
-  const setTerm = terminoDeCampo(set);
-  if (setTerm) partes.push(`set.name:${setTerm}`);
+  const nombreTerm = terminoDeCampo("name", nombre);
+  if (nombreTerm) partes.push(nombreTerm);
+  const setTerm = terminoDeCampo("set.name", set);
+  if (setTerm) partes.push(setTerm);
   if (numero) partes.push(`number:${numero}`);
   return partes.join(" ");
 }
@@ -165,23 +197,29 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
   const { restante, numero } = extraerNumeroDeTexto(q);
   const combos = generarCombinacionesNombreSet(restante);
 
-  const peticiones = combos.map(async ({ nombre, set }) => {
+  // Promise.allSettled (no Promise.all): cada combinación se reintenta sola
+  // (fetchConReintento) si falla por red/límite de tasa, pero si UNA
+  // combinación de verdad no existe (404 normal), no debe tirar abajo a las
+  // demás que sí encontraron algo. Solo se avisa error real si TODAS
+  // fallaron por conexión — así "sin resultados" de verdad no se confunde
+  // con una falla transitoria de la API.
+  const resultados = await Promise.allSettled(combos.map(async ({ nombre, set }) => {
     const query = construirQueryPokemonTCG({ nombre, set, numero });
     if (!query) return [];
-    try {
-      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=${itemsPorCombo}`);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return data?.data || [];
-    } catch {
-      return [];
-    }
-  });
+    const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=${itemsPorCombo}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data?.data || [];
+  }));
 
-  const listas = await Promise.all(peticiones);
+  const listas = resultados.map((r) => (r.status === "fulfilled" ? r.value : null));
+  if (listas.length > 0 && listas.every((l) => l === null)) {
+    throw resultados[0].reason instanceof Error ? resultados[0].reason : new Error("No se pudo conectar con el catálogo de Pokémon.");
+  }
   const vistos = new Set();
   const combinado = [];
   for (const lista of listas) {
+    if (!lista) continue;
     for (const c of lista) {
       if (vistos.has(c.id)) continue;
       vistos.add(c.id);
@@ -204,6 +242,415 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
     image: c.images?.large || c.images?.small || null,
     precioRefMxn: precioRefDeCartaPokemonTCG(c),
   }));
+}
+
+// ---- Magic: The Gathering (segundo TCG con catálogo real, después de
+// Pokémon) — usa Scryfall, gratis y sin necesitar llave. A diferencia de
+// pokemontcg.io, la búsqueda de texto de Scryfall ya es difusa por nombre/
+// set/número por sí sola, así que no hace falta la lógica de separar
+// nombre+set+número que sí necesita construirQueryPokemonTCG. ----
+function imagenDeCartaScryfall(c) {
+  return c.image_uris?.normal || c.image_uris?.large
+    || c.card_faces?.[0]?.image_uris?.normal || c.card_faces?.[0]?.image_uris?.large || null;
+}
+
+function precioRefDeCartaScryfall(c) {
+  const usd = c.prices?.usd || c.prices?.usd_foil;
+  if (usd) return Math.round(Number(usd) * USD_TO_MXN);
+  const eur = c.prices?.eur || c.prices?.eur_foil;
+  if (eur) return Math.round(Number(eur) * EUR_TO_MXN);
+  return null;
+}
+
+export async function buscarCartasMagic(texto, limite = 24) {
+  const q = (texto || "").trim();
+  if (q.length < 3) return [];
+  const res = await fetchConReintento(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&order=name&unique=cards`);
+  if (!res.ok) return []; // incluye el 404 de "sin resultados" de Scryfall, no es un error real
+  const data = await res.json();
+  return (data?.data || []).slice(0, limite).map((c) => ({
+    id: c.id,
+    name: c.name,
+    localId: c.collector_number,
+    setName: c.set_name || "",
+    setTotal: "",
+    image: imagenDeCartaScryfall(c),
+    precioRefMxn: precioRefDeCartaScryfall(c),
+  }));
+}
+
+export async function obtenerPrecioRefActualMagic(cardApiId) {
+  if (!cardApiId) return null;
+  try {
+    const res = await fetch(`https://api.scryfall.com/cards/${encodeURIComponent(cardApiId)}`);
+    if (!res.ok) return null;
+    const c = await res.json();
+    return {
+      precioRefMxn: precioRefDeCartaScryfall(c),
+      tcgplayerUrl: c.purchase_uris?.tcgplayer || null,
+      cardmarketUrl: c.purchase_uris?.cardmarket || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ---- Yu-Gi-Oh! — YGOPRODeck, gratis y sin llave. A diferencia de Scryfall,
+// el precio viene ya calculado por carta (varias fuentes) en la misma
+// respuesta, no hay que pedirlo aparte. ----
+function precioRefDeCartaYgoprodeck(c) {
+  const precios = c.card_prices?.[0];
+  if (!precios) return null;
+  const usd = Number(precios.tcgplayer_price || precios.ebay_price || precios.amazon_price || 0);
+  if (usd > 0) return Math.round(usd * USD_TO_MXN);
+  const eur = Number(precios.cardmarket_price || 0);
+  if (eur > 0) return Math.round(eur * EUR_TO_MXN);
+  return null;
+}
+
+export async function buscarCartasYugioh(texto, limite = 24) {
+  const q = (texto || "").trim();
+  if (q.length < 3) return [];
+  const res = await fetchConReintento(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+  if (!res.ok) return []; // YGOPRODeck responde 400 cuando no hay ninguna coincidencia, no es un error real
+  const data = await res.json();
+  return (data?.data || []).slice(0, limite).map((c) => ({
+    id: String(c.id),
+    name: c.name,
+    localId: c.card_sets?.[0]?.set_code || "",
+    setName: c.card_sets?.[0]?.set_name || c.type || "",
+    setTotal: "",
+    image: c.card_images?.[0]?.image_url || null,
+    precioRefMxn: precioRefDeCartaYgoprodeck(c),
+  }));
+}
+
+export async function obtenerPrecioRefActualYugioh(cardApiId) {
+  if (!cardApiId) return null;
+  try {
+    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?id=${encodeURIComponent(cardApiId)}`);
+    if (!res.ok) return null;
+    const c = (await res.json())?.data?.[0];
+    if (!c) return null;
+    return { precioRefMxn: precioRefDeCartaYgoprodeck(c), tcgplayerUrl: null, cardmarketUrl: null };
+  } catch {
+    return null;
+  }
+}
+
+// ---- Lorcana — lorcana-api.com, gratis y sin llave. Esta API no ofrece
+// una búsqueda parcial documentada de forma confiable, así que en vez de
+// arriesgar la sintaxis exacta del query se trae el catálogo completo UNA
+// vez (son pocos cientos de cartas, cabe bien en memoria) y se filtra por
+// nombre en el navegador — mismo patrón que ya usa obtenerListaPokemon()
+// para el buscador de avatar. Aviso de honestidad: no pudimos confirmar en
+// vivo los nombres exactos de los campos del JSON de esta API desde este
+// entorno (proxy de red restringido) — el código intenta varias
+// variantes (may­úscula/minúscula) por si acaso; si algo sale con nombre o
+// imagen en blanco, avisa para ajustar el mapeo.
+let _lorcanaCache = null;
+async function obtenerTodasLasCartasLorcana() {
+  if (_lorcanaCache) return _lorcanaCache;
+  // Ojo: no se cachea un [] por error de red — si se cacheara, un fallo
+  // transitorio dejaría el catálogo de Lorcana "vacío" para el resto de la
+  // sesión sin volver a intentarlo nunca. Solo se guarda en cache un
+  // resultado que sí llegó bien.
+  const res = await fetchConReintento("https://api.lorcana-api.com/cards/all");
+  const data = await res.json();
+  _lorcanaCache = Array.isArray(data) ? data : (data?.cards || data?.results || []);
+  return _lorcanaCache;
+}
+
+export async function buscarCartasLorcana(texto, limite = 24) {
+  const q = (texto || "").trim().toLowerCase();
+  if (q.length < 3) return [];
+  const todas = await obtenerTodasLasCartasLorcana();
+  return todas
+    .filter((c) => (c.Name || c.name || "").toLowerCase().includes(q))
+    .slice(0, limite)
+    .map((c) => ({
+      id: String(c.Unique_ID || c.id || c.Name || c.name),
+      name: c.Name || c.name || "",
+      localId: c.Card_Num || c.card_num || c.number || "",
+      setName: c.Set_Name || c.set_name || c.set || "",
+      setTotal: "",
+      image: c.Image || c.image || c.Image_URL || null,
+      precioRefMxn: null, // esta API no trae precio de referencia
+    }));
+}
+
+// ---- Catálogo por era > set > cartas (para la vista "Catálogo", Amatista+) ----
+// Cada TCG organiza sus sets de forma distinta (o de plano no tiene el
+// concepto de "era" en su API), así que cada función agrupa como mejor
+// corresponde a su propia fuente en vez de forzar una sola forma:
+// - Pokémon: pokemontcg.io ya trae "series" (Scarlet & Violet, Sword &
+//   Shield, etc.) — eso es la era.
+// - Magic: Scryfall no tiene "era" como tal — se usa "set_type" (expansión,
+//   commander, master, etc.) como agrupador equivalente.
+// - Yu-Gi-Oh: YGOPRODeck tampoco tiene "era" oficial — se agrupa por año de
+//   lanzamiento (tcg_date), que es un dato real de la API, en vez de
+//   inventar nombres de era no oficiales.
+// - Lorcana: son pocos sets (menos de una decena) — no hace falta agrupar
+//   por era, se listan todos directo.
+// Todas devuelven la misma forma [{ era, sets: [{ id, nombre, cardCount,
+// imagen }] }] para que la pantalla de Catálogo use un solo componente sin
+// importar el TCG (si era es null, la pantalla no dibuja encabezado de era).
+
+let _setsPokemonCache = null;
+export async function obtenerErasYSetsPokemon() {
+  if (_setsPokemonCache) return _setsPokemonCache;
+  // No se cachea un [] por error — si el fetch de verdad falla, se deja
+  // _setsPokemonCache sin tocar para que el siguiente intento vuelva a
+  // pedirlo, en vez de quedar "vacío" para siempre en esta sesión.
+  const res = await fetchConReintento("https://api.pokemontcg.io/v2/sets?pageSize=250&orderBy=-releaseDate");
+  const data = await res.json();
+  const sets = data?.data || [];
+  const porEra = new Map();
+  for (const s of sets) {
+    const era = s.series || "Otros";
+    if (!porEra.has(era)) porEra.set(era, []);
+    porEra.get(era).push({ id: s.id, nombre: s.name, cardCount: s.printedTotal, imagen: s.images?.logo || s.images?.symbol || null });
+  }
+  // Logo representativo de la era: el de su set más antiguo (el "set base"
+  // de esa generación) — como los sets llegan ordenados por -releaseDate,
+  // el último empujado a cada era es el más viejo. pokemontcg.io no tiene
+  // un logo separado "de la era", así que se usa este como el más cercano.
+  // Ojo: los sets de promos ("SWSH Black Star Promos", "Scarlet & Violet
+  // Black Star Promos", etc.) a veces salen desde el día 1 de la era, así
+  // que si no se excluyen terminan "ganando" como si fueran el set base —
+  // se descartan explícitamente para esto.
+  _setsPokemonCache = Array.from(porEra, ([era, sets]) => {
+    const noPromo = sets.filter((s) => !/promo/i.test(s.nombre));
+    const candidatos = noPromo.length ? noPromo : sets;
+    const base = candidatos[candidatos.length - 1];
+    return { era, sets, imagen: base?.imagen || candidatos.find((s) => s.imagen)?.imagen || null };
+  });
+  return _setsPokemonCache;
+}
+
+export async function obtenerCartasDeSetPokemon(setId) {
+  const cartas = [];
+  for (let page = 1; page <= 2; page++) {
+    const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=set.id:${encodeURIComponent(setId)}&pageSize=250&page=${page}&orderBy=number`);
+    if (!res.ok) break;
+    const data = await res.json();
+    const lote = data?.data || [];
+    cartas.push(...lote);
+    if (lote.length < 250) break;
+  }
+  return cartas.map((c) => ({
+    id: c.id, name: c.name, localId: c.number,
+    image: c.images?.small || c.images?.large || null,
+    precioRefMxn: precioRefDeCartaPokemonTCG(c),
+  }));
+}
+
+// Nombres de set_type de Scryfall en español, para que la agrupación por
+// "era" de Magic no se vea en inglés crudo. Los que no están en esta lista
+// simplemente se muestran tal cual los manda Scryfall.
+const SET_TYPE_LABEL_MAGIC = {
+  core: "Set núcleo", expansion: "Expansión", masters: "Masters", commander: "Commander",
+  draft_innovation: "Draft especial", funny: "Un-sets", starter: "Iniciación",
+  duel_deck: "Duel Decks", premium_deck: "Premium Deck", from_the_vault: "From the Vault",
+  archenemy: "Archenemy", planechase: "Planechase", vanguard: "Vanguard", box: "Caja especial",
+  promo: "Promocionales", token: "Tokens", memorabilia: "Memorabilia", arsenal: "Arsenal",
+  spellbook: "Spellbook", treasure_chest: "Treasure Chest", minigame: "Minijuego", alchemy: "Alchemy",
+};
+
+let _setsMagicCache = null;
+export async function obtenerErasYSetsMagic() {
+  if (_setsMagicCache) return _setsMagicCache;
+  // No se cachea un [] por error — mismo criterio que obtenerErasYSetsPokemon.
+  const res = await fetchConReintento("https://api.scryfall.com/sets");
+  const data = await res.json();
+  const sets = (data?.data || []).filter((s) => !s.digital && s.card_count > 0);
+  const porEra = new Map();
+  for (const s of sets) {
+    const era = SET_TYPE_LABEL_MAGIC[s.set_type] || s.set_type || "Otros";
+    if (!porEra.has(era)) porEra.set(era, []);
+    porEra.get(era).push({ id: s.code, nombre: s.name, cardCount: s.card_count, imagen: s.icon_svg_uri || null });
+  }
+  _setsMagicCache = Array.from(porEra, ([era, sets]) => ({ era, sets }));
+  return _setsMagicCache;
+}
+
+export async function obtenerCartasDeSetMagic(code) {
+  const cartas = [];
+  let url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`set:${code}`)}&order=set&unique=prints`;
+  for (let page = 1; page <= 3 && url; page++) {
+    const res = await fetchConReintento(url);
+    if (!res.ok) break;
+    const data = await res.json();
+    cartas.push(...(data?.data || []));
+    url = data?.has_more ? data.next_page : null;
+  }
+  return cartas.map((c) => ({
+    id: c.id, name: c.name, localId: c.collector_number,
+    image: imagenDeCartaScryfall(c),
+    precioRefMxn: precioRefDeCartaScryfall(c),
+  }));
+}
+
+let _setsYugiohCache = null;
+export async function obtenerErasYSetsYugioh() {
+  if (_setsYugiohCache) return _setsYugiohCache;
+  // No se cachea un [] por error — mismo criterio que obtenerErasYSetsPokemon.
+  const res = await fetchConReintento("https://db.ygoprodeck.com/api/v7/cardsets.php");
+  const sets = await res.json();
+  const porAno = new Map();
+  for (const s of Array.isArray(sets) ? sets : []) {
+    const ano = (s.tcg_date || "").slice(0, 4) || "Sin fecha";
+    if (!porAno.has(ano)) porAno.set(ano, []);
+    porAno.get(ano).push({ id: s.set_name, nombre: s.set_name, cardCount: Number(s.num_of_cards) || null, imagen: null });
+  }
+  _setsYugiohCache = Array.from(porAno, ([era, sets]) => ({ era, sets }))
+    .sort((a, b) => (a.era === "Sin fecha" ? 1 : b.era === "Sin fecha" ? -1 : b.era.localeCompare(a.era)));
+  return _setsYugiohCache;
+}
+
+export async function obtenerCartasDeSetYugioh(setName) {
+  const res = await fetchConReintento(`https://db.ygoprodeck.com/api/v7/cardinfo.php?cardset=${encodeURIComponent(setName)}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data?.data || []).map((c) => ({
+    id: String(c.id), name: c.name,
+    localId: c.card_sets?.find((s) => s.set_name === setName)?.set_code || "",
+    image: c.card_images?.[0]?.image_url_small || c.card_images?.[0]?.image_url || null,
+    precioRefMxn: precioRefDeCartaYgoprodeck(c),
+  }));
+}
+
+export async function obtenerSetsLorcana() {
+  const todas = await obtenerTodasLasCartasLorcana();
+  const nombres = [];
+  const vistos = new Set();
+  for (const c of todas) {
+    const set = c.Set_Name || c.set_name || c.set;
+    if (!set || vistos.has(set)) continue;
+    vistos.add(set);
+    nombres.push(set);
+  }
+  const sets = nombres.map((nombre) => ({
+    id: nombre, nombre, cardCount: todas.filter((c) => (c.Set_Name || c.set_name || c.set) === nombre).length, imagen: null,
+  }));
+  return [{ era: null, sets }];
+}
+
+export async function obtenerCartasDeSetLorcana(setNombre) {
+  const todas = await obtenerTodasLasCartasLorcana();
+  return todas
+    .filter((c) => (c.Set_Name || c.set_name || c.set) === setNombre)
+    .map((c) => ({
+      id: String(c.Unique_ID || c.id || c.Name || c.name),
+      name: c.Name || c.name || "",
+      localId: c.Card_Num || c.card_num || c.number || "",
+      image: c.Image || c.image || c.Image_URL || null,
+      precioRefMxn: null,
+    }));
+}
+
+// Despachador único para las 4 TCG con catálogo (ver TCG_CON_CATALOGO en
+// theme.js). One Piece no entra aquí — su catálogo de "sets" sale de
+// TCGCSV (categoriaIdTCGplayer + /groups), igual que TCGplayerPicker, ver
+// App.jsx.
+// Estos 3 despachadores son el único punto por el que la pantalla de
+// Catálogo y el buscador de cartas llegan a las APIs externas de cada TCG
+// (ver App.jsx) -- por eso atrapan aquí cualquier falla de red/límite de
+// tasa que sobreviva a los reintentos de fetchConReintento, en vez de
+// dejarla reventar como promesa sin atrapar. Antes, si pokemontcg.io/
+// Scryfall/YGOPRODeck fallaban las 3 veces, el error se colaba sin que
+// nadie lo esperara y disparaba un aviso "🔴 Error detectado" al admin por
+// cada usuario que tuvo la mala suerte de toparse con una caída momentánea
+// de una API gratuita de terceros -- ruido que nadie puede arreglar del
+// lado de la app. Ahora se degrada a "sin resultados" (la pantalla ya
+// sabe mostrar "no pudimos cargar los sets/cartas" cuando la lista viene
+// vacía), y solo se sigue avisando si es un bug de verdad de nuestro código.
+export async function obtenerErasYSetsCatalogo(tcg) {
+  try {
+    if (tcg === "pokemon") return await obtenerErasYSetsPokemon();
+    if (tcg === "magic") return await obtenerErasYSetsMagic();
+    if (tcg === "yugioh") return await obtenerErasYSetsYugioh();
+    if (tcg === "lorcana") return await obtenerSetsLorcana();
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function obtenerCartasDeSetCatalogo(tcg, setId) {
+  try {
+    if (tcg === "pokemon") return await obtenerCartasDeSetPokemon(setId);
+    if (tcg === "magic") return await obtenerCartasDeSetMagic(setId);
+    if (tcg === "yugioh") return await obtenerCartasDeSetYugioh(setId);
+    if (tcg === "lorcana") return await obtenerCartasDeSetLorcana(setId);
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+// Elige el catálogo correcto según el TCG de la publicación (ver
+// TCG_CON_CATALOGO en theme.js: qué TCG ya tienen buscador de texto libre).
+// One Piece todavía no tiene una fuente gratis confiable de texto libre —
+// usa TCGplayerPicker (elegir set, luego buscar dentro de ese set) en vez
+// de este despachador; ver App.jsx.
+export async function buscarCartasCatalogo(tcg, texto) {
+  try {
+    if (tcg === "magic") return await buscarCartasMagic(texto);
+    if (tcg === "pokemon") return await buscarCartasVisual(texto);
+    if (tcg === "yugioh") return await buscarCartasYugioh(texto);
+    if (tcg === "lorcana") return await buscarCartasLorcana(texto);
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function obtenerPrecioRefActualPorTcg(tcg, cardApiId) {
+  if (tcg === "magic") return obtenerPrecioRefActualMagic(cardApiId);
+  if (tcg === "yugioh") return obtenerPrecioRefActualYugioh(cardApiId);
+  // Pokémon usa pokemontcg.io; Lorcana/One Piece no tienen precio en vivo
+  // propio todavía, así que caen aquí también (esta llamada falla en
+  // silencio si el id no es de pokemontcg.io, sin romper la pantalla).
+  return obtenerPrecioRefActual(cardApiId);
+}
+
+// ---- Categorías de TCGplayer (vía TCGCSV, api/tcgcsv.js) ----
+// TCGplayer usa un "categoryId" numérico para cada juego (Pokémon, Magic,
+// etc.), pero esos números no están documentados públicamente y no son
+// adivinables con confianza (sobre todo para juegos que TCGplayer agregó
+// hace poco, como Lorcana o One Piece). En vez de arriesgarnos a
+// hardcodear un ID equivocado (fallaría en silencio, sin resultados, para
+// siempre), se busca el ID real por nombre contra el catálogo en vivo de
+// categorías — se cachea en memoria porque casi no cambia.
+const PATRON_NOMBRE_CATEGORIA_TCGPLAYER = {
+  pokemon: /pok[eé]mon/i,
+  magic: /magic/i,
+  yugioh: /yu-?gi-?oh/i,
+  lorcana: /lorcana/i,
+  onepiece: /one piece/i,
+};
+
+let _categoriasTCGplayerCache = null;
+async function obtenerCategoriasTCGplayer() {
+  if (_categoriasTCGplayerCache) return _categoriasTCGplayerCache;
+  // No se cachea un [] por error — mismo criterio que obtenerErasYSetsPokemon.
+  const res = await fetchConReintento("/api/tcgcsv?path=tcgplayer/categories");
+  const data = await res.json();
+  _categoriasTCGplayerCache = data?.results || [];
+  return _categoriasTCGplayerCache;
+}
+
+export async function categoriaIdTCGplayer(tcg) {
+  const patron = PATRON_NOMBRE_CATEGORIA_TCGPLAYER[tcg];
+  if (!patron) return null;
+  try {
+    const categorias = await obtenerCategoriasTCGplayer();
+    const encontrada = categorias.find((c) => patron.test(c.name || ""));
+    return encontrada?.categoryId ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // Precio de referencia "en vivo" para la ficha de detalle de una publicación:
