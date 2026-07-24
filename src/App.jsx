@@ -4251,6 +4251,8 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
   const [misSorteos, setMisSorteos] = useState([]);
+  const [plantillaSorteo, setPlantillaSorteo] = useState(null);
+  const [sorteoFormKey, setSorteoFormKey] = useState(0);
 
   const cargar = () => {
     setLoading(true); setError(null);
@@ -4267,7 +4269,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
           setInventario(inv);
           setSellado(sel);
           setVerificacion(verif[0] || null);
-          if (planDe(perfil).sorteos) {
+          if (planDe(perfil).sorteos || t.afiliada) {
             sb(`sorteos?select=*&tienda_id=eq.${t.id}&order=created_at.desc`, session).then(setMisSorteos).catch(() => setMisSorteos([]));
           }
         }
@@ -4454,20 +4456,33 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
         </div>
       )}
 
-      {planDe(perfil).sorteos ? (
+      {(planDe(perfil).sorteos || tienda.afiliada) ? (
         <div className="mb-6">
-          <CrearSorteoForm session={session} tiendaId={tienda.id} onCreado={cargar} />
+          {tienda.afiliada && !planDe(perfil).sorteos && (
+            <p style={{ color: COLORS.muted }} className="text-xs mb-2">
+              Como tienda afiliada puedes organizar sorteos, pero un administrador debe aprobarlos antes de que se vean públicamente.
+            </p>
+          )}
+          <CrearSorteoForm key={sorteoFormKey} session={session} tiendaId={tienda.id} pendiente={!planDe(perfil).sorteos} plantilla={plantillaSorteo} onCreado={cargar} />
           {misSorteos.length > 0 && (
             <div className="grid gap-2">
               {misSorteos.map((s) => (
-                <button key={s.id} onClick={() => onAbrirSorteo(s.id)} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
-                  className="rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap text-left hover:brightness-125">
-                  <div>
+                <div key={s.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                  className="rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap">
+                  <button onClick={() => onAbrirSorteo(s.id)} className="text-left hover:brightness-125 flex-1 min-w-[140px]">
                     <p className="text-sm font-semibold">{s.titulo}</p>
-                    <p style={{ color: COLORS.muted }} className="text-xs">{sorteoEstaActivo(s) ? "Activo" : s.estado === "cerrado" ? "Cerrado" : "Cancelado"}</p>
-                  </div>
+                    <p style={{ color: COLORS.muted }} className="text-xs">{sorteoEstadoLabel(s)}</p>
+                  </button>
                   <Badge color={COLORS.gold}>{s.premio}</Badge>
-                </button>
+                  <button
+                    onClick={() => {
+                      setPlantillaSorteo({ titulo: `${s.titulo} (copia)`, descripcion: s.descripcion || "", premio: s.premio, imagen_url: s.imagen_url || "", entrada_por_publicacion: s.entrada_por_publicacion || false });
+                      setSorteoFormKey((k) => k + 1);
+                    }}
+                    style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-1 text-xs font-semibold">
+                    🔁 Duplicar
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -5231,6 +5246,15 @@ function ComunidadView({ session, onVerPerfil }) {
     if (!archivo || !session) return;
     setPublicando(true); setError(null);
     try {
+      // Misma moderación por IA que ya se usa para las fotos reales de
+      // publicaciones del Mercado (ver SubirFotoManual/lib/moderacion.js,
+      // sección 209) -- se revisa ANTES de subir a Storage, "fail-open" si
+      // la moderación misma falla.
+      const veredicto = await moderarFotoReal(archivo);
+      if (!veredicto.permitida) {
+        setError(veredicto.motivo || "Esta foto no se puede publicar.");
+        return;
+      }
       const imagen_url = await subirImagenABucket("comunidad", archivo, session);
       await sbWrite("POST", "publicaciones_comunidad", { perfil_id: session.user.id, imagen_url, texto: texto.trim() || null, tipo }, session);
       setArchivo(null); setPreview(null); setTexto(""); setTipo("otro");
@@ -5293,7 +5317,7 @@ function ComunidadView({ session, onVerPerfil }) {
           <textarea value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Cuéntanos algo (opcional)"
             style={inputStyle} className="w-full rounded-lg px-3 py-2 text-sm outline-none" rows={2} />
           <button onClick={publicar} disabled={!archivo || publicando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: archivo ? 1 : 0.5 }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
-            {publicando ? "Publicando..." : "Publicar"}
+            {publicando ? "Revisando y publicando..." : "Publicar"}
           </button>
         </div>
       ) : (
@@ -7237,6 +7261,51 @@ function sorteoEstaActivo(s) {
   return s.estado === "activo" && new Date(s.fecha_fin) > new Date();
 }
 
+// Centraliza el texto de estado para no repetir la misma cadena de
+// ternarios en cada lugar que lista sorteos (y para no olvidar el caso
+// "pendiente" en alguno de ellos).
+function sorteoEstadoLabel(s) {
+  if (sorteoEstaActivo(s)) return "Activo";
+  if (s.estado === "pendiente") return "Pendiente de aprobación";
+  if (s.estado === "cerrado") return "Cerrado";
+  return "Cancelado";
+}
+
+// Banner grande en la primera pantalla (Buscar/Inicio) para el sorteo que
+// su organizador marcó como "destacado". Si hay varios, se usa el más
+// reciente -- no hace falta forzar que solo exista uno a la vez con RLS,
+// esto ya evita amontonar varios banners.
+function SorteoDestacadoBanner({ onAbrirSorteo }) {
+  const [sorteo, setSorteo] = useState(null);
+
+  useEffect(() => {
+    sb(`sorteos?select=*,tiendas(nombre)&destacado=eq.true&estado=eq.activo&order=created_at.desc&limit=5`)
+      .then((rows) => setSorteo(rows.find(sorteoEstaActivo) || null))
+      .catch(() => setSorteo(null));
+  }, []);
+
+  if (!sorteo) return null;
+
+  return (
+    <button onClick={() => onAbrirSorteo(sorteo.id)}
+      style={{ background: `linear-gradient(120deg, ${COLORS.gold}22, ${COLORS.violeta}22)`, border: `1px solid ${COLORS.gold}77` }}
+      className="w-full rounded-2xl p-4 sm:p-5 mb-8 flex items-center gap-4 flex-wrap sm:flex-nowrap text-left hover:brightness-110 transition">
+      <div style={{ background: COLORS.surface2, width: 88, height: 88 }} className="rounded-xl overflow-hidden shrink-0 flex items-center justify-center">
+        {sorteo.imagen_url ? <img src={sorteo.imagen_url} alt={sorteo.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Gift size={36} color={COLORS.gold} />}
+      </div>
+      <div className="flex-1 min-w-[180px]">
+        <Badge color={COLORS.gold}>🎁 Sorteo activo</Badge>
+        <p style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-lg sm:text-xl font-bold mt-1">{sorteo.titulo}</p>
+        <p style={{ color: COLORS.gold }} className="text-sm font-semibold">{sorteo.premio}</p>
+        <p style={{ color: COLORS.muted }} className="text-xs mt-1">
+          {sorteo.tiendas?.nombre ? `Organiza: ${sorteo.tiendas.nombre}` : "Organiza: Encuentra Cartas"} · Termina: {new Date(sorteo.fecha_fin).toLocaleDateString("es-MX")}
+        </p>
+      </div>
+      <span style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-bold whitespace-nowrap">Participar →</span>
+    </button>
+  );
+}
+
 function SorteoCard({ s, onAbrir }) {
   const activo = sorteoEstaActivo(s);
   return (
@@ -7246,7 +7315,7 @@ function SorteoCard({ s, onAbrir }) {
         {s.imagen_url ? <img src={s.imagen_url} alt={s.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Gift size={32} color={COLORS.muted} />}
       </div>
       <div className="p-3">
-        <Badge color={activo ? COLORS.gold : COLORS.muted}>{activo ? "Activo" : s.estado === "cerrado" ? "Cerrado" : "Cancelado"}</Badge>
+        <Badge color={activo ? COLORS.gold : COLORS.muted}>{sorteoEstadoLabel(s)}</Badge>
         <p className="font-semibold text-sm mt-1">{s.titulo}</p>
         <p style={{ color: COLORS.gold }} className="text-xs mt-1">🎁 {s.premio}</p>
         <p style={{ color: COLORS.muted }} className="text-xs mt-1">{s.tiendas?.nombre ? `Organiza: ${s.tiendas.nombre}` : "Organiza: Encuentra Cartas"}</p>
@@ -7262,7 +7331,7 @@ function SorteosView({ session, onAbrirSorteo }) {
 
   useEffect(() => {
     setLoading(true);
-    sb(`sorteos?select=*,tiendas(nombre,slug)&order=created_at.desc`)
+    sb(`sorteos?select=*,tiendas(nombre,slug)&estado=neq.pendiente&order=created_at.desc`)
       .then(setSorteos)
       .catch(() => setSorteos([]))
       .finally(() => setLoading(false));
@@ -7305,6 +7374,9 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
   const [compartiendo, setCompartiendo] = useState(false);
   const [eligiendo, setEligiendo] = useState(false);
   const [copiado, setCopiado] = useState(false);
+  const [desactivando, setDesactivando] = useState(false);
+  const [destacando, setDestacando] = useState(false);
+  const [aprobando, setAprobando] = useState(false);
   const [error, setError] = useState(null);
 
   const cargar = () => {
@@ -7374,6 +7446,31 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
     } catch (e) { setError(e.message); } finally { setEligiendo(false); }
   };
 
+  const desactivar = async () => {
+    if (!window.confirm("¿Desactivar este sorteo? Deja de aceptar participantes y boletos, sin elegir ganador. No se puede deshacer.")) return;
+    setDesactivando(true); setError(null);
+    try {
+      await sbWrite("PATCH", `sorteos?id=eq.${sorteoId}`, { estado: "cancelado" }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setDesactivando(false); }
+  };
+
+  const alternarDestacado = async () => {
+    setDestacando(true); setError(null);
+    try {
+      await sbWrite("PATCH", `sorteos?id=eq.${sorteoId}`, { destacado: !sorteo.destacado }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setDestacando(false); }
+  };
+
+  const aprobar = async (aprobar) => {
+    setAprobando(true); setError(null);
+    try {
+      await sbWrite("PATCH", `sorteos?id=eq.${sorteoId}`, { estado: aprobar ? "activo" : "cancelado" }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setAprobando(false); }
+  };
+
   const volver = (
     <button onClick={onVolver} style={{ color: COLORS.azulPalido }} className="flex items-center gap-1 text-sm mb-4">
       <ChevronLeft size={16} /> Volver
@@ -7396,7 +7493,8 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
         </div>
         <div>
           <div className="flex items-center gap-2 flex-wrap mb-2">
-            <Badge color={activo ? COLORS.gold : COLORS.muted}>{activo ? "Activo" : sorteo.estado === "cerrado" ? "Cerrado" : "Cancelado"}</Badge>
+            <Badge color={activo ? COLORS.gold : COLORS.muted}>{sorteoEstadoLabel(sorteo)}</Badge>
+            {sorteo.destacado && activo && <Badge color={COLORS.violeta}>⭐ Destacado en Inicio</Badge>}
             <p style={{ color: COLORS.muted }} className="text-xs">{sorteo.tiendas?.nombre ? `Organiza: ${sorteo.tiendas.nombre}` : "Organiza: Encuentra Cartas"}</p>
           </div>
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold mb-1">{sorteo.titulo}</h2>
@@ -7416,6 +7514,28 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
                 <p style={{ color: COLORS.gold }} className="text-xs font-semibold uppercase">🏆 Ganador</p>
                 <p className="font-semibold">{sorteo.ganador.nombre}</p>
               </div>
+            </div>
+          )}
+
+          {sorteo.estado === "pendiente" && (
+            <div style={{ background: `${COLORS.azulPalido}11`, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4 mb-4">
+              <p style={{ color: COLORS.azulPalido }} className="text-sm">
+                {perfil?.es_admin
+                  ? "Este sorteo lo organizó una tienda afiliada y está esperando tu aprobación para publicarse."
+                  : "Tu sorteo está en revisión -- un administrador lo aprobará antes de que se vea públicamente."}
+              </p>
+              {perfil?.es_admin && (
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => aprobar(true)} disabled={aprobando}
+                    style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    {aprobando ? "..." : "✅ Aprobar"}
+                  </button>
+                  <button onClick={() => aprobar(false)} disabled={aprobando}
+                    style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    Rechazar
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -7442,6 +7562,7 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
                   </div>
                   <p style={{ color: COLORS.muted }} className="text-xs">
                     Comparte tu link -- si alguien nuevo se registra desde él, ganas +2 boletos más.
+                    {sorteo.entrada_por_publicacion && " Y cada carta que publiques en el Mercado mientras el sorteo siga activo te suma +1 boleto más."}
                   </p>
                 </>
               )}
@@ -7449,10 +7570,20 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
           )}
 
           {esOrganizador && activo && (
-            <button onClick={elegirGanador} disabled={eligiendo}
-              style={{ background: COLORS.violeta, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold mb-6">
-              {eligiendo ? "Eligiendo..." : "🎲 Elegir ganador ahora"}
-            </button>
+            <div className="flex gap-2 flex-wrap mb-6">
+              <button onClick={elegirGanador} disabled={eligiendo}
+                style={{ background: COLORS.violeta, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+                {eligiendo ? "Eligiendo..." : "🎲 Elegir ganador ahora"}
+              </button>
+              <button onClick={alternarDestacado} disabled={destacando}
+                style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}66` }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+                {destacando ? "..." : sorteo.destacado ? "⭐ Quitar de Inicio" : "⭐ Destacar en Inicio"}
+              </button>
+              <button onClick={desactivar} disabled={desactivando}
+                style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+                {desactivando ? "..." : "Desactivar sorteo"}
+              </button>
+            </div>
           )}
 
           {participantes.length > 0 && (
@@ -7477,11 +7608,21 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
 
 // Formulario para organizar un sorteo -- se usa tanto en AdminPanel
 // (tiendaId=null, "Encuentra Cartas" como organizador) como en MyStorePanel
-// (tiendaId de la tienda del dueño, gateado a plan Aurora).
-function CrearSorteoForm({ session, tiendaId, onCreado }) {
+// (tiendaId de la tienda del dueño, Aurora o afiliada).
+//
+// pendiente=true es para tiendas afiliadas sin plan Aurora: el sorteo se
+// manda con estado "pendiente" en vez de dejar que la base de datos le
+// ponga el default "activo" -- la policy de RLS (ver migración 054) solo
+// deja pasar esa combinación si la tienda de verdad es afiliada.
+//
+// plantilla precarga título/premio/descripción/imagen desde un sorteo ya
+// existente (botón "Duplicar" en las listas) -- el padre debe cambiar la
+// prop `key` al pasar una plantilla nueva para forzar que este formulario
+// se vuelva a montar y tome los valores iniciales.
+function CrearSorteoForm({ session, tiendaId, pendiente, plantilla, onCreado }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
-  const vacio = { titulo: "", descripcion: "", premio: "", imagen_url: "", fecha_fin: "" };
-  const [nuevo, setNuevo] = useState(vacio);
+  const vacio = { titulo: "", descripcion: "", premio: "", imagen_url: "", fecha_fin: "", entrada_por_publicacion: false };
+  const [nuevo, setNuevo] = useState(() => ({ ...vacio, ...(plantilla || {}), fecha_fin: "" }));
   const [subiendoImagen, setSubiendoImagen] = useState(false);
   const [creando, setCreando] = useState(false);
   const [error, setError] = useState(null);
@@ -7507,6 +7648,8 @@ function CrearSorteoForm({ session, tiendaId, onCreado }) {
         premio: nuevo.premio.trim(),
         imagen_url: nuevo.imagen_url || null,
         fecha_fin: new Date(nuevo.fecha_fin).toISOString(),
+        entrada_por_publicacion: nuevo.entrada_por_publicacion,
+        ...(pendiente ? { estado: "pendiente" } : {}),
       }, session);
       setNuevo(vacio);
       setOk(true);
@@ -7517,8 +7660,13 @@ function CrearSorteoForm({ session, tiendaId, onCreado }) {
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.gold}55` }} className="rounded-xl p-4 mb-6 grid gap-2">
       <p style={{ color: COLORS.gold }} className="text-sm font-semibold uppercase">🎁 Organizar sorteo</p>
+      {pendiente && (
+        <p style={{ color: COLORS.azulPalido }} className="text-xs">
+          Como tienda afiliada, tu sorteo se revisará y necesita aprobación de un administrador antes de verse públicamente.
+        </p>
+      )}
       {error && <ErrorBox message={error} />}
-      {ok && <p style={{ color: COLORS.gold }} className="text-xs">Sorteo publicado.</p>}
+      {ok && <p style={{ color: COLORS.gold }} className="text-xs">{pendiente ? "Sorteo enviado a revisión." : "Sorteo publicado."}</p>}
       <input placeholder="Título del sorteo" value={nuevo.titulo} onChange={(e) => setNuevo({ ...nuevo, titulo: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
       <input placeholder="Premio (ej. Booster box de Prismatic Evolutions)" value={nuevo.premio} onChange={(e) => setNuevo({ ...nuevo, premio: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
       <textarea placeholder="Descripción / reglas (opcional)" value={nuevo.descripcion} onChange={(e) => setNuevo({ ...nuevo, descripcion: e.target.value })} rows={2} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
@@ -7530,13 +7678,17 @@ function CrearSorteoForm({ session, tiendaId, onCreado }) {
         </label>
         {nuevo.imagen_url && <img src={nuevo.imagen_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />}
       </div>
+      <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: COLORS.muted }}>
+        <input type="checkbox" checked={nuevo.entrada_por_publicacion} onChange={(e) => setNuevo({ ...nuevo, entrada_por_publicacion: e.target.checked })} />
+        Cada carta que un usuario publique en el Mercado mientras el sorteo esté activo le suma +1 boleto extra (si publica 5, gana 5 boletos).
+      </label>
       <div>
         <p style={{ color: COLORS.muted }} className="text-xs mb-1">Termina el</p>
         <input type="datetime-local" value={nuevo.fecha_fin} onChange={(e) => setNuevo({ ...nuevo, fecha_fin: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit" />
       </div>
       <button onClick={crear} disabled={creando || !nuevo.titulo.trim() || !nuevo.premio.trim() || !nuevo.fecha_fin}
         style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
-        {creando ? "Publicando..." : "Publicar sorteo"}
+        {creando ? "Publicando..." : pendiente ? "Enviar a revisión" : "Publicar sorteo"}
       </button>
     </div>
   );
@@ -7549,6 +7701,9 @@ function CrearSorteoForm({ session, tiendaId, onCreado }) {
 function AdminSorteosTab({ session, onAbrirSorteo }) {
   const [sorteos, setSorteos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [plantilla, setPlantilla] = useState(null);
+  const [formKey, setFormKey] = useState(0);
+  const [gestionando, setGestionando] = useState(null); // id del sorteo en el que se está aprobando/rechazando
 
   const cargar = () => {
     setLoading(true);
@@ -7560,24 +7715,70 @@ function AdminSorteosTab({ session, onAbrirSorteo }) {
 
   useEffect(() => { cargar(); }, []);
 
+  const duplicar = (s) => {
+    setPlantilla({ titulo: `${s.titulo} (copia)`, descripcion: s.descripcion || "", premio: s.premio, imagen_url: s.imagen_url || "", entrada_por_publicacion: s.entrada_por_publicacion || false });
+    setFormKey((k) => k + 1);
+  };
+
+  const gestionarPendiente = async (s, aprobar) => {
+    setGestionando(s.id);
+    try {
+      await sbWrite("PATCH", `sorteos?id=eq.${s.id}`, { estado: aprobar ? "activo" : "cancelado" }, session);
+      cargar();
+    } catch {} finally { setGestionando(null); }
+  };
+
+  const pendientes = sorteos.filter((s) => s.estado === "pendiente");
+  const resto = sorteos.filter((s) => s.estado !== "pendiente");
+
   return (
     <div>
       <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🎁 Sorteos</h2>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-4">Organiza un sorteo oficial de Encuentra Cartas, o revisa/gestiona cualquier sorteo (incluyendo los de tiendas Aurora).</p>
-      <CrearSorteoForm session={session} tiendaId={null} onCreado={cargar} />
-      {loading ? <Loading label="Cargando sorteos..." /> : sorteos.length === 0 ? (
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">Organiza un sorteo oficial de Encuentra Cartas, o revisa/gestiona cualquier sorteo (incluyendo los de tiendas Aurora y afiliadas).</p>
+      <CrearSorteoForm key={formKey} session={session} tiendaId={null} plantilla={plantilla} onCreado={cargar} />
+
+      {pendientes.length > 0 && (
+        <div className="mb-6">
+          <h3 style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-2">Pendientes de aprobación (tiendas afiliadas)</h3>
+          <div className="grid gap-2">
+            {pendientes.map((s) => (
+              <div key={s.id} style={{ background: COLORS.bg, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap">
+                <button onClick={() => onAbrirSorteo(s.id)} className="text-left hover:brightness-125">
+                  <p className="text-sm font-semibold">{s.titulo}</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs">{s.tiendas?.nombre || "Tienda"} · 🎁 {s.premio}</p>
+                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => gestionarPendiente(s, true)} disabled={gestionando === s.id}
+                    style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    ✅ Aprobar
+                  </button>
+                  <button onClick={() => gestionarPendiente(s, false)} disabled={gestionando === s.id}
+                    style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    Rechazar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loading ? <Loading label="Cargando sorteos..." /> : resto.length === 0 ? (
         <p style={{ color: COLORS.muted }} className="text-sm">Todavía no hay sorteos.</p>
       ) : (
         <div className="grid gap-2">
-          {sorteos.map((s) => (
-            <button key={s.id} onClick={() => onAbrirSorteo(s.id)} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }}
-              className="rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap text-left hover:brightness-125">
-              <div>
+          {resto.map((s) => (
+            <div key={s.id} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }}
+              className="rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap">
+              <button onClick={() => onAbrirSorteo(s.id)} className="text-left hover:brightness-125 flex-1 min-w-[140px]">
                 <p className="text-sm font-semibold">{s.titulo}</p>
-                <p style={{ color: COLORS.muted }} className="text-xs">{s.tiendas?.nombre || "Encuentra Cartas"} · {sorteoEstaActivo(s) ? "Activo" : s.estado === "cerrado" ? "Cerrado" : "Cancelado"}</p>
-              </div>
+                <p style={{ color: COLORS.muted }} className="text-xs">{s.tiendas?.nombre || "Encuentra Cartas"} · {sorteoEstadoLabel(s)}</p>
+              </button>
               <Badge color={COLORS.gold}>{s.premio}</Badge>
-            </button>
+              <button onClick={() => duplicar(s)} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-1 text-xs font-semibold">
+                🔁 Duplicar
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -10287,6 +10488,7 @@ export default function EncuentraCartas() {
         {/* SEARCH */}
         {view === "search" && (
           <div>
+            {!query.trim() && <SorteoDestacadoBanner onAbrirSorteo={abrirSorteo} />}
             <div className="text-center mb-10" style={{ animation: "fadeUp .5s ease both" }}>
               <div style={{ background: `${COLORS.violeta}1f`, border: `1px solid ${COLORS.violeta}59`, color: "#C9B6FF" }}
                 className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide mb-5">

@@ -2443,6 +2443,55 @@ Dos ajustes chicos pedidos después de la sección 82:
 **Pendiente de aplicar en Supabase** (el conector MCP sigue
 desconectado): corre `053_sitio_web_tienda.sql` a mano en el SQL Editor.
 
+## 84. Sorteos: boletos por publicar, destacado en Inicio, tiendas afiliadas + moderación del feed de comunidad
+
+Ampliación de Sorteos (sección 80) y un pendiente aparte sobre el feed de comunidad:
+
+- **Boletos automáticos por publicar**: al organizar un sorteo, una nueva
+  casilla "Cada carta que un usuario publique en el Mercado mientras el
+  sorteo esté activo le suma +1 boleto extra" (`sorteos.entrada_por_publicacion`,
+  migración 054). Un trigger en `mercado_listings` (solo `tipo = 'carta'`)
+  le suma +1 boleto en cada sorteo activo con esa opción prendida -- si el
+  usuario todavía no participaba, lo entra automático con 1 boleto en vez
+  de exigir que primero le dé "Participar". Publicar 5 cartas = 5 boletos,
+  sin ninguna acción manual extra.
+- **Destacar en Inicio**: el organizador (o Admin) puede marcar su sorteo
+  activo como "⭐ Destacar en Inicio" (`sorteos.destacado`) desde el botón
+  correspondiente en el detalle del sorteo. La primera pantalla (Buscar,
+  cuando no hay texto escrito) muestra un banner grande con el sorteo
+  destacado más reciente (`SorteoDestacadoBanner`) para que cualquiera que
+  entre a la página lo vea de inmediato.
+- **Desactivar un sorteo**: el organizador o Admin ahora tiene un botón
+  "Desactivar sorteo" en el detalle (pasa a `cancelado` sin tener que
+  elegir un ganador) -- antes solo existía "Elegir ganador ahora", que sí
+  cierra el sorteo pero obliga a sortear.
+- **Duplicar un sorteo**: botón "🔁 Duplicar" en las listas de Admin y de
+  Mi tienda -- precarga un sorteo nuevo con el mismo título (+"(copia)"),
+  premio, descripción, imagen y la opción de boletos por publicar, solo
+  pidiendo una fecha de cierre nueva. Así no hay que volver a escribir
+  todo para repetir un sorteo parecido en el futuro.
+- **Tiendas afiliadas también pueden organizar sorteos** (no solo Aurora),
+  pero entran en estado `pendiente` (ampliación del check de estado en
+  sorteos) y necesitan que un Admin los apruebe (pasarlos a `activo`) antes
+  de que se vean públicamente -- a diferencia de Admin/Aurora, que se
+  publican activos de inmediato. Un trigger (`sorteo_validar_transicion`)
+  bloquea que el propio organizador se autoapruebe: ese salto de estado
+  solo lo puede hacer una cuenta con `es_admin = true`. AdminSorteosTab
+  ahora tiene una sección aparte "Pendientes de aprobación" con botones
+  Aprobar/Rechazar, y el detalle del sorteo también los muestra si Admin
+  lo abre directo.
+- **Moderación del feed de comunidad**: las fotos que se suben a
+  "Comunidad" (pulls, aperturas, logros) ahora pasan por la misma
+  moderación por IA que ya protegía las fotos reales de publicaciones del
+  Mercado (`moderarFotoReal`, sección 209/74) antes de subirlas a
+  Storage -- rechaza contenido inapropiado o fotos que no tienen nada que
+  ver con cartas coleccionables/TCG, con el mismo criterio "fail-open" (si
+  la moderación falla, se deja pasar la foto en vez de bloquear al
+  usuario).
+
+**Pendiente de aplicar en Supabase** (el conector MCP sigue
+desconectado): corre `054_sorteos_v2.sql` a mano en el SQL Editor.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
