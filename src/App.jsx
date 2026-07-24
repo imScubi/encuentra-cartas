@@ -5,6 +5,7 @@ import {
   User, Megaphone, Newspaper, ShoppingBag, ShoppingCart, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
   ArrowUp, ArrowDown, Navigation, ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
+  Gift, Gavel,
 } from "./lib/icons.jsx";
 import {
   VAPID_PUBLIC_KEY,
@@ -2539,7 +2540,7 @@ function VerificacionesTiendaAdmin({ session }) {
   );
 }
 
-function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
+function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [tabAdmin, setTabAdmin] = useState("estadisticas");
   const [tiendasSinDueno, setTiendasSinDueno] = useState([]);
@@ -3043,6 +3044,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
     { id: "publicaciones", label: "Publicaciones" },
     { id: "reportes", label: `Reportes${reportes.length ? ` (${reportes.length})` : ""}` },
     { id: "vendedores", label: "Vendedores" },
+    { id: "sorteos", label: "Sorteos" },
     { id: "errores", label: "Errores" },
   ];
 
@@ -3598,6 +3600,8 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil }) {
         </div>
       )}
 
+      {tabAdmin === "sorteos" && <AdminSorteosTab session={session} onAbrirSorteo={onAbrirSorteo} />}
+
       {tabAdmin === "errores" && (
         <div>
       <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🐞 Errores detectados</h2>
@@ -4100,7 +4104,7 @@ function MisEstadisticasTienda({ session, perfil, totalActivos, onIrAPlanes }) {
   );
 }
 
-function MyStorePanel({ session, perfil, onIrAPlanes }) {
+function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
   const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
   const [inventario, setInventario] = useState([]);
   const [sellado, setSellado] = useState([]);
@@ -4117,6 +4121,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
+  const [misSorteos, setMisSorteos] = useState([]);
 
   const cargar = () => {
     setLoading(true); setError(null);
@@ -4133,6 +4138,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
           setInventario(inv);
           setSellado(sel);
           setVerificacion(verif[0] || null);
+          if (planDe(perfil).sorteos) {
+            sb(`sorteos?select=*&tienda_id=eq.${t.id}&order=created_at.desc`, session).then(setMisSorteos).catch(() => setMisSorteos([]));
+          }
         }
       })
       .catch((e) => setError(e.message))
@@ -4310,6 +4318,32 @@ function MyStorePanel({ session, perfil, onIrAPlanes }) {
         <div className="mb-6">
           <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
             Sube fotos de tu álbum físico y deja que la IA identifique cada carta por ti, en vez de agregarlas una por una.
+          </UpsellCard>
+        </div>
+      )}
+
+      {planDe(perfil).sorteos ? (
+        <div className="mb-6">
+          <CrearSorteoForm session={session} tiendaId={tienda.id} onCreado={cargar} />
+          {misSorteos.length > 0 && (
+            <div className="grid gap-2">
+              {misSorteos.map((s) => (
+                <button key={s.id} onClick={() => onAbrirSorteo(s.id)} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+                  className="rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap text-left hover:brightness-125">
+                  <div>
+                    <p className="text-sm font-semibold">{s.titulo}</p>
+                    <p style={{ color: COLORS.muted }} className="text-xs">{sorteoEstaActivo(s) ? "Activo" : s.estado === "cerrado" ? "Cerrado" : "Cancelado"}</p>
+                  </div>
+                  <Badge color={COLORS.gold}>{s.premio}</Badge>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mb-6">
+          <UpsellCard requiere={PLAN_INFO.enteball} plan="enteball" onIrAPlanes={onIrAPlanes}>
+            Organiza sorteos con premio para tus clientes: eligen participar, comparten su link y hasta invitan amigos nuevos para más boletos.
           </UpsellCard>
         </div>
       )}
@@ -6915,6 +6949,714 @@ function CrearTorneo({ session, tiendaId }) {
   );
 }
 
+// ---- Sorteos: Admin y tiendas con plan Aurora organizan un sorteo con
+// premio; cualquiera con sesión "Participa" (1 boleto). Comparte su link
+// para +1 boleto, o invita a alguien nuevo a registrarse por su link para
+// +2 boletos (ver trigger sorteo_procesar_referido, migración 051). Más
+// boletos = más probabilidad de ganar, no una garantía -- el "elegir
+// ganador" es un sorteo aleatorio ponderado hecho por quien organiza. ----
+function sorteoEstaActivo(s) {
+  return s.estado === "activo" && new Date(s.fecha_fin) > new Date();
+}
+
+function SorteoCard({ s, onAbrir }) {
+  const activo = sorteoEstaActivo(s);
+  return (
+    <button onClick={onAbrir} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${activo ? COLORS.gold + "66" : COLORS.surface2}`, textAlign: "left" }}
+      className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
+      <div style={{ background: COLORS.surface2 }} className="aspect-video flex items-center justify-center">
+        {s.imagen_url ? <img src={s.imagen_url} alt={s.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Gift size={32} color={COLORS.muted} />}
+      </div>
+      <div className="p-3">
+        <Badge color={activo ? COLORS.gold : COLORS.muted}>{activo ? "Activo" : s.estado === "cerrado" ? "Cerrado" : "Cancelado"}</Badge>
+        <p className="font-semibold text-sm mt-1">{s.titulo}</p>
+        <p style={{ color: COLORS.gold }} className="text-xs mt-1">🎁 {s.premio}</p>
+        <p style={{ color: COLORS.muted }} className="text-xs mt-1">{s.tiendas?.nombre ? `Organiza: ${s.tiendas.nombre}` : "Organiza: Encuentra Cartas"}</p>
+        {activo && <p style={{ color: COLORS.muted }} className="text-xs mt-1">Termina: {new Date(s.fecha_fin).toLocaleDateString("es-MX")}</p>}
+      </div>
+    </button>
+  );
+}
+
+function SorteosView({ session, onAbrirSorteo }) {
+  const [sorteos, setSorteos] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    sb(`sorteos?select=*,tiendas(nombre,slug)&order=created_at.desc`)
+      .then(setSorteos)
+      .catch(() => setSorteos([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Loading label="Cargando sorteos..." />;
+
+  const activos = sorteos.filter(sorteoEstaActivo);
+  const pasados = sorteos.filter((s) => !sorteoEstaActivo(s));
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🎁 Sorteos</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">
+        Sorteos organizados por Admin y tiendas Aurora. Participa gratis, comparte tu link para un boleto extra, e invita amigos nuevos a registrarse para todavía más boletos.
+      </p>
+      {sorteos.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Todavía no hay sorteos. Vuelve pronto.</p>}
+      {activos.length > 0 && (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+          {activos.map((s) => <SorteoCard key={s.id} s={s} onAbrir={() => onAbrirSorteo(s.id)} />)}
+        </div>
+      )}
+      {pasados.length > 0 && (
+        <>
+          <h3 style={{ color: COLORS.muted }} className="text-sm font-semibold uppercase mb-3">Sorteos pasados</h3>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pasados.map((s) => <SorteoCard key={s.id} s={s} onAbrir={() => onAbrirSorteo(s.id)} />)}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin }) {
+  const [sorteo, setSorteo] = useState(undefined); // undefined = cargando, null = no existe
+  const [participantes, setParticipantes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uniendome, setUniendome] = useState(false);
+  const [compartiendo, setCompartiendo] = useState(false);
+  const [eligiendo, setEligiendo] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+  const [error, setError] = useState(null);
+
+  const cargar = () => {
+    setLoading(true);
+    Promise.all([
+      sb(`sorteos?select=*,tiendas(nombre,slug),ganador:ganador_perfil_id(nombre,avatar_url)&id=eq.${sorteoId}`),
+      sb(`sorteo_participantes?select=*,perfiles(nombre,avatar_url)&sorteo_id=eq.${sorteoId}&order=boletos.desc`),
+    ])
+      .then(([sRows, pRows]) => { setSorteo(sRows[0] || null); setParticipantes(pRows); })
+      .catch(() => { setSorteo(null); setParticipantes([]); })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, [sorteoId]);
+
+  const miParticipacion = session ? participantes.find((p) => p.perfil_id === session.user.id) : null;
+  const esOrganizador = !!(session && sorteo && (sorteo.perfil_id === session.user.id || perfil?.es_admin));
+  const totalBoletos = participantes.reduce((acc, p) => acc + p.boletos, 0);
+
+  const participar = async () => {
+    if (!session) { onRequireLogin(); return; }
+    setUniendome(true); setError(null);
+    try {
+      await sbWrite("POST", "sorteo_participantes", { sorteo_id: sorteoId, perfil_id: session.user.id }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setUniendome(false); }
+  };
+
+  const linkReferido = session ? `${window.location.origin}/?sorteo=${sorteoId}&ref=${session.user.id}` : `${window.location.origin}/?sorteo=${sorteoId}`;
+
+  const copiarLink = async () => {
+    try { await navigator.clipboard.writeText(linkReferido); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch {}
+  };
+
+  const compartir = async () => {
+    setCompartiendo(true); setError(null);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: sorteo.titulo, text: `Participa en este sorteo: ${sorteo.premio}`, url: linkReferido });
+      } else {
+        await copiarLink();
+      }
+      if (miParticipacion && !miParticipacion.compartido) {
+        await sbWrite("POST", "rpc/sorteo_reclamar_bono_compartir", { p_sorteo_id: sorteoId }, session);
+        cargar();
+      }
+    } catch (e) {
+      if (e?.name !== "AbortError") setError(e.message || "No se pudo compartir.");
+    } finally {
+      setCompartiendo(false);
+    }
+  };
+
+  const elegirGanador = async () => {
+    if (totalBoletos === 0) { setError("Todavía no hay participantes."); return; }
+    if (!window.confirm("¿Elegir ganador ahora? El sorteo se cierra y no se puede deshacer.")) return;
+    setEligiendo(true); setError(null);
+    try {
+      let n = Math.random() * totalBoletos;
+      let ganador = participantes[0];
+      for (const p of participantes) {
+        n -= p.boletos;
+        if (n <= 0) { ganador = p; break; }
+      }
+      await sbWrite("PATCH", `sorteos?id=eq.${sorteoId}`, { estado: "cerrado", ganador_perfil_id: ganador.perfil_id, elegido_at: new Date().toISOString() }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setEligiendo(false); }
+  };
+
+  const volver = (
+    <button onClick={onVolver} style={{ color: COLORS.azulPalido }} className="flex items-center gap-1 text-sm mb-4">
+      <ChevronLeft size={16} /> Volver
+    </button>
+  );
+
+  if (loading || sorteo === undefined) return <div>{volver}<Loading label="Cargando sorteo..." /></div>;
+  if (!sorteo) return <div>{volver}<ErrorBox message="Este sorteo ya no está disponible." /></div>;
+
+  const activo = sorteoEstaActivo(sorteo);
+
+  return (
+    <div>
+      {volver}
+      <div className="grid sm:grid-cols-[minmax(0,320px)_1fr] gap-6">
+        <div className="grid gap-3">
+          <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-video flex items-center justify-center">
+            {sorteo.imagen_url ? <img src={sorteo.imagen_url} alt={sorteo.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} className="rounded-2xl" /> : <Gift size={48} color={COLORS.muted} />}
+          </div>
+        </div>
+        <div>
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <Badge color={activo ? COLORS.gold : COLORS.muted}>{activo ? "Activo" : sorteo.estado === "cerrado" ? "Cerrado" : "Cancelado"}</Badge>
+            <p style={{ color: COLORS.muted }} className="text-xs">{sorteo.tiendas?.nombre ? `Organiza: ${sorteo.tiendas.nombre}` : "Organiza: Encuentra Cartas"}</p>
+          </div>
+          <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold mb-1">{sorteo.titulo}</h2>
+          <p style={{ color: COLORS.gold }} className="text-lg font-semibold mb-2">🎁 {sorteo.premio}</p>
+          {sorteo.descripcion && <p style={{ color: COLORS.text }} className="text-sm mb-3 whitespace-pre-line">{sorteo.descripcion}</p>}
+          <p style={{ color: COLORS.muted }} className="text-xs mb-4">
+            {activo ? `Termina: ${new Date(sorteo.fecha_fin).toLocaleString("es-MX")}` : `Terminó: ${new Date(sorteo.fecha_fin).toLocaleString("es-MX")}`}
+            {" · "}{participantes.length} participante{participantes.length === 1 ? "" : "s"} · {totalBoletos} boleto{totalBoletos === 1 ? "" : "s"} en total
+          </p>
+
+          {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+          {!activo && sorteo.ganador && (
+            <div style={{ background: `${COLORS.gold}18`, border: `1px solid ${COLORS.gold}55` }} className="rounded-xl p-4 mb-4 flex items-center gap-3">
+              <AvatarImg url={sorteo.ganador.avatar_url} size={40} />
+              <div>
+                <p style={{ color: COLORS.gold }} className="text-xs font-semibold uppercase">🏆 Ganador</p>
+                <p className="font-semibold">{sorteo.ganador.nombre}</p>
+              </div>
+            </div>
+          )}
+
+          {activo && (
+            <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-3">
+              {!miParticipacion ? (
+                <button onClick={participar} disabled={uniendome}
+                  style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-xl py-3 text-sm font-bold w-full">
+                  {uniendome ? "Uniéndote..." : session ? "🎉 Participar" : "Inicia sesión para participar"}
+                </button>
+              ) : (
+                <>
+                  <p className="text-sm">
+                    Ya participas con <strong style={{ color: COLORS.gold }}>{miParticipacion.boletos} boleto{miParticipacion.boletos === 1 ? "" : "s"}</strong>.
+                  </p>
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={compartir} disabled={compartiendo}
+                      style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-2 text-xs font-semibold">
+                      {compartiendo ? "..." : miParticipacion.compartido ? "📤 Compartir de nuevo" : "📤 Compartir para +1 boleto"}
+                    </button>
+                    <button onClick={copiarLink} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1">
+                      <Copy size={12} /> {copiado ? "¡Copiado!" : "Copiar tu link"}
+                    </button>
+                  </div>
+                  <p style={{ color: COLORS.muted }} className="text-xs">
+                    Comparte tu link -- si alguien nuevo se registra desde él, ganas +2 boletos más.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
+          {esOrganizador && activo && (
+            <button onClick={elegirGanador} disabled={eligiendo}
+              style={{ background: COLORS.violeta, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold mb-6">
+              {eligiendo ? "Eligiendo..." : "🎲 Elegir ganador ahora"}
+            </button>
+          )}
+
+          {participantes.length > 0 && (
+            <div>
+              <h3 style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Participantes</h3>
+              <div className="grid gap-1.5 max-h-64 overflow-y-auto">
+                {participantes.map((p) => (
+                  <div key={p.id} className="flex items-center gap-2">
+                    <AvatarImg url={p.perfiles?.avatar_url} size={22} />
+                    <p className="text-sm flex-1 truncate">{p.perfiles?.nombre || "Usuario"}</p>
+                    <Badge color={COLORS.gold}>{p.boletos} boleto{p.boletos === 1 ? "" : "s"}</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Formulario para organizar un sorteo -- se usa tanto en AdminPanel
+// (tiendaId=null, "Encuentra Cartas" como organizador) como en MyStorePanel
+// (tiendaId de la tienda del dueño, gateado a plan Aurora).
+function CrearSorteoForm({ session, tiendaId, onCreado }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const vacio = { titulo: "", descripcion: "", premio: "", imagen_url: "", fecha_fin: "" };
+  const [nuevo, setNuevo] = useState(vacio);
+  const [subiendoImagen, setSubiendoImagen] = useState(false);
+  const [creando, setCreando] = useState(false);
+  const [error, setError] = useState(null);
+  const [ok, setOk] = useState(false);
+
+  const subirImagen = async (file) => {
+    setSubiendoImagen(true); setError(null);
+    try {
+      const url = await subirImagenABucket("sorteos", file, session);
+      setNuevo((n) => ({ ...n, imagen_url: url }));
+    } catch (e) { setError(e.message); } finally { setSubiendoImagen(false); }
+  };
+
+  const crear = async () => {
+    if (!nuevo.titulo.trim() || !nuevo.premio.trim() || !nuevo.fecha_fin) return;
+    setCreando(true); setError(null); setOk(false);
+    try {
+      await sbWrite("POST", "sorteos", {
+        perfil_id: session.user.id,
+        tienda_id: tiendaId || null,
+        titulo: nuevo.titulo.trim(),
+        descripcion: nuevo.descripcion.trim() || null,
+        premio: nuevo.premio.trim(),
+        imagen_url: nuevo.imagen_url || null,
+        fecha_fin: new Date(nuevo.fecha_fin).toISOString(),
+      }, session);
+      setNuevo(vacio);
+      setOk(true);
+      onCreado?.();
+    } catch (e) { setError(e.message); } finally { setCreando(false); }
+  };
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.gold}55` }} className="rounded-xl p-4 mb-6 grid gap-2">
+      <p style={{ color: COLORS.gold }} className="text-sm font-semibold uppercase">🎁 Organizar sorteo</p>
+      {error && <ErrorBox message={error} />}
+      {ok && <p style={{ color: COLORS.gold }} className="text-xs">Sorteo publicado.</p>}
+      <input placeholder="Título del sorteo" value={nuevo.titulo} onChange={(e) => setNuevo({ ...nuevo, titulo: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+      <input placeholder="Premio (ej. Booster box de Prismatic Evolutions)" value={nuevo.premio} onChange={(e) => setNuevo({ ...nuevo, premio: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+      <textarea placeholder="Descripción / reglas (opcional)" value={nuevo.descripcion} onChange={(e) => setNuevo({ ...nuevo, descripcion: e.target.value })} rows={2} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+      <div className="flex items-center gap-2 flex-wrap">
+        <label style={{ border: `1px solid ${COLORS.gold}66`, color: COLORS.gold }} className="rounded-lg px-2 py-1.5 text-xs font-semibold cursor-pointer whitespace-nowrap">
+          {subiendoImagen ? "Subiendo..." : nuevo.imagen_url ? "✅ Imagen subida" : "📷 Imagen del sorteo (opcional)"}
+          <input type="file" accept="image/*" className="hidden" disabled={subiendoImagen}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) subirImagen(f); e.target.value = ""; }} />
+        </label>
+        {nuevo.imagen_url && <img src={nuevo.imagen_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />}
+      </div>
+      <div>
+        <p style={{ color: COLORS.muted }} className="text-xs mb-1">Termina el</p>
+        <input type="datetime-local" value={nuevo.fecha_fin} onChange={(e) => setNuevo({ ...nuevo, fecha_fin: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit" />
+      </div>
+      <button onClick={crear} disabled={creando || !nuevo.titulo.trim() || !nuevo.premio.trim() || !nuevo.fecha_fin}
+        style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
+        {creando ? "Publicando..." : "Publicar sorteo"}
+      </button>
+    </div>
+  );
+}
+
+// Pestaña de Admin: organiza sorteos "de Encuentra Cartas" (sin tienda) y ve
+// todos los sorteos existentes para poder abrir su detalle y gestionarlos
+// (elegir ganador vive en SorteoDetalleView, no aquí, para no duplicar esa
+// lógica).
+function AdminSorteosTab({ session, onAbrirSorteo }) {
+  const [sorteos, setSorteos] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const cargar = () => {
+    setLoading(true);
+    sb(`sorteos?select=*,tiendas(nombre)&order=created_at.desc`, session)
+      .then(setSorteos)
+      .catch(() => setSorteos([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">🎁 Sorteos</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">Organiza un sorteo oficial de Encuentra Cartas, o revisa/gestiona cualquier sorteo (incluyendo los de tiendas Aurora).</p>
+      <CrearSorteoForm session={session} tiendaId={null} onCreado={cargar} />
+      {loading ? <Loading label="Cargando sorteos..." /> : sorteos.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm">Todavía no hay sorteos.</p>
+      ) : (
+        <div className="grid gap-2">
+          {sorteos.map((s) => (
+            <button key={s.id} onClick={() => onAbrirSorteo(s.id)} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }}
+              className="rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap text-left hover:brightness-125">
+              <div>
+                <p className="text-sm font-semibold">{s.titulo}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">{s.tiendas?.nombre || "Encuentra Cartas"} · {sorteoEstaActivo(s) ? "Activo" : s.estado === "cerrado" ? "Cerrado" : "Cancelado"}</p>
+              </div>
+              <Badge color={COLORS.gold}>{s.premio}</Badge>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Subastas: cualquier cuenta con plan Zafiro o superior puede subastar
+// una carta/producto. Cualquiera con sesión puede pujar mientras siga
+// activa; cada puja debe superar el precio actual + el incremento mínimo
+// (validado también en el servidor, no solo aquí -- ver migración 052).
+// No hay cron para "cerrar" la subasta -- se calcula al vuelo comparando
+// fecha_fin, y el ganador es quien tenga la puja más alta. ----
+function subastaEstaActiva(s) {
+  return s.estado === "activa" && new Date(s.fecha_fin) > new Date();
+}
+
+function SubastaCard({ s, onAbrir }) {
+  const activa = subastaEstaActiva(s);
+  return (
+    <button onClick={onAbrir} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${activa ? COLORS.azulClaro + "66" : COLORS.surface2}`, textAlign: "left" }}
+      className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
+      <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
+        {(s.foto_real_url || s.imagen_url) ? (
+          <img src={s.foto_real_url || s.imagen_url} alt={s.producto} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+        ) : <Gavel size={28} color={COLORS.muted} />}
+      </div>
+      <div className="p-3">
+        <Badge color={activa ? COLORS.azulClaro : COLORS.muted}>{activa ? "Activa" : s.estado === "cerrada" ? "Terminada" : "Cancelada"}</Badge>
+        <p className="text-sm font-semibold mt-1 line-clamp-2">{s.producto}</p>
+        <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-sm font-bold mt-1">${Number(s.precio_actual).toLocaleString("es-MX")}</p>
+        {activa && <p style={{ color: COLORS.muted }} className="text-xs mt-1">Termina: {new Date(s.fecha_fin).toLocaleString("es-MX")}</p>}
+      </div>
+    </button>
+  );
+}
+
+function CrearSubastaForm({ session, onCreado }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const vacio = {
+    tcg: "pokemon", tipo: "carta", producto: "", set_nombre: "", condicion: "", idioma: "",
+    card_api_id: "", imagen_url: "", precio_ref_mxn: null,
+    foto_real_url: "", foto_real_reverso_url: "",
+    precio_inicial: "", incremento_minimo: "10", fecha_fin: "", zona: "", descripcion: "",
+  };
+  const [nueva, setNueva] = useState(vacio);
+  const [creando, setCreando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const faltantes = [];
+  if (!nueva.producto) faltantes.push(nueva.tipo === "accesorio" ? "el nombre del producto" : "elegir la carta/producto");
+  if (!nueva.precio_inicial) faltantes.push("el precio inicial");
+  if (!nueva.fecha_fin) faltantes.push("la fecha en que termina");
+  if (!nueva.zona) faltantes.push("la zona");
+  if (nueva.tipo === "carta" && !nueva.condicion) faltantes.push("el estado de la carta");
+  if (nueva.tipo === "carta" && !nueva.idioma) faltantes.push("el idioma de la carta");
+  if (!nueva.foto_real_url) faltantes.push("la foto de frente");
+  if (nueva.tipo === "carta" && !nueva.foto_real_reverso_url) faltantes.push("la foto de atrás");
+
+  const crear = async () => {
+    if (faltantes.length > 0) return;
+    setCreando(true); setError(null);
+    try {
+      await sbWrite("POST", "subastas", {
+        perfil_id: session.user.id,
+        tcg: nueva.tcg,
+        tipo: nueva.tipo,
+        producto: nueva.producto,
+        set_nombre: nueva.tipo === "accesorio" ? null : (nueva.set_nombre || null),
+        condicion: nueva.tipo === "carta" ? nueva.condicion : null,
+        idioma: nueva.tipo === "carta" ? nueva.idioma : null,
+        card_api_id: nueva.card_api_id || null,
+        imagen_url: nueva.imagen_url || null,
+        foto_real_url: nueva.foto_real_url,
+        foto_real_reverso_url: nueva.tipo === "carta" ? nueva.foto_real_reverso_url : null,
+        descripcion: nueva.descripcion.trim() || null,
+        zona: nueva.zona,
+        precio_inicial: Number(nueva.precio_inicial),
+        incremento_minimo: Number(nueva.incremento_minimo) || 10,
+        precio_actual: Number(nueva.precio_inicial),
+        fecha_fin: new Date(nueva.fecha_fin).toISOString(),
+      }, session);
+      setNueva(vacio);
+      onCreado?.();
+    } catch (e) { setError(e.message); } finally { setCreando(false); }
+  };
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-6 grid gap-2">
+      <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold uppercase">🔨 Organizar subasta</p>
+      {error && <ErrorBox message={error} />}
+      <div className="flex gap-2 flex-wrap">
+        {[{ k: "carta", l: "Carta suelta" }, { k: "sellado", l: "Producto sellado" }, { k: "accesorio", l: "Accesorio" }].map((t) => (
+          <button key={t.k} type="button" onClick={() => setNueva({ ...vacio, tcg: nueva.tcg, tipo: t.k })}
+            style={{ background: nueva.tipo === t.k ? COLORS.surface2 : "transparent", border: `1px solid ${nueva.tipo === t.k ? COLORS.azulClaro : COLORS.surface2}`, color: nueva.tipo === t.k ? COLORS.azulClaro : COLORS.muted }}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+            {t.l}
+          </button>
+        ))}
+      </div>
+      <select value={nueva.tcg} onChange={(e) => setNueva({ ...nueva, tcg: e.target.value, producto: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
+        {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      {nueva.tipo === "accesorio" ? (
+        <input placeholder="Nombre del accesorio (ej. Playmat Charizard)" value={nueva.producto} onChange={(e) => setNueva({ ...nueva, producto: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+      ) : (
+        <div>
+          <CardPickerUniversal tcg={nueva.tcg} soloSellado={nueva.tipo === "sellado"}
+            onSelect={(c) => setNueva((n) => ({ ...n, producto: c.name || c.producto, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn }))} />
+          {nueva.card_api_id && (
+            <div className="flex items-center gap-3 mt-2">
+              {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+              <Badge color={COLORS.azulPalido}>{nueva.producto}</Badge>
+            </div>
+          )}
+        </div>
+      )}
+      {nueva.tipo === "carta" && (
+        <>
+          <div>
+            <p style={{ color: COLORS.muted }} className="text-xs mb-1">Idioma (obligatorio)</p>
+            <IdiomaSelector value={nueva.idioma} onChange={(v) => setNueva({ ...nueva, idioma: v })} />
+          </div>
+          <div>
+            <p style={{ color: COLORS.muted }} className="text-xs mb-1">Estado de la carta (obligatorio)</p>
+            <EstadoCartaSelector value={nueva.condicion} onChange={(v) => setNueva({ ...nueva, condicion: v })} />
+          </div>
+        </>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (obligatoria)"} onSubido={(url) => setNueva((n) => ({ ...n, foto_real_url: url }))} />
+        {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+        {nueva.tipo === "carta" && (
+          <>
+            <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (obligatoria)"} onSubido={(url) => setNueva((n) => ({ ...n, foto_real_reverso_url: url }))} />
+            {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+          </>
+        )}
+      </div>
+      <textarea placeholder="Descripción (opcional)" value={nueva.descripcion} onChange={(e) => setNueva({ ...nueva, descripcion: e.target.value })} rows={2} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+      <div className="grid sm:grid-cols-3 gap-2">
+        <input placeholder="Precio inicial" type="number" value={nueva.precio_inicial} onChange={(e) => setNueva({ ...nueva, precio_inicial: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        <input placeholder="Incremento mínimo por puja" type="number" value={nueva.incremento_minimo} onChange={(e) => setNueva({ ...nueva, incremento_minimo: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+        <ZonaSelector value={nueva.zona} onChange={(v) => setNueva({ ...nueva, zona: v })} />
+      </div>
+      <div>
+        <p style={{ color: COLORS.muted }} className="text-xs mb-1">Termina el</p>
+        <input type="datetime-local" value={nueva.fecha_fin} onChange={(e) => setNueva({ ...nueva, fecha_fin: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit" />
+      </div>
+      <button onClick={crear} disabled={creando || faltantes.length > 0} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
+        {creando ? "Publicando..." : "Publicar subasta"}
+      </button>
+      {faltantes.length > 0 && <p style={{ color: COLORS.azulPalido }} className="text-xs">Para publicar, falta: {faltantes.join(", ")}.</p>}
+    </div>
+  );
+}
+
+function SubastasView({ session, perfil, onIrAPlanes, onAbrirSubasta, onRequireLogin }) {
+  const [subastas, setSubastas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [mostrarForm, setMostrarForm] = useState(false);
+
+  const cargar = () => {
+    setLoading(true);
+    sb(`subastas?select=*&order=created_at.desc`)
+      .then(setSubastas)
+      .catch(() => setSubastas([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const activas = subastas.filter(subastaEstaActiva);
+  const pasadas = subastas.filter((s) => !subastaEstaActiva(s));
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-4 flex-wrap mb-1">
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">🔨 Subastas</h2>
+        <button onClick={() => { if (!session) { onRequireLogin(); return; } setMostrarForm((v) => !v); }}
+          style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+          {mostrarForm ? "Cancelar" : "+ Organizar subasta"}
+        </button>
+      </div>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Sube una carta o producto a subasta y deja que compradores compitan pujando. Disponible desde el plan Zafiro.</p>
+
+      {mostrarForm && (
+        session && !planDe(perfil).subastas ? (
+          <div className="mb-6">
+            <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+              Organiza subastas de tus cartas o productos y deja que compradores compitan pujando.
+            </UpsellCard>
+          </div>
+        ) : (
+          <CrearSubastaForm session={session} onCreado={() => { setMostrarForm(false); cargar(); }} />
+        )
+      )}
+
+      {loading ? <Loading label="Cargando subastas..." /> : subastas.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm">Todavía no hay subastas.</p>
+      ) : (
+        <>
+          {activas.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
+              {activas.map((s) => <SubastaCard key={s.id} s={s} onAbrir={() => onAbrirSubasta(s.id)} />)}
+            </div>
+          )}
+          {pasadas.length > 0 && (
+            <>
+              <h3 style={{ color: COLORS.muted }} className="text-sm font-semibold uppercase mb-3">Subastas terminadas</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {pasadas.map((s) => <SubastaCard key={s.id} s={s} onAbrir={() => onAbrirSubasta(s.id)} />)}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SubastaDetalleView({ subastaId, session, onAbrirChat, onVolver, onRequireLogin }) {
+  const [subasta, setSubasta] = useState(undefined); // undefined = cargando, null = no existe
+  const [pujas, setPujas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [monto, setMonto] = useState("");
+  const [pujando, setPujando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const cargar = () => {
+    setLoading(true);
+    Promise.all([
+      sb(`subastas?select=*&id=eq.${subastaId}`),
+      sb(`subasta_pujas?select=*,perfiles(nombre,avatar_url)&subasta_id=eq.${subastaId}&order=monto.desc`),
+    ])
+      .then(([sRows, pRows]) => { setSubasta(sRows[0] || null); setPujas(pRows); })
+      .catch(() => { setSubasta(null); setPujas([]); })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, [subastaId]);
+
+  const activa = subasta ? subastaEstaActiva(subasta) : false;
+  const minimo = subasta ? Number(subasta.precio_actual) + Number(subasta.incremento_minimo) : 0;
+  const ganador = pujas[0] || null;
+  const esVendedor = !!(session && subasta && subasta.perfil_id === session.user.id);
+
+  const pujar = async () => {
+    if (!session) { onRequireLogin(); return; }
+    const m = Number(monto);
+    if (!m || m < minimo) { setError(`Tu puja debe ser de al menos $${minimo.toLocaleString("es-MX")}.`); return; }
+    setPujando(true); setError(null);
+    try {
+      await sbWrite("POST", "subasta_pujas", { subasta_id: subastaId, perfil_id: session.user.id, monto: m }, session);
+      setMonto("");
+      cargar();
+    } catch (e) { setError(e.message); } finally { setPujando(false); }
+  };
+
+  const volver = (
+    <button onClick={onVolver} style={{ color: COLORS.azulPalido }} className="flex items-center gap-1 text-sm mb-4">
+      <ChevronLeft size={16} /> Volver
+    </button>
+  );
+
+  if (loading || subasta === undefined) return <div>{volver}<Loading label="Cargando subasta..." /></div>;
+  if (!subasta) return <div>{volver}<ErrorBox message="Esta subasta ya no está disponible." /></div>;
+
+  return (
+    <div>
+      {volver}
+      <div className="grid sm:grid-cols-[minmax(0,320px)_1fr] gap-6">
+        <div className="grid gap-3">
+          <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
+            {(subasta.foto_real_url || subasta.imagen_url) ? (
+              <img src={subasta.foto_real_url || subasta.imagen_url} alt={subasta.producto} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            ) : <Gavel size={48} color={COLORS.muted} />}
+          </div>
+          {subasta.foto_real_reverso_url && (
+            <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
+              <img src={subasta.foto_real_reverso_url} alt={`${subasta.producto} (atrás)`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            </div>
+          )}
+        </div>
+        <div>
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <Badge color={activa ? COLORS.azulClaro : COLORS.muted}>{activa ? "Activa" : subasta.estado === "cerrada" ? "Terminada" : "Cancelada"}</Badge>
+            {subasta.tipo === "carta" && <IdiomaBadge idioma={subasta.idioma} />}
+            {subasta.tipo === "carta" && <EstadoCartaBadge condicion={subasta.condicion} />}
+          </div>
+          <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-2xl font-bold mb-1">{subasta.producto}</h2>
+          {subasta.set_nombre && <p style={{ color: COLORS.muted }} className="text-sm mb-3">{subasta.set_nombre}</p>}
+          {subasta.descripcion && <p className="text-sm mb-3 whitespace-pre-line">{subasta.descripcion}</p>}
+          <p style={{ color: COLORS.muted }} className="text-xs mb-4">
+            {subasta.zona ? `${subasta.zona} · ` : ""}{activa ? `Termina: ${new Date(subasta.fecha_fin).toLocaleString("es-MX")}` : `Terminó: ${new Date(subasta.fecha_fin).toLocaleString("es-MX")}`}
+          </p>
+
+          <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4">
+            <p style={{ color: COLORS.muted }} className="text-xs uppercase font-semibold mb-1">{pujas.length > 0 ? "Puja más alta" : "Precio inicial"}</p>
+            <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-2xl font-bold">${Number(subasta.precio_actual).toLocaleString("es-MX")}</p>
+            <p style={{ color: COLORS.muted }} className="text-xs mt-1">{pujas.length} puja{pujas.length === 1 ? "" : "s"} · incremento mínimo ${Number(subasta.incremento_minimo).toLocaleString("es-MX")}</p>
+          </div>
+
+          {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+          {activa && !esVendedor && (
+            <div className="flex gap-2 mb-6">
+              <input type="number" placeholder={`Mínimo $${minimo.toLocaleString("es-MX")}`} value={monto} onChange={(e) => setMonto(e.target.value)}
+                style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm flex-1" />
+              <button onClick={pujar} disabled={pujando} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+                {pujando ? "Pujando..." : session ? "Pujar" : "Inicia sesión para pujar"}
+              </button>
+            </div>
+          )}
+
+          {!activa && ganador && (
+            <div style={{ background: `${COLORS.gold}18`, border: `1px solid ${COLORS.gold}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3">
+                <AvatarImg url={ganador.perfiles?.avatar_url} size={40} />
+                <div>
+                  <p style={{ color: COLORS.gold }} className="text-xs font-semibold uppercase">🏆 Ganó la subasta</p>
+                  <p className="font-semibold">{ganador.perfiles?.nombre || "Usuario"} · ${Number(ganador.monto).toLocaleString("es-MX")}</p>
+                </div>
+              </div>
+              {esVendedor && (
+                <button onClick={() => onAbrirChat(ganador.perfil_id, ganador.perfiles?.nombre, `Subasta: ${subasta.producto}`, null, null, ganador.perfiles?.avatar_url)}
+                  style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-2 text-xs font-semibold">
+                  Contactar ganador
+                </button>
+              )}
+            </div>
+          )}
+          {!activa && !ganador && (
+            <p style={{ color: COLORS.muted }} className="text-sm mb-6">Esta subasta terminó sin ninguna puja.</p>
+          )}
+
+          {pujas.length > 0 && (
+            <div>
+              <h3 style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Historial de pujas</h3>
+              <div className="grid gap-1.5 max-h-64 overflow-y-auto">
+                {pujas.map((p) => (
+                  <div key={p.id} className="flex items-center gap-2">
+                    <AvatarImg url={p.perfiles?.avatar_url} size={22} />
+                    <p className="text-sm flex-1 truncate">{p.perfiles?.nombre || "Usuario"}</p>
+                    <p style={{ color: COLORS.muted }} className="text-xs">{new Date(p.created_at).toLocaleString("es-MX")}</p>
+                    <Badge color={COLORS.gold}>${Number(p.monto).toLocaleString("es-MX")}</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function UpsellCard({ requiere, plan, children, onIrAPlanes }) {
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${requiere.color}66` }} className="rounded-xl p-6 text-center">
@@ -8654,7 +9396,22 @@ export default function EncuentraCartas() {
     setSession(s);
     setShowAccountModal(false);
     cargarOCrearPerfil(s);
-    if (esNuevo) setView("ayuda");
+    if (esNuevo) {
+      setView("ayuda");
+      // Si esta cuenta se creó a través del link de un sorteo, se le
+      // acredita a quien invitó (+2 boletos) y esta cuenta entra
+      // automática al sorteo con su propio boleto -- ver el trigger
+      // sorteo_procesar_referido en la migración 051. El insert es
+      // best-effort: si falla (sorteo ya no existe, etc.) no debe
+      // romper el registro de la cuenta nueva.
+      try {
+        const pendiente = JSON.parse(sessionStorage.getItem("ec_referido_pendiente") || "null");
+        sessionStorage.removeItem("ec_referido_pendiente");
+        if (pendiente?.sorteoId && pendiente?.refPerfilId && pendiente.refPerfilId !== s.user.id) {
+          sbWrite("POST", "sorteo_referidos", { sorteo_id: pendiente.sorteoId, referente_perfil_id: pendiente.refPerfilId, nuevo_perfil_id: s.user.id }, s).catch(() => {});
+        }
+      } catch {}
+    }
   };
 
   const handleLogout = () => {
@@ -8749,6 +9506,8 @@ export default function EncuentraCartas() {
 
   const [selectedStore, setSelectedStore] = useState(null);
   const [selectedPerfilId, setSelectedPerfilId] = useState(null);
+  const [selectedSorteoId, setSelectedSorteoId] = useState(null);
+  const [selectedSubastaId, setSelectedSubastaId] = useState(null);
   const [vistaAntesDePerfil, setVistaAntesDePerfil] = useState("search");
   const [vistaAntesLegal, setVistaAntesLegal] = useState("search");
   const irALegal = (id) => { setVistaAntesLegal(view); setView(id); };
@@ -8937,7 +9696,7 @@ export default function EncuentraCartas() {
   const actualizarUrlCompartible = (params) => {
     try {
       const u = new URL(window.location.href);
-      ["listing", "tabla", "u", "tienda"].forEach((k) => u.searchParams.delete(k));
+      ["listing", "tabla", "u", "tienda", "sorteo", "ref", "subasta"].forEach((k) => u.searchParams.delete(k));
       Object.entries(params || {}).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
       window.history.pushState({}, "", u);
     } catch {}
@@ -9002,6 +9761,18 @@ export default function EncuentraCartas() {
     actualizarUrlCompartible({});
   };
 
+  const abrirSorteo = (id) => {
+    setSelectedSorteoId(id);
+    setView("sorteoDetalle");
+    actualizarUrlCompartible({ sorteo: id });
+  };
+
+  const abrirSubasta = (id) => {
+    setSelectedSubastaId(id);
+    setView("subastaDetalle");
+    actualizarUrlCompartible({ subasta: id });
+  };
+
   // Al abrir la app con un link compartido (de una publicación, un perfil o
   // una tienda), la abrimos directo.
   useEffect(() => {
@@ -9010,6 +9781,16 @@ export default function EncuentraCartas() {
     const tabla = params.get("tabla");
     const uSlug = params.get("u");
     const tiendaSlug = params.get("tienda");
+    const sorteoId = params.get("sorteo");
+    const refPerfilId = params.get("ref");
+    const subastaId = params.get("subasta");
+    // Link de referido de un sorteo (?sorteo=X&ref=Y): se guarda para
+    // acreditárselo a quien invitó en cuanto esta visita termine de
+    // registrarse (ver handleAuthed) -- puede pasar varias pantallas
+    // (elige tipo de cuenta, confirma correo, etc.) antes de eso.
+    if (sorteoId && refPerfilId) {
+      try { sessionStorage.setItem("ec_referido_pendiente", JSON.stringify({ sorteoId, refPerfilId })); } catch {}
+    }
     if (listing && tabla) {
       setSelectedListing({ id: listing, tabla });
       setView("cartaDetalle");
@@ -9021,6 +9802,12 @@ export default function EncuentraCartas() {
       sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
         .then((rows) => { if (rows[0]) openStore(rows[0]); })
         .catch(() => {});
+    } else if (sorteoId) {
+      setSelectedSorteoId(sorteoId);
+      setView("sorteoDetalle");
+    } else if (subastaId) {
+      setSelectedSubastaId(subastaId);
+      setView("subastaDetalle");
     }
   }, []);
 
@@ -9052,6 +9839,7 @@ export default function EncuentraCartas() {
       items: [
         ...(perfil?.tipo === "tienda" ? [{ id: "myStore", label: "Mi tienda", icon: Package }] : []),
         ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: Tag }] : []),
+        { id: "subastas", label: "Subastas", icon: Gavel },
         ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
       ],
     },
@@ -9059,6 +9847,7 @@ export default function EncuentraCartas() {
       id: "comunidad", label: "Comunidad", icon: Newspaper,
       items: [
         { id: "torneos", label: "Torneos", icon: Calendar },
+        { id: "sorteos", label: "Sorteos", icon: Gift },
         { id: "armarMazo", label: "Armar mazo", icon: Layers },
         { id: "comunidad", label: "Comunidad", icon: Newspaper },
         { id: "news", label: "Noticias", icon: Megaphone },
@@ -9928,13 +10717,29 @@ export default function EncuentraCartas() {
         {view === "misPagos" && session && <MisPagosPanel session={session} />}
 
         {/* ADMIN */}
-        {view === "admin" && session && perfil?.es_admin && <AdminPanel session={session} onVerPerfil={verPerfil} onEntrarComoSubperfil={entrarComoSubperfil} />}
+        {view === "admin" && session && perfil?.es_admin && <AdminPanel session={session} onVerPerfil={verPerfil} onEntrarComoSubperfil={entrarComoSubperfil} onAbrirSorteo={abrirSorteo} />}
 
         {/* MI MERCADO */}
         {view === "myMarket" && session && <MyMarketPanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />}
 
         {/* MI TIENDA */}
-        {view === "myStore" && session && <MyStorePanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />}
+        {view === "myStore" && session && <MyStorePanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} onAbrirSorteo={abrirSorteo} />}
+
+        {/* SORTEOS */}
+        {view === "sorteos" && <SorteosView session={session} onAbrirSorteo={abrirSorteo} />}
+        {view === "sorteoDetalle" && selectedSorteoId && (
+          <SorteoDetalleView sorteoId={selectedSorteoId} session={session} perfil={perfil}
+            onVolver={() => { setSelectedSorteoId(null); setView("sorteos"); actualizarUrlCompartible({}); }}
+            onRequireLogin={() => setShowAccountModal(true)} />
+        )}
+
+        {/* SUBASTAS */}
+        {view === "subastas" && <SubastasView session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} onAbrirSubasta={abrirSubasta} onRequireLogin={() => setShowAccountModal(true)} />}
+        {view === "subastaDetalle" && selectedSubastaId && (
+          <SubastaDetalleView subastaId={selectedSubastaId} session={session} onAbrirChat={abrirChat}
+            onVolver={() => { setSelectedSubastaId(null); setView("subastas"); actualizarUrlCompartible({}); }}
+            onRequireLogin={() => setShowAccountModal(true)} />
+        )}
 
         {/* STORE DETAIL */}
         {view === "storeDetail" && selectedStore && (

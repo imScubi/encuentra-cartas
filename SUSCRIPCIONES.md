@@ -2273,6 +2273,80 @@ resultados" ahora distingue entre "no existe nada con ese nombre" y
   ambos apartados pero sin el formulario para ofertar (no tiene sentido
   ofertarle a uno mismo).
 
+## 80. Sorteos (Admin + tiendas Aurora, con referidos) y Subastas (Zafiro+, nueva pestaña)
+
+**⚠️ Pendiente de aplicar a mano**: el conector de Supabase se desconectó
+de esta sesión antes de llegar a esta parte, así que a diferencia de
+migraciones anteriores en esta misma sesión, `051_sorteos.sql` y
+`052_subastas.sql` **no se aplicaron en vivo** -- hay que copiarlas y
+pegarlas en Supabase → SQL Editor → Run (en ese orden) para que estas dos
+funciones lleguen a servir de verdad en producción.
+
+### Sorteos (`051_sorteos.sql`)
+
+Solo Admin y tiendas con plan **Aurora** (`enteball`) pueden organizar un
+sorteo (`sorteos.perfil_id` + `tienda_id` opcional), validado directo en
+la política de RLS de insert. Cualquier usuario con sesión "Participa"
+(1 boleto en `sorteo_participantes`, único por sorteo+persona). Dos formas
+de conseguir más boletos (más probabilidad de ganar, no una garantía):
+
+- **Compartir el link** (+1 boleto, una sola vez): el botón usa
+  `navigator.share` si el navegador lo soporta, o copia el link al
+  portapapeles. El bono se reclama con la función `sorteo_reclamar_bono_compartir`
+  (RPC, `security definer`) en vez de dejar que el cliente actualice
+  `boletos` directamente por RLS -- si no, cualquiera podría mandarse
+  boletos infinitos a mano con un PATCH.
+- **Invitar a alguien nuevo** (+2 boletos): el link de cada participante
+  lleva `?sorteo=<id>&ref=<su perfil_id>`. Se captura en `sessionStorage`
+  al cargar la página (aunque pasen varias pantallas de registro de por
+  medio) y, en cuanto la cuenta nueva termina de crearse
+  (`handleAuthed`), se inserta una fila en `sorteo_referidos`
+  (`nuevo_perfil_id` es `unique`, así que cada cuenta nueva solo puede
+  disparar el bono de su referente una vez en toda su vida). Un trigger
+  (`sorteo_procesar_referido`, `security definer`) hace las dos cosas
+  atómicamente: +2 boletos a quien invitó, y entra automática la cuenta
+  nueva al sorteo con su propio boleto.
+- **Elegir ganador**: sorteo aleatorio ponderado por boletos (más boletos
+  = más "números de la rifa", no más garantía), calculado del lado del
+  cliente por quien organiza (o Admin) desde `SorteoDetalleView` -- cierra
+  el sorteo (`estado='cerrado'`, `ganador_perfil_id`, `elegido_at`).
+
+UI: nueva pestaña "🎁 Sorteos" en el menú (grupo Comunidad) con
+`SorteosView` (activos + pasados) → `SorteoDetalleView` (participar,
+compartir, link de referido, tabla de participantes, elegir ganador si
+eres el organizador). Formulario de creación (`CrearSorteoForm`, con
+imagen de portada vía el nuevo bucket `sorteos`) en `AdminPanel` (pestaña
+"Sorteos", organiza "de Encuentra Cartas") y en `MyStorePanel` (gateado a
+`planDe(perfil).sorteos`, solo tiendas Aurora).
+
+### Subastas (`052_subastas.sql`)
+
+Cualquier cuenta (individual o tienda) con plan **Zafiro o superior**
+puede subastar una carta/producto/accesorio -- mismos requisitos de foto
+real (frente obligatorio siempre, atrás obligatorio solo para cartas) que
+ya exigía Mercado desde la sección 73. Cualquiera con sesión puede pujar
+mientras la subasta siga activa; cada puja debe superar el precio actual
+más el incremento mínimo, validado **también en el servidor** (la política
+de RLS de insert en `subasta_pujas` rechaza una puja que no supere ese
+mínimo, o si la subasta ya cerró, o si quien puja es el propio vendedor)
+-- no basta con el chequeo del cliente. Un trigger actualiza
+`subastas.precio_actual` con cada puja válida.
+
+No hay cron para "cerrar" la subasta al llegar `fecha_fin` -- el plan
+Hobby de Vercel solo permite crons de una vez al día (ver sección 27),
+insuficiente para esto. En vez de eso, el cierre se calcula al vuelo:
+cualquier vista que lea una subasta compara `now() > fecha_fin`, y el
+ganador es, de una vez, quien tenga la puja más alta (no se guarda aparte
+un `ganador_perfil_id`).
+
+UI: nueva pestaña "🔨 Subastas" (grupo Vender), visible para cualquiera
+navegando el Mercado sin importar su plan -- solo publicar una pide
+Zafiro+ (si no calificas, el botón "+ Organizar subasta" te manda a un
+`UpsellCard` en vez del formulario). `SubastasView` (activas + terminadas)
+→ `SubastaDetalleView` (foto(s), precio actual, historial de pujas, pujar,
+y si ya terminó y eres el vendedor, un botón directo para contactar por
+chat a quien ganó).
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

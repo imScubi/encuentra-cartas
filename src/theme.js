@@ -150,7 +150,7 @@ export const PLAN_INFO = {
     nombre: "Cuarzo", emoji: "⚪", precio: 0, color: COLORS.muted,
     resumen: "Básico y gratis",
     beneficios: ["Publica hasta 20 cartas/productos activos", "Aparece en búsquedas y en el directorio", "Modo día/noche"],
-    limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: false, mazoBuilder: false,
+    limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: false, mazoBuilder: false, subastas: false, sorteos: false,
   },
   superball: {
     nombre: "Zafiro", emoji: "🔵", precio: 49, color: COLORS.azulClaro,
@@ -159,8 +159,9 @@ export const PLAN_INFO = {
       "Publica hasta 50 cartas/productos activos", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)",
       "Personaliza tu perfil público: biografía, color de acento y el orden de tus secciones",
       "Filtra tiendas por zona y encuentra la más cercana con tu ubicación",
+      "Organiza subastas de tus cartas/productos",
     ],
-    limiteCartas: 50, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false,
+    limiteCartas: 50, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false, subastas: true, sorteos: false,
   },
   ultraball: {
     nombre: "Amatista", emoji: "🟣", precio: 89, color: COLORS.violeta,
@@ -172,7 +173,7 @@ export const PLAN_INFO = {
       "Catálogo de sets: marca qué cartas ya tienes y cuáles deseas (se agregan solas a tu wishlist)",
       "1 Boost gratis cada mes (destaca una publicación 3 días)",
     ],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true, boostsGratisMes: 1,
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true, boostsGratisMes: 1, subastas: true, sorteos: false,
   },
   masterball: {
     nombre: "Diamante", emoji: "🟡", precio: 149, color: COLORS.azulPalido,
@@ -181,7 +182,7 @@ export const PLAN_INFO = {
       "Todo lo de Amatista", "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante",
       "2 Boosts gratis cada mes", "Si eres tienda: panel de Mis Estadísticas (ventas, contactos y seguidores, con gráfica de crecimiento)",
     ],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true, ubicacion: true, mazoBuilder: true, boostsGratisMes: 2,
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true, ubicacion: true, mazoBuilder: true, boostsGratisMes: 2, subastas: true, sorteos: false,
   },
   enteball: {
     nombre: "Aurora", emoji: "🔴", precio: 349, color: COLORS.gold,
@@ -189,8 +190,9 @@ export const PLAN_INFO = {
     beneficios: [
       "Todo lo de Diamante", "Importador masivo de inventario (texto o Excel)", "Solo disponible para cuentas de tienda",
       "3 Boosts gratis cada mes", "Aparece en el carrusel de tiendas destacadas del Mercado",
+      "Organiza sorteos con premio para tus clientes",
     ],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: true, soloTienda: true, carpetas: true, holo: true, ubicacion: true, mazoBuilder: true, diamante: true, boostsGratisMes: 3,
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: true, soloTienda: true, carpetas: true, holo: true, ubicacion: true, mazoBuilder: true, diamante: true, boostsGratisMes: 3, subastas: true, sorteos: true,
   },
 };
 
