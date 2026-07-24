@@ -191,41 +191,8 @@ function precioRefDeCartaPokemonTCG(c) {
   return null;
 }
 
-export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
-  const q = (texto || "").trim();
-  if (q.length < 3) return [];
-  const { restante, numero } = extraerNumeroDeTexto(q);
-  const combos = generarCombinacionesNombreSet(restante);
-
-  // Promise.allSettled (no Promise.all): cada combinación se reintenta sola
-  // (fetchConReintento) si falla por red/límite de tasa, pero si UNA
-  // combinación de verdad no existe (404 normal), no debe tirar abajo a las
-  // demás que sí encontraron algo. Solo se avisa error real si TODAS
-  // fallaron por conexión — así "sin resultados" de verdad no se confunde
-  // con una falla transitoria de la API.
-  const resultados = await Promise.allSettled(combos.map(async ({ nombre, set }) => {
-    const query = construirQueryPokemonTCG({ nombre, set, numero });
-    if (!query) return [];
-    const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=${itemsPorCombo}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data?.data || [];
-  }));
-
-  const listas = resultados.map((r) => (r.status === "fulfilled" ? r.value : null));
-  if (listas.length > 0 && listas.every((l) => l === null)) {
-    throw resultados[0].reason instanceof Error ? resultados[0].reason : new Error("No se pudo conectar con el catálogo de Pokémon.");
-  }
-  const vistos = new Set();
-  const combinado = [];
-  for (const lista of listas) {
-    if (!lista) continue;
-    for (const c of lista) {
-      if (vistos.has(c.id)) continue;
-      vistos.add(c.id);
-      combinado.push(c);
-    }
-  }
+function mapearYOrdenarCartasPokemonTCG(cartas, numero) {
+  const combinado = [...cartas];
   if (numero) {
     combinado.sort((a, b) => {
       const aExacta = String(a.number).toLowerCase() === String(numero).toLowerCase();
@@ -242,6 +209,49 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
     image: c.images?.large || c.images?.small || null,
     precioRefMxn: precioRefDeCartaPokemonTCG(c),
   }));
+}
+
+export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
+  const q = (texto || "").trim();
+  if (q.length < 3) return [];
+  const { restante, numero } = extraerNumeroDeTexto(q);
+  const combos = generarCombinacionesNombreSet(restante);
+
+  // Antes se mandaban las hasta 5 combinaciones en paralelo en CADA
+  // búsqueda -- pokemontcg.io es gratis y sin llave (para no pedirle una
+  // cuenta a quien busca), así que su límite de tasa es estricto, y 5
+  // peticiones simultáneas por cada pausa al escribir lo saturaba seguido.
+  // Eso se sentía, del lado de quien buscaba, como "a veces no encuentra
+  // nada" de forma intermitente y sin razón aparente (un 429 se veía igual
+  // que "no existe esa carta"). Ahora se prueban las combinaciones EN
+  // ORDEN y se para en la primera que sí trae algo -- la enorme mayoría de
+  // las búsquedas se resuelven con la primera o segunda combinación, así
+  // que en la práctica esto manda muchas menos peticiones por búsqueda.
+  let algunaConectoBien = false;
+  let ultimoError = null;
+  for (const { nombre, set } of combos) {
+    const query = construirQueryPokemonTCG({ nombre, set, numero });
+    if (!query) continue;
+    try {
+      const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=${itemsPorCombo}`);
+      algunaConectoBien = true;
+      if (!res.ok) continue; // 404 normal de "esta combinación no existe" -- se prueba la siguiente
+      const data = await res.json();
+      const cartas = data?.data || [];
+      if (cartas.length > 0) return mapearYOrdenarCartasPokemonTCG(cartas, numero);
+    } catch (e) {
+      // Falló de verdad esta combinación (agotó los reintentos) -- se
+      // prueba la siguiente combinación en vez de rendirse de una vez.
+      ultimoError = e;
+    }
+  }
+  // Solo es un error real (que se le avisa a quien busca) si NINGUNA
+  // combinación logró siquiera conectarse -- si alguna sí conectó pero
+  // ninguna trajo resultados, de verdad no existe esa carta.
+  if (!algunaConectoBien) {
+    throw ultimoError instanceof Error ? ultimoError : new Error("No se pudo conectar con el catálogo de Pokémon.");
+  }
+  return [];
 }
 
 // ---- Magic: The Gathering (segundo TCG con catálogo real, después de

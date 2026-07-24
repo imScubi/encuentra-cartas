@@ -593,6 +593,11 @@ function SeguirBoton({ session, seguidoPerfilId }) {
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
+    // Sin un id real no hay a quién seguir (ej. una tienda dada de alta por
+    // el Admin sin cuenta vinculada) -- sin este guard, seguido_perfil_id
+    // terminaba mandándose como el texto literal "eq.null" a una columna
+    // uuid, y PostgREST lo rechazaba con un 400.
+    if (!seguidoPerfilId) { setSiguiendo(false); return; }
     sb(`seguidores?select=id&perfil_id=eq.${session.user.id}&seguido_perfil_id=eq.${seguidoPerfilId}`, session)
       .then((rows) => setSiguiendo(rows.length > 0))
       .catch(() => setSiguiendo(false));
@@ -1253,16 +1258,25 @@ function CardPicker({ tcg = "pokemon", onSelect }) {
     if (!q.trim() || q.trim().length < 3) { setResults([]); setError(false); return; }
     setLoading(true);
     setError(false);
+    // "cancelado" evita que una respuesta vieja pise a una más nueva: si dos
+    // búsquedas llegan a alcanzar a hacer su fetch (typing rápido con pausas
+    // de más de 400ms) y la más vieja de las dos tarda más en responder,
+    // sin este guard sus resultados (vacíos o de un texto ya viejo)
+    // sobrescribían a los de la búsqueda más reciente -- se sentía como
+    // "a veces no encuentra nada" sin ninguna razón aparente mientras se
+    // escribía. Solo la búsqueda vigente cuando la promesa resuelve puede
+    // actualizar la pantalla.
+    let cancelado = false;
     const t = setTimeout(() => {
       buscarCartasCatalogo(tcg, q.trim())
-        .then((r) => { setResults(r); setError(false); })
+        .then((r) => { if (!cancelado) { setResults(r); setError(false); } })
         // Un error real (falló la conexión con el catálogo, ya con reintentos
         // agotados) es distinto de "no hay resultados" — si se muestran igual,
         // el usuario no puede saber si debe reintentar o de plano no existe la carta.
-        .catch(() => { setResults([]); setError(true); })
-        .finally(() => setLoading(false));
+        .catch(() => { if (!cancelado) { setResults([]); setError(true); } })
+        .finally(() => { if (!cancelado) setLoading(false); });
     }, 400);
-    return () => clearTimeout(t);
+    return () => { cancelado = true; clearTimeout(t); };
   }, [q, tcg]);
 
   const seleccionar = (c) => {
@@ -9788,7 +9802,10 @@ export default function EncuentraCartas() {
                   </div>
                   {session && session.user.id !== selectedStore.perfil_id && (
                     <div className="ml-auto pb-1.5 flex items-center gap-2">
-                      <SeguirBoton session={session} seguidoPerfilId={selectedStore.perfil_id} />
+                      {/* Una tienda dada de alta por el Admin sin cuenta vinculada no
+                          tiene perfil_id -- no hay a quién seguir, así que el botón
+                          simplemente no aparece en vez de mandar una consulta rota. */}
+                      {selectedStore.perfil_id && <SeguirBoton session={session} seguidoPerfilId={selectedStore.perfil_id} />}
                       <ReportarBoton session={session} tipo="perfil" tablaObjetivo="tiendas" objetivoId={selectedStore.id} objetivoPerfilId={selectedStore.perfil_id} objetivoNombre={selectedStore.nombre} />
                     </div>
                   )}

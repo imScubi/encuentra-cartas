@@ -2190,6 +2190,58 @@ cuanto hay texto escrito, y se aplica a los 3 grupos de resultados
 resultados" ahora distingue entre "no existe nada con ese nombre" y
 "existe pero ninguno pasa esos filtros".
 
+## 78. Correos de error en palabras simples + fix real de "seguidores" (400) + búsqueda de Pokémon más confiable
+
+- **Explicación en español simple en los avisos de error**: el correo/push
+  que le llega al admin cuando algo falla mandaba solo el mensaje técnico
+  crudo (ej. `Error consultando (400) en seguidores?...: invalid input
+  syntax for type uuid: "null"`), difícil de interpretar sin saber leer una
+  consulta de base de datos. Se agregó `lib/explicarError.js`: reconoce
+  patrones comunes (uuid inválido, violación de unique/foreign key, RLS,
+  sesión expirada, 400/401/403/404/5xx, fetch fallido, `Cannot read
+  properties of undefined`, límite de tasa, fallos de Gemini, etc.) y
+  devuelve una frase corta en español explicando qué pasó -- si no
+  reconoce el patrón, no inventa nada y solo se ve el mensaje técnico,
+  igual que antes. Se agrega como un recuadro "🗣️ En palabras simples: ..."
+  arriba del detalle técnico en el correo, y reemplaza el cuerpo del push
+  y de la notificación en la bandeja del admin cuando hay una explicación.
+- **El error real del ejemplo, ya arreglado**: `SeguirBoton` (el botón de
+  "+ Seguir" en el perfil de una tienda) mandaba
+  `seguido_perfil_id=eq.${seguidoPerfilId}` sin validar que hubiera un id
+  -- si la tienda no tiene cuenta vinculada (`perfil_id` nulo, como una
+  tienda dada de alta por el Admin sin cuenta propia), `seguidoPerfilId`
+  llegaba `null` y el filtro terminaba mandando el texto literal
+  `eq.null` a una columna `uuid`, que PostgREST rechaza con 400. Se agregó
+  un guard en el propio componente (no intenta la consulta sin un id real)
+  y en el punto donde se usa en el perfil de tienda, el botón simplemente
+  no aparece si la tienda no tiene cuenta vinculada -- no hay a quién
+  seguir.
+- **Búsqueda de cartas de Pokémon menos flaky**: dos causas reales
+  identificadas para el "a veces no encuentra nada si no agrego y borro un
+  espacio":
+  1. `buscarCartasVisual` (pokemonApi.js) mandaba hasta 5 combinaciones de
+     nombre/set en PARALELO por cada búsqueda -- pokemontcg.io es gratis y
+     sin llave (para no pedirle cuenta a quien busca), así que su límite
+     de tasa es estricto, y 5 peticiones simultáneas por cada pausa al
+     escribir lo saturaba seguido (un 429 se veía igual que "no existe esa
+     carta"). Ahora se prueban en orden y se para en la primera
+     combinación que sí trae algo, bajando bastante cuántas peticiones se
+     mandan por búsqueda típica.
+  2. `CardPicker` (el buscador visual en App.jsx) no protegía contra
+     respuestas fuera de orden: si dos búsquedas llegaban a alcanzar a
+     hacer su fetch (typing rápido con pausas de más de 400ms) y la más
+     vieja tardaba más en responder, sus resultados (vacíos o de un texto
+     ya viejo) sobrescribían a los de la búsqueda más reciente -- una
+     carrera clásica. Se agregó un guard (`cancelado`) que ignora
+     cualquier respuesta que ya no corresponda a la búsqueda vigente.
+
+  No se recomienda cambiar de API por esto: pokemontcg.io sigue siendo la
+  fuente con mejor cobertura (imagen + set + precio en la misma respuesta,
+  sin llave) -- el problema era de cómo se le llamaba, no de la fuente en
+  sí. Si después de esto sigue viéndose flaky, el siguiente paso sería
+  conseguir una llave gratuita de pokemontcg.io (sube bastante el límite
+  de tasa frente a llamar sin llave) en vez de cambiar de proveedor.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
