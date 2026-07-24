@@ -1627,6 +1627,7 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda
   const info = planDe(perfil);
   const [instagram, setInstagram] = useState(perfil?.instagram || "");
   const [maps, setMaps] = useState(perfil?.google_maps_url || "");
+  const [sitioWeb, setSitioWeb] = useState(perfil?.sitio_web || "");
   const [telefono, setTelefono] = useState(perfil?.telefono || "");
   const [whatsapp, setWhatsapp] = useState(perfil?.whatsapp || "");
   const [facebook, setFacebook] = useState(perfil?.facebook || "");
@@ -1638,7 +1639,7 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda
     return (
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
         <p style={{ color: COLORS.muted }} className="text-sm">
-          🔒 Enlaces directos a Instagram{esTienda ? " y Google Maps" : ", WhatsApp y Facebook"} disponibles desde Zafiro.
+          🔒 Enlaces directos a Instagram{esTienda ? ", tu sitio web y Google Maps" : ", WhatsApp y Facebook"} disponibles desde Zafiro.
         </p>
         <button onClick={onIrAPlanes} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">Ver planes</button>
       </div>
@@ -1649,7 +1650,7 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda
     setSaving(true); setError(null); setOk(false);
     try {
       const cambios = esTienda
-        ? { instagram: instagram || null, google_maps_url: maps || null }
+        ? { instagram: instagram || null, google_maps_url: maps || null, sitio_web: sitioWeb || null }
         : { instagram: instagram || null, telefono: telefono || null, whatsapp: whatsapp || null, facebook: facebook || null };
       await sbWrite("PATCH", `perfiles?id=eq.${session.user.id}`, cambios, session);
       setOk(true);
@@ -1664,7 +1665,10 @@ function RedesSocialesEditor({ session, perfil, onIrAPlanes, onUpdated, esTienda
       <div className="grid sm:grid-cols-2 gap-2">
         <input placeholder="Enlace de Instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
         {esTienda ? (
-          <input placeholder="Enlace de Google Maps" value={maps} onChange={(e) => setMaps(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <>
+            <input placeholder="Enlace de Google Maps" value={maps} onChange={(e) => setMaps(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            <input placeholder="Tu sitio web (ej. tutienda.com)" value={sitioWeb} onChange={(e) => setSitioWeb(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          </>
         ) : (
           <>
             <input placeholder="Teléfono" value={telefono} onChange={(e) => setTelefono(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
@@ -3714,8 +3718,11 @@ function ImportadorShopify({ session, tiendaId, onImportado }) {
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-6 grid gap-3">
       <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold uppercase">🛍️ Importar desde tu tienda en línea (Shopify)</p>
       <p style={{ color: COLORS.muted }} className="text-xs -mt-1">
-        Pega el link de una colección de tu tienda Shopify (ej. tutienda.com/collections/tcg) y trae los productos de ahí para revisarlos antes de publicar. Solo funciona si tu tienda no bloquea el acceso automático a su catálogo.
+        Pega el link de una colección de tu tienda Shopify (ej. tutienda.com/collections/tcg) y trae los productos de ahí para revisarlos antes de publicar.
       </p>
+      <div style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55`, color: COLORS.gold }} className="rounded-lg p-3 text-xs">
+        ⚠️ Muchas tiendas Shopify tienen protección anti-bots activada, que bloquea este tipo de acceso automático a su catálogo -- si tu tienda la tiene activa, esto no va a poder traer tus productos (sin importar qué link le des). Si eso pasa, usa el Importador Masivo de abajo (copiar/pegar a mano), que siempre funciona.
+      </div>
       {error && <ErrorBox message={error} />}
       {resultado && <p style={{ color: COLORS.azulPalido }} className="text-xs">{resultado}</p>}
       {bloqueado && (
@@ -7219,6 +7226,13 @@ function CrearTorneo({ session, tiendaId }) {
 // +2 boletos (ver trigger sorteo_procesar_referido, migración 051). Más
 // boletos = más probabilidad de ganar, no una garantía -- el "elegir
 // ganador" es un sorteo aleatorio ponderado hecho por quien organiza. ----
+// Quien captura su sitio web puede escribir "tutienda.com" sin protocolo
+// -- se le agrega https:// al armar el link, sin tocar lo guardado.
+function conProtocolo(url) {
+  if (!url) return url;
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
 function sorteoEstaActivo(s) {
   return s.estado === "activo" && new Date(s.fecha_fin) > new Date();
 }
@@ -8294,6 +8308,7 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil
   const [facebook, setFacebook] = useState(perfil?.facebook || "");
   const [instagram, setInstagram] = useState(perfil?.instagram || "");
   const [googleMaps, setGoogleMaps] = useState(perfil?.google_maps_url || "");
+  const [sitioWeb, setSitioWeb] = useState(perfil?.sitio_web || "");
   const [avatarPreview, setAvatarPreview] = useState(perfil?.avatar_url || null);
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPokemonUrl, setAvatarPokemonUrl] = useState(null);
@@ -8365,7 +8380,7 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil
         nombre: nombre.trim(),
         whatsapp: whatsapp || null,
         facebook: facebook || null,
-        ...(info.redesExtra ? { instagram: instagram || null, google_maps_url: googleMaps || null } : {}),
+        ...(info.redesExtra ? { instagram: instagram || null, google_maps_url: googleMaps || null, sitio_web: sitioWeb || null } : {}),
         ...(info.redesExtra ? { bio: bio.trim() || null, color_acento: colorAcento || null, orden_secciones: orden } : {}),
         avatar_url,
         pokemon_favoritos: favoritos.filter(Boolean),
@@ -8418,12 +8433,15 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil
             <>
               <input placeholder="Enlace de Instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
               {perfil?.tipo === "tienda" && (
-                <input placeholder="Enlace de Google Maps" value={googleMaps} onChange={(e) => setGoogleMaps(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
+                <>
+                  <input placeholder="Enlace de Google Maps" value={googleMaps} onChange={(e) => setGoogleMaps(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
+                  <input placeholder="Tu sitio web (ej. tutienda.com)" value={sitioWeb} onChange={(e) => setSitioWeb(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm outline-none" />
+                </>
               )}
             </>
           ) : (
             <p style={{ color: COLORS.muted }} className="text-xs">
-              🔒 Enlace de Instagram{perfil?.tipo === "tienda" ? " y Google Maps" : ""} disponible desde Zafiro.
+              🔒 Enlace de Instagram{perfil?.tipo === "tienda" ? ", tu sitio web y Google Maps" : ""} disponible desde Zafiro.
             </p>
           )}
 
@@ -9828,7 +9846,7 @@ export default function EncuentraCartas() {
   // Carga inicial: lista de tiendas reales
   useEffect(() => {
     setLoadingTiendas(true);
-    sb("tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&order=nombre.asc")
+    sb("tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&order=nombre.asc")
       .then(setTiendas)
       .catch((e) => setErrorTiendas(e.message))
       .finally(() => setLoadingTiendas(false));
@@ -10063,7 +10081,7 @@ export default function EncuentraCartas() {
         .then((rows) => { if (rows[0]) verPerfil(rows[0].id); })
         .catch(() => {});
     } else if (tiendaSlug) {
-      sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
+      sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
         .then((rows) => { if (rows[0]) openStore(rows[0]); })
         .catch(() => {});
     } else if (sorteoId) {
@@ -10076,7 +10094,7 @@ export default function EncuentraCartas() {
   }, []);
 
   const verTiendaDesdePerfil = (tiendaId) => {
-    sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&id=eq.${tiendaId}`)
+    sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&id=eq.${tiendaId}`)
       .then((rows) => { if (rows[0]) openStore(rows[0]); });
   };
 
@@ -11059,12 +11077,18 @@ export default function EncuentraCartas() {
               </div>
               <p style={{ color: COLORS.muted }} className="mt-2 flex items-center gap-1 text-sm"><MapPin size={14} /> {selectedStore.direccion}</p>
               {selectedStore.telefono && <p style={{ color: COLORS.muted }} className="mt-1 flex items-center gap-1 text-sm"><Phone size={14} /> {selectedStore.telefono}</p>}
-              {(selectedStore.perfiles?.instagram || selectedStore.perfiles?.google_maps_url) && (
+              {(selectedStore.perfiles?.instagram || selectedStore.perfiles?.google_maps_url || selectedStore.perfiles?.sitio_web) && (
                 <div className="flex gap-2 mt-3 flex-wrap">
                   {selectedStore.perfiles?.instagram && (
                     <a href={selectedStore.perfiles.instagram} target="_blank" rel="noreferrer"
                       style={{ border: `1px solid ${COLORS.azulMedio}88`, color: COLORS.azulMedio }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
                       Instagram <ExternalLink size={12} />
+                    </a>
+                  )}
+                  {selectedStore.perfiles?.sitio_web && (
+                    <a href={conProtocolo(selectedStore.perfiles.sitio_web)} target="_blank" rel="noreferrer"
+                      style={{ border: `1px solid ${COLORS.gold}88`, color: COLORS.gold }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                      Sitio web <ExternalLink size={12} />
                     </a>
                   )}
                   {selectedStore.perfiles?.google_maps_url && (
