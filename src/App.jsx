@@ -5402,6 +5402,75 @@ function avisosLegalidadMazo(tcg, mazoCartas, totalCartas) {
   return avisos;
 }
 
+// ---- Importar/exportar decklist en texto plano ----
+// Formato por línea: "Nombre número cantidad" (ej. "Blastoise 011/165 2"),
+// también acepta un prefijo "2x " en vez del número al final, y number es
+// opcional (si no se conoce, "Nombre cantidad" o solo "Nombre" también
+// funciona). No se valida contra ningún catálogo en línea (evita saturar
+// las APIs externas con una carta por renglón, mismo criterio que ya usa
+// el Importador Masivo de inventario) -- las cartas importadas se guardan
+// sin imagen hasta que se busquen a mano, igual que cualquier carta sin
+// card_api_id en esta app.
+// Un "número" de carta puede llevar guion (códigos de set de Yu-Gi-Oh
+// como "LOB-001", "RA04-EN001") o diagonal (Pokémon/Lorcana "011/165"),
+// pero siempre trae al menos un dígito -- así una palabra normal del
+// nombre ("ex", "GX", "D.") nunca se confunde con un número.
+function pareceNumeroDeCarta(token) {
+  return /^(?=.*\d)[A-Za-z0-9]{1,6}([-/][A-Za-z0-9]{1,6})?$/.test(token);
+}
+
+function parseLineaDecklist(linea) {
+  const tokens = linea.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  let cantidad = 1;
+  const primero = tokens[0];
+  if (/^\d+x?$/i.test(primero) && tokens.length > 1) {
+    cantidad = parseInt(primero, 10) || 1;
+    tokens.shift();
+  }
+  const ultimo = tokens[tokens.length - 1];
+  if (/^\d+$/.test(ultimo) && tokens.length > 1) {
+    cantidad = parseInt(ultimo, 10) || cantidad;
+    tokens.pop();
+  }
+
+  let numero = null;
+  const posibleNumero = tokens[tokens.length - 1];
+  if (posibleNumero && tokens.length > 1 && pareceNumeroDeCarta(posibleNumero)) {
+    numero = posibleNumero;
+    tokens.pop();
+  }
+
+  const nombre = tokens.join(" ").trim();
+  if (!nombre) return null;
+  return { nombre, numero, cantidad };
+}
+
+// Para exportar: saca el número de un set_nombre guardado (puede venir
+// como solo "011/165" de una importación previa, o "Journey Together
+// 011/165" de una carta agregada con el buscador visual).
+function extraerNumeroDeSetNombre(setNombre) {
+  if (!setNombre) return null;
+  const m = setNombre.trim().match(/([A-Za-z0-9]{1,6}(?:[-/][A-Za-z0-9]{1,6})?)$/);
+  if (!m) return null;
+  return /\d/.test(m[1]) ? m[1] : null;
+}
+
+// Un ejemplo por TCG para el texto de ayuda del importador -- el número es
+// siempre opcional (si no lo sabes, "Nombre cantidad" también funciona),
+// pero cuando lo pones ayuda a distinguir versiones/arte distintos de una
+// misma carta. One Piece no tiene un número de carta confiable en esta
+// app (su catálogo viene de TCGplayer, que no lo expone por single), así
+// que ahí solo se importa/exporta por nombre.
+const DECKLIST_EJEMPLO = {
+  pokemon: "Blastoise 011/165 2",
+  magic: "Lightning Bolt 042 3",
+  yugioh: "Dark Magician LOB-001 1",
+  lorcana: "Elsa, Snow Queen 042 1",
+  onepiece: "Monkey D. Luffy 2",
+};
+
 function MazosView({ session, perfil, onIrAPlanes }) {
   const info = planDe(perfil);
   const [mazos, setMazos] = useState([]);
@@ -5418,6 +5487,10 @@ function MazosView({ session, perfil, onIrAPlanes }) {
   const [nombreEdit, setNombreEdit] = useState("");
   const [etiquetasEdit, setEtiquetasEdit] = useState("");
   const [tcgFiltroMazos, setTcgFiltroMazos] = useState("todos");
+  const [mostrarImportExport, setMostrarImportExport] = useState(false);
+  const [textoImport, setTextoImport] = useState("");
+  const [importando, setImportando] = useState(false);
+  const [copiadoExport, setCopiadoExport] = useState(false);
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
@@ -5502,6 +5575,40 @@ function MazosView({ session, perfil, onIrAPlanes }) {
     } catch (e) { setError(e.message); }
   };
 
+  // Importar reemplaza las cartas del mazo actual con lo que traiga el
+  // texto -- es el comportamiento esperado al "pegar una decklist" (igual
+  // que Limitless u otros deck builders), no una suma sobre lo que ya
+  // había.
+  const importarDecklist = async () => {
+    if (!actual || !textoImport.trim()) return;
+    const filas = textoImport.split("\n").map(parseLineaDecklist).filter(Boolean);
+    if (filas.length === 0) { setError("No se reconoció ninguna carta en el texto."); return; }
+    if (actual.mazo_cartas.length > 0 && !window.confirm(`Esto reemplaza las ${actual.mazo_cartas.length} cartas que ya tiene este mazo con las ${filas.length} de la lista importada. ¿Continuar?`)) return;
+    setImportando(true); setError(null);
+    try {
+      if (actual.mazo_cartas.length > 0) {
+        await sbWrite("DELETE", `mazo_cartas?mazo_id=eq.${actual.id}`, {}, session);
+      }
+      await sbWrite("POST", "mazo_cartas", filas.map((f) => ({
+        mazo_id: actual.id, nombre: f.nombre, set_nombre: f.numero || null, cantidad: f.cantidad,
+      })), session);
+      setTextoImport("");
+      setMostrarImportExport(false);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setImportando(false); }
+  };
+
+  const textoExport = actual
+    ? actual.mazo_cartas.map((mc) => {
+        const numero = extraerNumeroDeSetNombre(mc.set_nombre);
+        return `${mc.nombre}${numero ? " " + numero : ""} ${mc.cantidad}`;
+      }).join("\n")
+    : "";
+
+  const copiarExport = async () => {
+    try { await navigator.clipboard.writeText(textoExport); setCopiadoExport(true); setTimeout(() => setCopiadoExport(false), 2000); } catch {}
+  };
+
   // ---- Vista de un mazo abierto ----
   if (actual) {
     const totalCartas = actual.mazo_cartas.reduce((s, mc) => s + mc.cantidad, 0);
@@ -5528,7 +5635,39 @@ function MazosView({ session, perfil, onIrAPlanes }) {
           <Badge color={COLORS.azulClaro}>{TCG_LABEL[actual.tcg] || "Pokémon"}</Badge>
           {(actual.etiquetas || []).map((e) => <Badge key={e} color={COLORS.violeta}>{e}</Badge>)}
           <p style={{ color: COLORS.muted }} className="text-xs">{totalCartas} carta{totalCartas === 1 ? "" : "s"}</p>
+          <button onClick={() => setMostrarImportExport((v) => !v)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-2 py-1 text-xs font-semibold ml-auto">
+            {mostrarImportExport ? "Ocultar importar/exportar" : "📋 Importar / exportar"}
+          </button>
         </div>
+
+        {mostrarImportExport && (
+          <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid sm:grid-cols-2 gap-4">
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold uppercase mb-1">Importar</p>
+              <p style={{ color: COLORS.muted }} className="text-xs mb-2">
+                Una carta por línea: <span style={{ fontFamily: "'Space Mono', monospace" }}>Nombre número cantidad</span> -- el número es opcional.
+                Ejemplo para {TCG_LABEL[actual.tcg] || "Pokémon"}: <span style={{ fontFamily: "'Space Mono', monospace", color: COLORS.azulClaro }}>{DECKLIST_EJEMPLO[actual.tcg] || DECKLIST_EJEMPLO.pokemon}</span>
+                {actual.tcg === "onepiece" && " (sin número de carta disponible en esta app -- solo nombre y cantidad)"}. También acepta un prefijo como "2x" en vez del número al final.
+              </p>
+              <textarea value={textoImport} onChange={(e) => setTextoImport(e.target.value)} rows={8}
+                placeholder={`${DECKLIST_EJEMPLO[actual.tcg] || DECKLIST_EJEMPLO.pokemon}\nPikachu 4`}
+                style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full font-mono" />
+              <button onClick={importarDecklist} disabled={importando || !textoImport.trim()}
+                style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold mt-2">
+                {importando ? "Importando..." : "Importar (reemplaza este mazo)"}
+              </button>
+            </div>
+            <div>
+              <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold uppercase mb-1">Exportar</p>
+              <p style={{ color: COLORS.muted }} className="text-xs mb-2">El contenido actual de este mazo, en el mismo formato.</p>
+              <textarea readOnly value={textoExport || "Este mazo todavía no tiene cartas."} rows={8}
+                style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full font-mono" />
+              <button onClick={copiarExport} disabled={!textoExport} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-xs font-semibold mt-2 flex items-center gap-1">
+                <Copy size={12} /> {copiadoExport ? "¡Copiado!" : "Copiar"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {avisos.map((aviso, i) => (
           <div key={i} style={{ background: `${COLORS.gold}11`, border: `1px solid ${COLORS.gold}55`, color: COLORS.gold }} className="rounded-lg p-3 mb-3 text-xs">
