@@ -6259,7 +6259,7 @@ async function cargarDetalleListing(tabla, id) {
       tabla,
       nombre: r.producto, setNombre: null, tipo: "sellado", condicion: null, idioma: null,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
-      imagen: r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn,
+      imagen: r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg || "pokemon",
       vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
       contexto: `${r.producto} en ${r.tiendas?.nombre}`,
     };
@@ -6267,13 +6267,65 @@ async function cargarDetalleListing(tabla, id) {
   return null;
 }
 
-// Comentarios y ofertas de compradores sobre una publicación específica.
-function OfertasPanel({ session, listingTabla, listingId }) {
+const CARTA_OFRECIDA_VACIA = { carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "" };
+
+// Una fila de "Comentarios y ofertas": un comentario simple, una oferta en
+// efectivo (tipo "precio", o filas viejas de antes de la migración 050 que
+// solo traían monto_oferta), o una oferta de intercambio (tipo
+// "intercambio", con las cartas ofrecidas + su foto real de frente cada
+// una, y opcionalmente efectivo extra encima).
+function OfertaCard({ o, session, onBorrar }) {
+  const esOferta = o.tipo === "precio" || o.tipo === "intercambio" || o.monto_oferta != null;
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${esOferta ? COLORS.gold + "44" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-start gap-2">
+      <AvatarImg url={o.autor?.avatar_url} size={28} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-semibold">{o.autor?.nombre || "Usuario"}</p>
+          {o.tipo === "intercambio" && <Badge color={COLORS.violeta}>🔄 Intercambio</Badge>}
+          {o.monto_oferta != null && <Badge color={COLORS.gold}>Oferta: ${Number(o.monto_oferta).toLocaleString("es-MX")}</Badge>}
+          {o.tipo === "intercambio" && o.efectivo_extra != null && <Badge color={COLORS.gold}>+ ${Number(o.efectivo_extra).toLocaleString("es-MX")} efectivo</Badge>}
+          <p style={{ color: COLORS.muted }} className="text-[10px]">{new Date(o.created_at).toLocaleString("es-MX")}</p>
+        </div>
+        {o.tipo === "intercambio" && Array.isArray(o.cartas_ofrecidas) && o.cartas_ofrecidas.length > 0 && (
+          <div className="flex gap-2 flex-wrap mt-2">
+            {o.cartas_ofrecidas.map((c, i) => (
+              <div key={i} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-1.5 flex items-center gap-2">
+                {c.foto_real_url && <img src={c.foto_real_url} alt={c.carta} style={{ width: 36, height: 36, objectFit: "cover" }} className="rounded" />}
+                <div className="min-w-0">
+                  <p className="text-xs font-medium leading-tight truncate max-w-[140px]">{c.carta}</p>
+                  {c.set_nombre && <p style={{ color: COLORS.muted }} className="text-[10px] leading-tight truncate max-w-[140px]">{c.set_nombre}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {o.texto && <p className="text-sm mt-1.5">{o.texto}</p>}
+      </div>
+      {session?.user?.id === o.autor_id && (
+        <button onClick={() => onBorrar(o.id)} style={{ color: COLORS.muted }} className="text-xs shrink-0">Borrar</button>
+      )}
+    </div>
+  );
+}
+
+// Comentarios y ofertas de compradores sobre una publicación específica --
+// tres tipos de fila en la misma tabla (publicacion_ofertas, migración 050):
+// comentario simple, oferta en efectivo, y oferta de intercambio (una o más
+// cartas propias + foto real de frente de cada una, con efectivo opcional
+// encima). El vendedor (esMio) ve el mismo apartado de "Ofertas recibidas"
+// separado de los comentarios, pero sin el formulario para ofertar (no
+// tiene sentido ofertar en tu propia publicación).
+function OfertasPanel({ session, listingTabla, listingId, tcg = "pokemon", esMio }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [modo, setModo] = useState("comentario"); // comentario | precio | intercambio
   const [texto, setTexto] = useState("");
   const [monto, setMonto] = useState("");
+  const [cartasOfrecidas, setCartasOfrecidas] = useState([{ ...CARTA_OFRECIDA_VACIA }]);
+  const [conEfectivo, setConEfectivo] = useState(false);
+  const [efectivoExtra, setEfectivoExtra] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(null);
 
@@ -6287,19 +6339,44 @@ function OfertasPanel({ session, listingTabla, listingId }) {
 
   useEffect(() => { cargar(); }, [listingTabla, listingId]);
 
-  const publicar = async () => {
-    if (!texto.trim() && !monto) return;
+  const limpiarForm = () => {
+    setTexto(""); setMonto(""); setCartasOfrecidas([{ ...CARTA_OFRECIDA_VACIA }]); setConEfectivo(false); setEfectivoExtra("");
+  };
+
+  const cartasValidas = cartasOfrecidas.filter((c) => c.carta && c.foto_real_url);
+
+  const publicarComentario = async () => {
+    if (!texto.trim()) return;
+    setEnviando(true); setError(null);
+    try {
+      await sbWrite("POST", "publicacion_ofertas", { listing_tabla: listingTabla, listing_id: listingId, autor_id: session.user.id, tipo: "comentario", texto: texto.trim() }, session);
+      limpiarForm(); cargar();
+    } catch (e) { setError(e.message); } finally { setEnviando(false); }
+  };
+
+  const publicarOfertaPrecio = async () => {
+    if (!monto) return;
+    setEnviando(true); setError(null);
+    try {
+      await sbWrite("POST", "publicacion_ofertas", { listing_tabla: listingTabla, listing_id: listingId, autor_id: session.user.id, tipo: "precio", texto: texto.trim() || null, monto_oferta: Number(monto) }, session);
+      limpiarForm(); cargar();
+    } catch (e) { setError(e.message); } finally { setEnviando(false); }
+  };
+
+  const publicarIntercambio = async () => {
+    if (cartasValidas.length === 0) return;
     setEnviando(true); setError(null);
     try {
       await sbWrite("POST", "publicacion_ofertas", {
         listing_tabla: listingTabla,
         listing_id: listingId,
         autor_id: session.user.id,
+        tipo: "intercambio",
         texto: texto.trim() || null,
-        monto_oferta: monto ? Number(monto) : null,
+        cartas_ofrecidas: cartasValidas.map((c) => ({ tcg, carta: c.carta, set_nombre: c.set_nombre || null, card_api_id: c.card_api_id || null, imagen_url: c.imagen_url || null, foto_real_url: c.foto_real_url })),
+        efectivo_extra: conEfectivo && efectivoExtra ? Number(efectivoExtra) : null,
       }, session);
-      setTexto(""); setMonto("");
-      cargar();
+      limpiarForm(); cargar();
     } catch (e) { setError(e.message); } finally { setEnviando(false); }
   };
 
@@ -6307,47 +6384,134 @@ function OfertasPanel({ session, listingTabla, listingId }) {
     try { await sbWrite("DELETE", `publicacion_ofertas?id=eq.${id}`, {}, session); cargar(); } catch (e) { setError(e.message); }
   };
 
+  const actualizarCartaOfrecida = (idx, cambios) => {
+    setCartasOfrecidas((prev) => prev.map((c, i) => (i === idx ? { ...c, ...cambios } : c)));
+  };
+  const quitarCartaOfrecida = (idx) => {
+    setCartasOfrecidas((prev) => (prev.length === 1 ? [{ ...CARTA_OFRECIDA_VACIA }] : prev.filter((_, i) => i !== idx)));
+  };
+
+  const ofertas = items.filter((o) => o.tipo === "precio" || o.tipo === "intercambio" || o.monto_oferta != null);
+  const comentarios = items.filter((o) => !(o.tipo === "precio" || o.tipo === "intercambio" || o.monto_oferta != null));
+
   return (
     <div>
-      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Comentarios y ofertas</h3>
       {error && <div className="mb-3"><ErrorBox message={error} /></div>}
-      {session ? (
-        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 mb-4 grid gap-2">
-          <textarea placeholder="Escribe un comentario o pregunta..." value={texto} onChange={(e) => setTexto(e.target.value)} rows={2}
-            style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-          <div className="flex gap-2 items-center flex-wrap">
-            <input type="number" placeholder="Tu oferta en $ (opcional)" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[140px]" />
-            <button onClick={publicar} disabled={enviando || (!texto.trim() && !monto)} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
-              {enviando ? "Enviando..." : "Publicar"}
-            </button>
+
+      {session && !esMio && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 mb-6 grid gap-3">
+          <div className="flex gap-2 flex-wrap">
+            {[{ k: "comentario", l: "💬 Comentario" }, { k: "precio", l: "💵 Oferta en efectivo" }, { k: "intercambio", l: "🔄 Proponer intercambio" }].map((m) => (
+              <button key={m.k} type="button" onClick={() => setModo(m.k)}
+                style={{ background: modo === m.k ? COLORS.surface2 : "transparent", border: `1px solid ${modo === m.k ? COLORS.azulClaro : COLORS.surface2}`, color: modo === m.k ? COLORS.azulClaro : COLORS.muted }}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                {m.l}
+              </button>
+            ))}
           </div>
+
+          {modo === "comentario" && (
+            <>
+              <textarea placeholder="Escribe un comentario o pregunta..." value={texto} onChange={(e) => setTexto(e.target.value)} rows={2}
+                style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+              <button onClick={publicarComentario} disabled={enviando || !texto.trim()} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold w-fit">
+                {enviando ? "Enviando..." : "Publicar comentario"}
+              </button>
+            </>
+          )}
+
+          {modo === "precio" && (
+            <>
+              <textarea placeholder="Explica tu oferta (opcional)" value={texto} onChange={(e) => setTexto(e.target.value)} rows={2}
+                style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+              <input type="number" placeholder="Tu oferta en $" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit min-w-[160px]" />
+              <button onClick={publicarOfertaPrecio} disabled={enviando || !monto} style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold w-fit">
+                {enviando ? "Enviando..." : "Enviar oferta"}
+              </button>
+            </>
+          )}
+
+          {modo === "intercambio" && (
+            <>
+              <p style={{ color: COLORS.muted }} className="text-xs -mt-1">
+                Elige la(s) carta(s) que ofreces a cambio y sube una foto de frente de cada una (obligatoria) para que el vendedor sepa qué está viendo de verdad.
+              </p>
+              <div className="grid gap-3">
+                {cartasOfrecidas.map((c, idx) => (
+                  <div key={idx} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 grid gap-2">
+                    <CardPickerUniversal tcg={tcg} onSelect={(sel) => actualizarCartaOfrecida(idx, { carta: sel.name, set_nombre: sel.set_nombre, card_api_id: sel.card_api_id, imagen_url: sel.imagen_url, precio_ref_mxn: sel.precio_ref_mxn })} />
+                    {c.carta && (
+                      <div className="flex items-center gap-3">
+                        {c.imagen_url && <img src={c.imagen_url} alt={c.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
+                        <Badge color={COLORS.azulPalido}>{c.carta}</Badge>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <SubirFotoManual session={session} label={c.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (obligatoria)"} onSubido={(url) => actualizarCartaOfrecida(idx, { foto_real_url: url })} />
+                      {c.foto_real_url && <img src={c.foto_real_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />}
+                      {cartasOfrecidas.length > 1 && (
+                        <button type="button" onClick={() => quitarCartaOfrecida(idx)} style={{ color: COLORS.muted }} className="text-xs ml-auto">Quitar esta carta</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => setCartasOfrecidas((prev) => [...prev, { ...CARTA_OFRECIDA_VACIA }])}
+                style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold w-fit">
+                + Agregar otra carta
+              </button>
+
+              <label className="flex items-center gap-2 text-sm cursor-pointer w-fit" style={{ color: COLORS.muted }}>
+                <input type="checkbox" checked={conEfectivo} onChange={(e) => setConEfectivo(e.target.checked)} />
+                También ofrezco efectivo además de las cartas (opcional)
+              </label>
+              {conEfectivo && (
+                <input type="number" placeholder="Efectivo extra en $" value={efectivoExtra} onChange={(e) => setEfectivoExtra(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit min-w-[160px]" />
+              )}
+
+              <textarea placeholder="Describe tu oferta de intercambio (opcional)" value={texto} onChange={(e) => setTexto(e.target.value)} rows={2}
+                style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+
+              <button onClick={publicarIntercambio} disabled={enviando || cartasValidas.length === 0}
+                style={{ background: COLORS.violeta, color: COLORS.text, opacity: cartasValidas.length === 0 ? 0.5 : 1 }} className="rounded-lg px-4 py-2 text-sm font-semibold w-fit">
+                {enviando ? "Enviando..." : "Enviar oferta de intercambio"}
+              </button>
+              {cartasValidas.length === 0 && (
+                <p style={{ color: COLORS.muted }} className="text-xs">Elige al menos una carta y sube su foto de frente para poder enviar la oferta.</p>
+              )}
+            </>
+          )}
         </div>
-      ) : (
+      )}
+      {!session && (
         <p style={{ color: COLORS.muted }} className="text-sm mb-4">Inicia sesión para comentar u ofertar por esta publicación.</p>
       )}
-
-      {loading ? <Loading label="Cargando comentarios..." /> : items.length === 0 ? (
-        <p style={{ color: COLORS.muted }} className="text-sm">Sé el primero en comentar o hacer una oferta.</p>
-      ) : (
-        <div className="grid gap-2">
-          {items.map((c) => (
-            <div key={c.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-start gap-2">
-              <AvatarImg url={c.autor?.avatar_url} size={28} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-semibold">{c.autor?.nombre || "Usuario"}</p>
-                  {c.monto_oferta != null && <Badge color={COLORS.gold}>Oferta: ${Number(c.monto_oferta).toLocaleString("es-MX")}</Badge>}
-                  <p style={{ color: COLORS.muted }} className="text-[10px]">{new Date(c.created_at).toLocaleString("es-MX")}</p>
-                </div>
-                {c.texto && <p className="text-sm mt-0.5">{c.texto}</p>}
-              </div>
-              {session?.user?.id === c.autor_id && (
-                <button onClick={() => borrar(c.id)} style={{ color: COLORS.muted }} className="text-xs shrink-0">Borrar</button>
-              )}
-            </div>
-          ))}
-        </div>
+      {esMio && session && (
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">Esta es tu publicación -- aquí abajo puedes ver las ofertas y comentarios que te han hecho.</p>
       )}
+
+      <div className="mb-6">
+        <h3 style={{ color: COLORS.gold }} className="font-semibold mb-3 text-sm uppercase">📥 Ofertas recibidas{ofertas.length > 0 ? ` (${ofertas.length})` : ""}</h3>
+        {loading ? <Loading label="Cargando ofertas..." /> : ofertas.length === 0 ? (
+          <p style={{ color: COLORS.muted }} className="text-sm">Todavía no hay ofertas por esta publicación.</p>
+        ) : (
+          <div className="grid gap-2">
+            {ofertas.map((o) => <OfertaCard key={o.id} o={o} session={session} onBorrar={borrar} />)}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">💬 Comentarios</h3>
+        {!loading && comentarios.length === 0 && (
+          <p style={{ color: COLORS.muted }} className="text-sm">Sin comentarios todavía.</p>
+        )}
+        {comentarios.length > 0 && (
+          <div className="grid gap-2">
+            {comentarios.map((c) => <OfertaCard key={c.id} o={c} session={session} onBorrar={borrar} />)}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -6494,7 +6658,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
             </div>
           )}
 
-          <OfertasPanel session={session} listingTabla={tabla} listingId={id} />
+          <OfertasPanel session={session} listingTabla={tabla} listingId={id} tcg={item.tcg} esMio={esMio} />
         </div>
       </div>
     </div>

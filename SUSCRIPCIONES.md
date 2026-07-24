@@ -2242,6 +2242,37 @@ resultados" ahora distingue entre "no existe nada con ese nombre" y
   conseguir una llave gratuita de pokemontcg.io (sube bastante el límite
   de tasa frente a llamar sin llave) en vez de cambiar de proveedor.
 
+## 79. Ofertas de intercambio en publicaciones + apartado de ofertas ordenado
+
+- **Migración 050** (aplicada en vivo vía el conector de Supabase, ya
+  disponible en esta sesión): `publicacion_ofertas` gana `tipo` ('comentario'
+  | 'precio' | 'intercambio', backfill automático según si ya traía
+  `monto_oferta`), `cartas_ofrecidas` (jsonb: lista de `{tcg, carta,
+  set_nombre, card_api_id, imagen_url, foto_real_url}`) y `efectivo_extra`
+  (numeric). De paso se confirmó que la migración 049
+  (`foto_real_reverso_url`, sección 73) sí estaba aplicada -- la
+  incertidumbre de sesiones anteriores por no tener el conector queda
+  resuelta.
+- **Nuevo tipo de oferta: intercambio**. En cualquier publicación (Mercado
+  o tienda -- `OfertasPanel` vive en `CartaDetalleView`, que atiende las
+  tres tablas de listing), quien compra puede elegir "🔄 Proponer
+  intercambio" y: buscar una o más cartas propias con el mismo buscador de
+  catálogo de siempre (`CardPickerUniversal`, "+ Agregar otra carta" para
+  varias), subir una foto de **solo el frente** de cada una (obligatoria,
+  reutiliza `SubirFotoManual` -- pasa por la misma moderación de la
+  sección 74 antes de guardarse), agregar una descripción libre (opcional)
+  y, con una casilla aparte, sumar efectivo a la oferta (opcional, para
+  cuando además de cartas se quiere completar con dinero). Las ofertas en
+  puro efectivo (sin cartas) siguen existiendo como su propia pestaña
+  ("💵 Oferta en efectivo"), separadas de "💬 Comentario".
+- **Apartado de "Ofertas recibidas" para el vendedor**: `OfertasPanel` ya
+  no mezcla todo en una sola lista cronológica -- separa "📥 Ofertas
+  recibidas" (precio + intercambio, con badge y miniaturas de las cartas
+  ofrecidas si aplica) de "💬 Comentarios", cada una en su propio orden
+  (más reciente primero). Quien ve su propia publicación (`esMio`) ve
+  ambos apartados pero sin el formulario para ofertar (no tiene sentido
+  ofertarle a uno mismo).
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
