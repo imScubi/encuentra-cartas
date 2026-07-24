@@ -2165,6 +2165,31 @@ no oculta publicaciones, solo cambia en qué secuencia se muestran -- por
 eso vive en su propio estado (`ordenMercado`) en vez de sumarse a
 `filtrosMercado` (que sí cuenta cuántos filtros están activos).
 
+## 77. Los mismos filtros de Mercado, ahora también en "Buscar"
+
+Los filtros (precio, idioma, estado, zona, orden de precio) vivían solo en
+"Mercado entre usuarios" -- si buscabas "gardevoir" desde "Buscar" (que
+junta resultados de tiendas, Mercado y sellado en una sola búsqueda con
+texto) no había forma de acotar por esos mismos criterios. Se generalizó
+el estado y las funciones (`filtrosMercado` → `filtros`, `pasaFiltrosMercado`
+→ `pasaFiltros`, `ordenarMercado` → `ordenarPorPrecio`, etc. -- mismos
+nombres más genéricos, mismo estado compartido) para que un solo panel de
+filtros sirva en las dos vistas en vez de duplicar el código y el estado.
+
+La única complicación real: la zona vive en columnas distintas según de
+dónde sale cada resultado -- plana en `mercado_listings.zona`, pero
+anidada bajo `tiendas.zona` en `inventario_tienda`/`sellado_tienda` (las
+publicaciones de una tienda). Se agregó un helper `zonaDe(item)` que
+revisa ambos lugares, y de paso el filtro de zona pasó de "contiene" a
+comparación exacta (`===`) -- tiene sentido ahora que la zona siempre es
+uno de los 51 municipios de la sección 75, ya no texto libre.
+
+El panel de filtros en "Buscar" aparece debajo de la barra de búsqueda en
+cuanto hay texto escrito, y se aplica a los 3 grupos de resultados
+(tiendas, Mercado, sellado) por separado. El mensaje de "no hay
+resultados" ahora distingue entre "no existe nada con ese nombre" y
+"existe pero ninguno pasa esos filtros".
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

@@ -8586,30 +8586,37 @@ export default function EncuentraCartas() {
   const [loadingMarket, setLoadingMarket] = useState(false);
   const [tipoMercadoTab, setTipoMercadoTab] = useState("todos"); // todos | carta | sellado | accesorio
 
-  // Filtros del Mercado (precio, idioma, estado/calidad, zona) -- aparte del
-  // filtro por tipo (arriba) y por TCG (selector global, pasaFiltroTcg).
-  // Idioma/estado solo aplican a cartas sueltas; si están activos, un
-  // sellado/accesorio (que no tienen esos campos) queda excluido -- tiene
-  // sentido, porque filtrar por idioma solo importa si estás buscando cartas.
-  const [filtrosMercadoAbiertos, setFiltrosMercadoAbiertos] = useState(false);
-  const [filtrosMercado, setFiltrosMercado] = useState({ precioMin: "", precioMax: "", idioma: "", condicion: "", zona: "" });
-  const filtrosMercadoActivos = Object.values(filtrosMercado).some(Boolean);
-  const pasaFiltrosMercado = (item) => {
-    const f = filtrosMercado;
+  // Filtros de precio/idioma/estado/zona -- se usan tanto en "Mercado entre
+  // usuarios" como en "Buscar" (mismo panel, mismo estado, para que el
+  // filtro se sienta como una sola cosa en toda la app en vez de dos
+  // paneles distintos). Aparte del filtro por tipo y por TCG (selector
+  // global, pasaFiltroTcg). Idioma/estado solo aplican a cartas sueltas; si
+  // están activos, un sellado/accesorio (que no tienen esos campos) queda
+  // excluido -- tiene sentido, porque filtrar por idioma solo importa si
+  // estás buscando cartas.
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+  const [filtros, setFiltros] = useState({ precioMin: "", precioMax: "", idioma: "", condicion: "", zona: "" });
+  const filtrosActivos = Object.values(filtros).some(Boolean);
+  // La zona vive en columnas distintas según de dónde viene el resultado:
+  // plana en mercado_listings (item.zona), anidada bajo tiendas en
+  // inventario_tienda/sellado_tienda (item.tiendas.zona).
+  const zonaDe = (item) => item.zona || item.tiendas?.zona || "";
+  const pasaFiltros = (item) => {
+    const f = filtros;
     if (f.precioMin && Number(item.precio) < Number(f.precioMin)) return false;
     if (f.precioMax && Number(item.precio) > Number(f.precioMax)) return false;
     if (f.idioma && item.idioma !== f.idioma) return false;
     if (f.condicion && item.condicion !== f.condicion) return false;
-    if (f.zona && !(item.zona || "").toLowerCase().includes(f.zona.trim().toLowerCase())) return false;
+    if (f.zona && zonaDe(item) !== f.zona) return false;
     return true;
   };
   // Orden de precio: aparte de los filtros de arriba (esos ocultan resultados,
   // esto solo cambia el orden en el que se muestran) -- por default se respeta
   // el orden con los boosts primero (conBoostPrimero).
-  const [ordenMercado, setOrdenMercado] = useState(""); // "" | "precio_asc" | "precio_desc"
-  const ordenarMercado = (arr) => {
-    if (ordenMercado === "precio_asc") return [...arr].sort((a, b) => Number(a.precio) - Number(b.precio));
-    if (ordenMercado === "precio_desc") return [...arr].sort((a, b) => Number(b.precio) - Number(a.precio));
+  const [ordenResultados, setOrdenResultados] = useState(""); // "" | "precio_asc" | "precio_desc"
+  const ordenarPorPrecio = (arr) => {
+    if (ordenResultados === "precio_asc") return [...arr].sort((a, b) => Number(a.precio) - Number(b.precio));
+    if (ordenResultados === "precio_desc") return [...arr].sort((a, b) => Number(b.precio) - Number(a.precio));
     return arr;
   };
   const [news, setNews] = useState([]);
@@ -9160,15 +9167,61 @@ export default function EncuentraCartas() {
               </div>
             )}
 
+            {!searching && query.trim() && (
+              <div className="max-w-3xl mx-auto mb-4">
+                <div className="flex justify-center">
+                  <button onClick={() => setFiltrosAbiertos((v) => !v)}
+                    style={{ background: filtrosActivos ? `${COLORS.gold}22` : "transparent", border: `1px solid ${filtrosActivos ? COLORS.gold : COLORS.surface2}`, color: filtrosActivos ? COLORS.gold : COLORS.muted }}
+                    className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                    🔎 Filtros{filtrosActivos ? ` (${Object.values(filtros).filter(Boolean).length})` : ""}
+                  </button>
+                </div>
+                {filtrosAbiertos && (
+                  <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mt-3 grid sm:grid-cols-5 gap-2">
+                    <input placeholder="Precio mín." type="number" value={filtros.precioMin}
+                      onChange={(e) => setFiltros((f) => ({ ...f, precioMin: e.target.value }))}
+                      style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm" />
+                    <input placeholder="Precio máx." type="number" value={filtros.precioMax}
+                      onChange={(e) => setFiltros((f) => ({ ...f, precioMax: e.target.value }))}
+                      style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm" />
+                    <select value={filtros.idioma} onChange={(e) => setFiltros((f) => ({ ...f, idioma: e.target.value }))}
+                      style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
+                      <option value="">Idioma (cualquiera)</option>
+                      {IDIOMA_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                    </select>
+                    <select value={filtros.condicion} onChange={(e) => setFiltros((f) => ({ ...f, condicion: e.target.value }))}
+                      style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
+                      <option value="">Estado (cualquiera)</option>
+                      {CONDICION_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.key} · {o.label}</option>)}
+                    </select>
+                    <ZonaSelector incluirTodas value={filtros.zona}
+                      onChange={(v) => setFiltros((f) => ({ ...f, zona: v }))} />
+                    <select value={ordenResultados} onChange={(e) => setOrdenResultados(e.target.value)}
+                      style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
+                      <option value="">Ordenar por: relevancia</option>
+                      <option value="precio_asc">Precio: menor a mayor</option>
+                      <option value="precio_desc">Precio: mayor a menor</option>
+                    </select>
+                    {filtrosActivos && (
+                      <button onClick={() => setFiltros({ precioMin: "", precioMax: "", idioma: "", condicion: "", zona: "" })}
+                        style={{ color: COLORS.muted }} className="text-xs text-left sm:col-span-5">Limpiar filtros</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {(() => {
-              const selladoVisible = searchResults.sellado.filter(pasaFiltroTcg);
-              const tiendasVisibles = searchResults.tiendas.filter(pasaFiltroTcg);
-              const mercadoVisible = searchResults.mercado.filter(pasaFiltroTcg);
+              const selladoVisible = ordenarPorPrecio(searchResults.sellado.filter(pasaFiltroTcg).filter(pasaFiltros));
+              const tiendasVisibles = ordenarPorPrecio(searchResults.tiendas.filter(pasaFiltroTcg).filter(pasaFiltros));
+              const mercadoVisible = ordenarPorPrecio(searchResults.mercado.filter(pasaFiltroTcg).filter(pasaFiltros));
               return (
                 <>
                   {!searching && query.trim() && tiendasVisibles.length === 0 && mercadoVisible.length === 0 && selladoVisible.length === 0 && (
                     <p style={{ color: COLORS.muted }} className="text-center py-16 text-sm">
-                      Nadie tiene "{query}" registrado todavía{tcgFiltro !== "todos" ? ` en ${TCG_LABEL[tcgFiltro] || tcgFiltro}` : ""}.
+                      {filtrosActivos && (searchResults.tiendas.length + searchResults.mercado.length + searchResults.sellado.length) > 0
+                        ? "Nadie tiene algo así con esos filtros. Prueba quitando alguno."
+                        : `Nadie tiene "${query}" registrado todavía${tcgFiltro !== "todos" ? ` en ${TCG_LABEL[tcgFiltro] || tcgFiltro}` : ""}.`}
                     </p>
                   )}
 
@@ -9387,56 +9440,56 @@ export default function EncuentraCartas() {
                   {t.label}
                 </button>
               ))}
-              <button onClick={() => setFiltrosMercadoAbiertos((v) => !v)}
-                style={{ background: filtrosMercadoActivos ? `${COLORS.gold}22` : "transparent", border: `1px solid ${filtrosMercadoActivos ? COLORS.gold : COLORS.surface2}`, color: filtrosMercadoActivos ? COLORS.gold : COLORS.muted }}
+              <button onClick={() => setFiltrosAbiertos((v) => !v)}
+                style={{ background: filtrosActivos ? `${COLORS.gold}22` : "transparent", border: `1px solid ${filtrosActivos ? COLORS.gold : COLORS.surface2}`, color: filtrosActivos ? COLORS.gold : COLORS.muted }}
                 className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
-                🔎 Filtros{filtrosMercadoActivos ? ` (${Object.values(filtrosMercado).filter(Boolean).length})` : ""}
+                🔎 Filtros{filtrosActivos ? ` (${Object.values(filtros).filter(Boolean).length})` : ""}
               </button>
             </div>
-            {filtrosMercadoAbiertos && (
+            {filtrosAbiertos && (
               <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid sm:grid-cols-5 gap-2">
-                <input placeholder="Precio mín." type="number" value={filtrosMercado.precioMin}
-                  onChange={(e) => setFiltrosMercado((f) => ({ ...f, precioMin: e.target.value }))}
+                <input placeholder="Precio mín." type="number" value={filtros.precioMin}
+                  onChange={(e) => setFiltros((f) => ({ ...f, precioMin: e.target.value }))}
                   style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm" />
-                <input placeholder="Precio máx." type="number" value={filtrosMercado.precioMax}
-                  onChange={(e) => setFiltrosMercado((f) => ({ ...f, precioMax: e.target.value }))}
+                <input placeholder="Precio máx." type="number" value={filtros.precioMax}
+                  onChange={(e) => setFiltros((f) => ({ ...f, precioMax: e.target.value }))}
                   style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm" />
-                <select value={filtrosMercado.idioma} onChange={(e) => setFiltrosMercado((f) => ({ ...f, idioma: e.target.value }))}
+                <select value={filtros.idioma} onChange={(e) => setFiltros((f) => ({ ...f, idioma: e.target.value }))}
                   style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
                   <option value="">Idioma (cualquiera)</option>
                   {IDIOMA_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                 </select>
-                <select value={filtrosMercado.condicion} onChange={(e) => setFiltrosMercado((f) => ({ ...f, condicion: e.target.value }))}
+                <select value={filtros.condicion} onChange={(e) => setFiltros((f) => ({ ...f, condicion: e.target.value }))}
                   style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
                   <option value="">Estado (cualquiera)</option>
                   {CONDICION_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.key} · {o.label}</option>)}
                 </select>
-                <ZonaSelector incluirTodas value={filtrosMercado.zona}
-                  onChange={(v) => setFiltrosMercado((f) => ({ ...f, zona: v }))} />
-                <select value={ordenMercado} onChange={(e) => setOrdenMercado(e.target.value)}
+                <ZonaSelector incluirTodas value={filtros.zona}
+                  onChange={(v) => setFiltros((f) => ({ ...f, zona: v }))} />
+                <select value={ordenResultados} onChange={(e) => setOrdenResultados(e.target.value)}
                   style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
                   <option value="">Ordenar por: relevancia</option>
                   <option value="precio_asc">Precio: menor a mayor</option>
                   <option value="precio_desc">Precio: mayor a menor</option>
                 </select>
-                {filtrosMercadoActivos && (
-                  <button onClick={() => setFiltrosMercado({ precioMin: "", precioMax: "", idioma: "", condicion: "", zona: "" })}
+                {filtrosActivos && (
+                  <button onClick={() => setFiltros({ precioMin: "", precioMax: "", idioma: "", condicion: "", zona: "" })}
                     style={{ color: COLORS.muted }} className="text-xs text-left sm:col-span-5">Limpiar filtros</button>
                 )}
               </div>
             )}
             {loadingMarket && <Loading label="Cargando publicaciones..." />}
-            {!loadingMarket && ordenarMercado(market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltrosMercado)).length === 0 && (
+            {!loadingMarket && ordenarPorPrecio(market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltros)).length === 0 && (
               <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
                 {market.length === 0
                   ? "Todavía no hay publicaciones de usuarios en el mercado. En cuanto alguien se registre como cuenta individual y publique una carta, aparecerá aquí automáticamente."
-                  : filtrosMercadoActivos
+                  : filtrosActivos
                     ? "Nadie tiene algo así con esos filtros. Prueba quitando alguno."
                     : "Nadie ha publicado nada así todavía en el Mercado."}
               </p>
             )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {ordenarMercado(market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltrosMercado)).map((r) => (
+              {ordenarPorPrecio(market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltros)).map((r) => (
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                   <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
                     {miniaturaListing(r) ? (
