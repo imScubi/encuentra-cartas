@@ -8,6 +8,7 @@
 // (opcional) GMAIL_USER/GMAIL_APP_PASSWORD para el correo.
 import webpush from "web-push";
 import { enviarCorreo } from "../../lib/email.js";
+import { explicarError } from "../../lib/explicarError.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -22,6 +23,10 @@ export default async function handler(req, res) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
     const mensajeCorto = String(mensaje).slice(0, 500);
+    // Explicación en español simple del error técnico, para quien no
+    // programa -- si no se reconoce el patrón, se manda null y solo se ve
+    // el mensaje técnico (no se inventa una explicación).
+    const explicacion = explicarError(mensajeCorto);
 
     // ¿Ya avisamos de este mismo error en la última hora? No repetir el aviso.
     const haceUnaHora = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -59,7 +64,7 @@ export default async function handler(req, res) {
           perfil_id: a.id,
           tipo: "error",
           titulo: "⚠️ Error detectado en la app",
-          mensaje: mensajeCorto,
+          mensaje: explicacion ? `${explicacion}\n\nDetalle técnico: ${mensajeCorto}` : mensajeCorto,
           url: "/",
         }))
       ),
@@ -74,7 +79,7 @@ export default async function handler(req, res) {
     const idsAdmin = admins.map((a) => a.id);
     const subsRes = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?perfil_id=in.(${idsAdmin.join(",")})`, { headers });
     const subs = await subsRes.json();
-    const payload = JSON.stringify({ title: "⚠️ Error detectado en la app", body: mensajeCorto.slice(0, 140), url: "/" });
+    const payload = JSON.stringify({ title: "⚠️ Error detectado en la app", body: (explicacion || mensajeCorto).slice(0, 140), url: "/" });
     await Promise.allSettled(
       (subs || []).map((s) =>
         webpush
@@ -97,7 +102,11 @@ export default async function handler(req, res) {
           enviarCorreo({
             to: a.email,
             subject: "⚠️ Error detectado en Encuentra Cartas",
-            html: `<p><strong>${mensajeCorto}</strong></p><p>URL: ${url || "-"}</p>${
+            html: `${
+              explicacion
+                ? `<p style="background:#fff3cd;border:1px solid #ffe08a;border-radius:8px;padding:10px 14px;font-size:15px">🗣️ <strong>En palabras simples:</strong> ${explicacion}</p>`
+                : ""
+            }<p><strong>Detalle técnico:</strong> ${mensajeCorto}</p><p>URL: ${url || "-"}</p>${
               stack ? `<pre style="white-space:pre-wrap;font-size:12px">${String(stack).slice(0, 1500)}</pre>` : ""
             }`,
           })
