@@ -2098,6 +2098,44 @@ alter table mercado_listings add column if not exists foto_real_reverso_url text
 alter table inventario_tienda add column if not exists foto_real_reverso_url text;
 ```
 
+## 74. Descripciones de estado más claras + filtros de búsqueda en Mercado + moderación de fotos
+
+- **Descripciones de estado de carta (`CONDICION_OPCIONES` en `theme.js`)**:
+  las 6 categorías (GM/NM/LP/MP/HP/DMG) ya tenían un nombre en inglés pero
+  no explicaban qué significa cada una en la práctica. Se reescribió
+  `desc` de cada una con ejemplos concretos de qué esperar de la carta
+  (ej. GM: "Carta súper perfecta, sin ningún detalle -- del sobre directo
+  a la mica"; NM: "Carta sin detalles a simple vista, de sobre a mica";
+  hasta DMG: "Carta dañada de verdad: rota, con hoyos, manchada fuerte o
+  le falta un pedazo"). Se muestran en `EstadoCartaSelector` (texto
+  persistente debajo de los botones una vez elegida una opción, más
+  `title` en cada botón) y en `EstadoCartaBadge`.
+- **Filtros de búsqueda en "Mercado entre usuarios"**: se agregó un botón
+  "🔎 Filtros" junto a las pestañas de tipo, que abre un panel con precio
+  mínimo/máximo, idioma, condición/estado y zona. El filtro se aplica con
+  `pasaFiltrosMercado(item)` encadenado a los filtros que ya existían
+  (TCG y tipo de producto), tanto para la cuadrícula como para el mensaje
+  de "no hay resultados". Un botón "Limpiar filtros" resetea todo.
+- **Moderación de fotos reales subidas (`SubirFotoManual`)**: antes de
+  subir cualquier foto real de una carta/producto a Storage, se le pide a
+  Gemini (con visión) que la revise y rechace solo si es contenido
+  sexual/gráfico explícito o si la imagen claramente no tiene nada que
+  ver con un producto de TCG -- una foto borrosa o de mala calidad de una
+  carta real sigue siendo válida, el criterio es el tema, no la calidad.
+  Por el límite de 12 funciones serverless del plan Hobby de Vercel (ya
+  estaba al tope), esto no se hizo como endpoint nuevo: se agregó un modo
+  `modo: "moderar"` dentro de `api/carpetas/detectar.js` (que ya llamaba
+  a Gemini con visión para detectar cartas de carpetas), compartiendo la
+  lógica de llamar a Gemini vía el nuevo `lib/gemini.js`. Del lado del
+  cliente, `src/lib/moderacion.js` expone `moderarFotoReal(file)`, que
+  `SubirFotoManual` llama antes de `subirImagenCarta`, mostrando el
+  motivo del rechazo si aplica ("Revisando y subiendo..." mientras
+  tanto). Es **fail-open** a propósito en cada capa (sin `GEMINI_API_KEY`
+  configurada, sin conexión, o si Gemini falla) -- se deja pasar la foto
+  en vez de bloquear una venta legítima por un problema técnico ajeno;
+  esto no reemplaza el botón "Reportar" ni la revisión de Admin, es
+  nada más una primera barrera automática.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.

@@ -70,12 +70,12 @@ export const IDIOMA_LABEL = { EN: "Inglés", ES: "Español", JP: "Japonés" };
 // ---- Estado (condición) de la carta: obligatorio al publicar una carta suelta,
 // para que el comprador sepa el desgaste real antes de contactar al vendedor ----
 export const CONDICION_OPCIONES = [
-  { key: "GM", label: "Gem Mint", desc: "Perfecta, como recién salida del sobre" },
-  { key: "NM", label: "Near Mint", desc: "Casi perfecta, desgaste mínimo" },
-  { key: "LP", label: "Lightly Played", desc: "Desgaste leve, marcas pequeñas" },
-  { key: "MP", label: "Moderately Played", desc: "Desgaste visible, rayones o doblez leve" },
-  { key: "HP", label: "Heavily Played", desc: "Desgaste fuerte, doblez o daño notorio" },
-  { key: "DMG", label: "Damaged", desc: "Dañada: rota, manchada o muy deteriorada" },
+  { key: "GM", label: "Gem Mint", desc: "Carta súper perfecta, sin ningún detalle -- del sobre directo a la mica" },
+  { key: "NM", label: "Near Mint", desc: "Carta sin detalles a simple vista, de sobre a mica" },
+  { key: "LP", label: "Lightly Played", desc: "Carta con detalles muy leves: un rayón chico o las esquinas apenas tocadas" },
+  { key: "MP", label: "Moderately Played", desc: "Carta con detalles que ya se notan: rayones, esquinas gastadas o un doblez leve" },
+  { key: "HP", label: "Heavily Played", desc: "Carta con detalles fuertes: doblez marcado, esquinas muy gastadas o manchas, pero completa" },
+  { key: "DMG", label: "Damaged", desc: "Carta dañada de verdad: rota, con hoyos, manchada fuerte o le falta un pedazo" },
 ];
 export const CONDICION_LABEL = Object.fromEntries(CONDICION_OPCIONES.map((o) => [o.key, o.label]));
 export const CONDICION_DESC = Object.fromEntries(CONDICION_OPCIONES.map((o) => [o.key, o.desc]));
