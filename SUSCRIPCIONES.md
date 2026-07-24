@@ -2347,6 +2347,39 @@ Zafiro+ (si no calificas, el botón "+ Organizar subasta" te manda a un
 y si ya terminó y eres el vendedor, un botón directo para contactar por
 chat a quien ganó).
 
+## 81. Importar/exportar decklist en texto plano (Armar mazo)
+
+Un mazo abierto ahora tiene un botón "📋 Importar / exportar" que abre un
+panel con dos textareas, para los 5 TCG que soporta Deck Builder. Formato
+por línea: **`Nombre número cantidad`** -- el número es opcional (si no
+lo sabes, `Nombre cantidad` o incluso solo `Nombre` también funciona), y
+también se acepta un prefijo `2x` en vez del número al final de la línea.
+
+- **Pokémon**: `Blastoise 011/165 2` (número/total tal como aparece impreso).
+- **Magic**: `Lightning Bolt 042 3` (número de colector del set, sin "/total").
+- **Yu-Gi-Oh**: `Dark Magician LOB-001 1` (código de set, admite guion).
+- **Lorcana**: `Elsa, Snow Queen 042 1`.
+- **One Piece**: `Monkey D. Luffy 2` -- sin número de carta: el catálogo de
+  One Piece en esta app viene de TCGplayer (`TCGplayerPicker`), que no
+  expone un número de carta por single como sí hacen las demás APIs.
+
+**Deliberadamente no se valida contra ningún catálogo en línea al
+importar** (mismo criterio que ya usa el Importador Masivo de inventario,
+sección 6): resolver imagen/precio de cada línea llamando a la API
+correspondiente saturaría rápido APIs sin llave como pokemontcg.io con
+una lista de 20-60 líneas de golpe (ver el fix de rate-limiting de la
+sección 78). Las cartas importadas se guardan solo con nombre + número +
+cantidad, y se ven sin imagen (ícono de placeholder, igual que cualquier
+carta sin `card_api_id`) hasta que se busquen a mano con el buscador
+visual de arriba si se quiere la imagen real.
+
+**Importar reemplaza las cartas del mazo actual** (con confirmación si ya
+tenía algo) en vez de sumarse a lo que ya había -- es el comportamiento
+esperado al "pegar una decklist completa", igual que otros deck builders
+de referencia. Exportar genera el mismo formato a partir de lo que ya
+tiene el mazo (con un botón "Copiar" al portapapeles), así que
+exportar → editar a mano → volver a importar funciona como round-trip.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
