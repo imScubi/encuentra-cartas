@@ -2418,6 +2418,31 @@ cuando falla**, en vez de fingir que siempre va a funcionar:
   y sigue funcionando siempre, sin depender de si un sitio externo
   permite o no el acceso automatizado.
 
+## 83. Aviso previo de bloqueo Shopify + link a tu propio sitio web (Zafiro+)
+
+Dos ajustes chicos pedidos después de la sección 82:
+
+- **Aviso previo en el Importador Shopify**: antes solo se avisaba
+  *después* de intentar traer el catálogo y fallar (`bloqueado`). Ahora
+  hay un recuadro fijo, visible siempre (no solo cuando falla), que
+  explica de entrada que muchas tiendas Shopify tienen protección
+  anti-bots activa y que si tu tienda la tiene, ningún link va a
+  funcionar -- y que el Importador Masivo (copiar/pegar a mano) siempre
+  funciona como respaldo. La idea es que nadie pierda tiempo probando
+  links si su tienda ya tiene esa protección.
+- **Link a tu propio sitio web**: nueva columna `perfiles.sitio_web`
+  (migración `053_sitio_web_tienda.sql`, mismo patrón que
+  `instagram`/`google_maps_url`, mismo gate de plan Zafiro+). Se edita
+  desde el panel de tienda (`RedesSocialesEditor`) y desde "Editar
+  perfil" (`EditarPerfilModal`), y se muestra como botón "Sitio web" en
+  el detalle público de la tienda, junto a Instagram y Google Maps. Como
+  alguien puede escribir el dominio sin `https://` (ej. `tutienda.com`),
+  se guarda tal cual y se le agrega el protocolo solo al armar el link
+  (`conProtocolo`), sin tocar lo guardado.
+
+**Pendiente de aplicar en Supabase** (el conector MCP sigue
+desconectado): corre `053_sitio_web_tienda.sql` a mano en el SQL Editor.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
