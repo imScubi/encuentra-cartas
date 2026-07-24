@@ -8603,6 +8603,15 @@ export default function EncuentraCartas() {
     if (f.zona && !(item.zona || "").toLowerCase().includes(f.zona.trim().toLowerCase())) return false;
     return true;
   };
+  // Orden de precio: aparte de los filtros de arriba (esos ocultan resultados,
+  // esto solo cambia el orden en el que se muestran) -- por default se respeta
+  // el orden con los boosts primero (conBoostPrimero).
+  const [ordenMercado, setOrdenMercado] = useState(""); // "" | "precio_asc" | "precio_desc"
+  const ordenarMercado = (arr) => {
+    if (ordenMercado === "precio_asc") return [...arr].sort((a, b) => Number(a.precio) - Number(b.precio));
+    if (ordenMercado === "precio_desc") return [...arr].sort((a, b) => Number(b.precio) - Number(a.precio));
+    return arr;
+  };
   const [news, setNews] = useState([]);
   const [loadingNews, setLoadingNews] = useState(false);
   const [inicioTienda, setInicioTienda] = useState([]);
@@ -9404,6 +9413,12 @@ export default function EncuentraCartas() {
                 </select>
                 <ZonaSelector incluirTodas value={filtrosMercado.zona}
                   onChange={(v) => setFiltrosMercado((f) => ({ ...f, zona: v }))} />
+                <select value={ordenMercado} onChange={(e) => setOrdenMercado(e.target.value)}
+                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
+                  <option value="">Ordenar por: relevancia</option>
+                  <option value="precio_asc">Precio: menor a mayor</option>
+                  <option value="precio_desc">Precio: mayor a menor</option>
+                </select>
                 {filtrosMercadoActivos && (
                   <button onClick={() => setFiltrosMercado({ precioMin: "", precioMax: "", idioma: "", condicion: "", zona: "" })}
                     style={{ color: COLORS.muted }} className="text-xs text-left sm:col-span-5">Limpiar filtros</button>
@@ -9411,7 +9426,7 @@ export default function EncuentraCartas() {
               </div>
             )}
             {loadingMarket && <Loading label="Cargando publicaciones..." />}
-            {!loadingMarket && market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltrosMercado).length === 0 && (
+            {!loadingMarket && ordenarMercado(market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltrosMercado)).length === 0 && (
               <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
                 {market.length === 0
                   ? "Todavía no hay publicaciones de usuarios en el mercado. En cuanto alguien se registre como cuenta individual y publique una carta, aparecerá aquí automáticamente."
@@ -9421,7 +9436,7 @@ export default function EncuentraCartas() {
               </p>
             )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltrosMercado).map((r) => (
+              {ordenarMercado(market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltrosMercado)).map((r) => (
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                   <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
                     {miniaturaListing(r) ? (

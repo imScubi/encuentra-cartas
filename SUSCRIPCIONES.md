@@ -2155,6 +2155,16 @@ No se tocó la zona de tiendas en el panel de Admin (`AdminPanel` →
 Tiendas) -- esa la captura un admin al dar de alta la tienda, no es parte
 del flujo de "publicar una venta" que pidió el usuario.
 
+## 76. Orden por precio en el filtro del Mercado
+
+Se agregó un selector "Ordenar por" al panel de filtros de "Mercado entre
+usuarios" (el mismo panel de la sección 74), con "Precio: menor a mayor" y
+"Precio: mayor a menor" (además de "relevancia", el orden por default con
+los boosts primero). A diferencia de los demás filtros del panel, el orden
+no oculta publicaciones, solo cambia en qué secuencia se muestran -- por
+eso vive en su propio estado (`ordenMercado`) en vez de sumarse a
+`filtrosMercado` (que sí cuenta cuántos filtros están activos).
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
