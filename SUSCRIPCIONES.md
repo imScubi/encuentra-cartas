@@ -2136,6 +2136,25 @@ alter table inventario_tienda add column if not exists foto_real_reverso_url tex
   esto no reemplaza el botón "Reportar" ni la revisión de Admin, es
   nada más una primera barrera automática.
 
+## 75. Zona: selector de los 51 municipios de Nuevo León (en vez de texto libre)
+
+Antes "zona" era un `<input>` de texto libre en cada publicación -- cada
+quien escribía como quisiera ("San Pedro", "San pedro", "SPGG",
+"San Pedro Garza García"), así que el filtro de zona (sección 74) nunca
+hacía match entre variantes de una misma zona real. Se agregó
+`MUNICIPIOS_NL` en `theme.js` con los 51 municipios de Nuevo León y un
+componente `ZonaSelector` (`<select>` nativo, con opción `incluirTodas`
+para usarlo también como filtro) que reemplaza el input de texto en:
+
+- `MyMarketPanel`: publicar una carta/sellado/accesorio en el Mercado.
+- `CarpetasPanel`: publicar en bloque desde una carpeta hacia el Mercado.
+- El panel de filtros del Mercado (sección 74) -- ahora es el mismo
+  selector de municipios en vez de un texto que tenía que coincidir a mano.
+
+No se tocó la zona de tiendas en el panel de Admin (`AdminPanel` →
+Tiendas) -- esa la captura un admin al dar de alta la tienda, no es parte
+del flujo de "publicar una venta" que pidió el usuario.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
