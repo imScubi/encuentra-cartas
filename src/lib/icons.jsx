@@ -45,6 +45,7 @@ export const Store = crearIcono("Store", `<path d="M4 9l1.2-4.2A1 1 0 0 1 6.15 4
 export const Sparkles = crearIcono("Sparkles", `<path d="M11 3 12.3 8 17 9.3 12.3 10.6 11 15.5 9.7 10.6 5 9.3 9.7 8Z"></path><path d="M18 14 18.7 16.3 21 17 18.7 17.7 18 20 17.3 17.7 15 17 17.3 16.3Z"></path>`);
 export const Package = crearIcono("Package", `<path d="M12 3 20 7.2v9.6L12 21 4 16.8V7.2Z"></path><path d="M4 7.2 12 11l8-3.8"></path><path d="M12 11v10"></path><path d="M8 5.2 16 9"></path>`);
 export const ChevronLeft = crearIcono("ChevronLeft", `<path d="M15 5l-7 7 7 7"></path>`);
+export const ChevronRight = crearIcono("ChevronRight", `<path d="M9 5l7 7-7 7"></path>`);
 export const User = crearIcono("User", `<circle cx="12" cy="8" r="3.6"></circle><path d="M5 20c0-3.6 3.1-6.2 7-6.2s7 2.6 7 6.2"></path>`);
 export const Megaphone = crearIcono("Megaphone", `<path d="M4 11v2a1.5 1.5 0 0 0 1.5 1.5H7l1.3 4.4a1 1 0 0 0 1.9-.3L10 14.5"></path><path d="M4 11l11.5-5A1 1 0 0 1 17 7v10a1 1 0 0 1-1.5.9L4 13Z"></path><path d="M19 9.5a3 3 0 0 1 0 5"></path>`);
 export const Newspaper = crearIcono("Newspaper", `<path d="M5 4.5h11a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 19 16.5h-1.5"></path><rect x="3.5" y="7" width="12.5" height="12.5" rx="1.5"></rect><path d="M6 10h6.5"></path><path d="M6 13h6.5"></path><path d="M6 16h4"></path>`);
