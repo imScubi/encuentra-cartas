@@ -7485,13 +7485,15 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
   return (
     <div>
       {volver}
-      <div className="grid sm:grid-cols-[minmax(0,320px)_1fr] gap-6">
-        <div className="grid gap-3">
-          <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-video flex items-center justify-center">
-            {sorteo.imagen_url ? <img src={sorteo.imagen_url} alt={sorteo.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} className="rounded-2xl" /> : <Gift size={48} color={COLORS.muted} />}
-          </div>
-        </div>
-        <div>
+      {/* Imagen como banner fijo arriba (altura explícita + overflow-hidden) en
+          vez de una columna al lado del texto -- así nunca se puede "desbordar"
+          detrás del contenido sin importar el tamaño real de la foto o el
+          ancho de pantalla. El texto vive en su propia tarjeta con fondo
+          sólido debajo, nunca encima de la imagen. */}
+      <div style={{ background: COLORS.surface2, height: 240 }} className="rounded-2xl overflow-hidden flex items-center justify-center mb-6">
+        {sorteo.imagen_url ? <img src={sorteo.imagen_url} alt={sorteo.titulo} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : <Gift size={48} color={COLORS.muted} />}
+      </div>
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-5">
           <div className="flex items-center gap-2 flex-wrap mb-2">
             <Badge color={activo ? COLORS.gold : COLORS.muted}>{sorteoEstadoLabel(sorteo)}</Badge>
             {sorteo.destacado && activo && <Badge color={COLORS.violeta}>⭐ Destacado en Inicio</Badge>}
@@ -7600,7 +7602,6 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
               </div>
             </div>
           )}
-        </div>
       </div>
     </div>
   );
