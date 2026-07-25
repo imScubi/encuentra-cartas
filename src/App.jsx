@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
-  Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft,
+  Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft, ChevronRight,
   User, Megaphone, Newspaper, ShoppingBag, ShoppingCart, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
   ArrowUp, ArrowDown, Navigation, ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
@@ -3875,6 +3875,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [nombreNueva, setNombreNueva] = useState("");
+  const [tamanoNueva, setTamanoNueva] = useState("4x3"); // tamaño de página del álbum (columnas x filas)
   const [creando, setCreando] = useState(false);
   const [subiendoFotoPara, setSubiendoFotoPara] = useState(null);
   const [revision, setRevision] = useState(null); // { carpetaId, filas: [...] }
@@ -3882,6 +3883,15 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   const [zonaMercado, setZonaMercado] = useState("");
   const [idiomaCarpeta, setIdiomaCarpeta] = useState(""); // idioma de todas las cartas de esta revisión
   const [estadoCarpeta, setEstadoCarpeta] = useState(""); // estado/condición de todas las cartas de esta revisión
+
+  // ---- Modo manual: agregar cartas del catálogo directo a una carpeta, sin
+  // foto ni IA -- usa la imagen oficial del catálogo, igual que ya hace el
+  // Importador Masivo, en vez de exigir una foto real por carta. ----
+  const vacioManual = { tcg: "pokemon", carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio: "", cantidad: "1", condicion: "NM", idioma: "EN" };
+  const [manualPara, setManualPara] = useState(null); // id de la carpeta en modo manual, o null
+  const [manualNuevo, setManualNuevo] = useState(vacioManual);
+  const [agregandoManual, setAgregandoManual] = useState(false);
+  const [okManual, setOkManual] = useState(false);
 
   const cargar = () => {
     setLoading(true); setError(null);
@@ -3898,14 +3908,44 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
     if (!nombreNueva.trim()) return;
     setCreando(true); setError(null);
     try {
+      const [columnas, filas] = tamanoNueva.split("x").map(Number);
       await sbWrite("POST", "carpetas", {
         perfil_id: session.user.id,
         tienda_id: contexto === "tienda" ? tiendaId : null,
         nombre: nombreNueva.trim(),
+        columnas, filas,
       }, session);
       setNombreNueva("");
       cargar();
     } catch (e) { setError(e.message); } finally { setCreando(false); }
+  };
+
+  const agregarManual = async (carpetaId) => {
+    if (!manualNuevo.carta.trim() || !manualNuevo.precio) return;
+    if (contexto === "mercado" && !zonaMercado) { setError("Elige tu municipio para publicar en el Mercado."); return; }
+    setAgregandoManual(true); setError(null); setOkManual(false);
+    try {
+      const payload = {
+        tcg: manualNuevo.tcg,
+        carta: manualNuevo.carta,
+        set_nombre: manualNuevo.set_nombre || null,
+        condicion: manualNuevo.condicion,
+        idioma: manualNuevo.idioma,
+        precio: Number(manualNuevo.precio),
+        cantidad: Number(manualNuevo.cantidad) || 1,
+        card_api_id: manualNuevo.card_api_id || null,
+        imagen_url: manualNuevo.imagen_url || null,
+        precio_ref_mxn: manualNuevo.precio_ref_mxn || null,
+        carpeta_id: carpetaId,
+        ...(contexto === "tienda"
+          ? { tienda_id: tiendaId }
+          : { perfil_id: session.user.id, tipo: "carta", zona: zonaMercado.trim() }),
+      };
+      await sbWrite("POST", contexto === "tienda" ? "inventario_tienda" : "mercado_listings", payload, session);
+      setManualNuevo(vacioManual);
+      setOkManual(true);
+      onPublicado?.();
+    } catch (e) { setError(e.message); } finally { setAgregandoManual(false); }
   };
 
   const borrarCarpeta = async (id) => {
@@ -4046,16 +4086,21 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-6 grid gap-3">
       <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold uppercase">📁 Carpetas</p>
       <p style={{ color: COLORS.muted }} className="text-xs -mt-2">
-        Organiza tu inventario en carpetas (álbumes). Sube una foto de una página completa (rápido) o una foto por cada
-        carta (más lento, pero mucho más preciso) y la IA intenta identificar cada carta — tú revisas, le pones precio
-        y publicas en bloque.
+        Organiza tu inventario en carpetas (álbumes) -- se muestran públicamente como un álbum navegable, página por
+        página. Sube una foto de una página completa (rápido) o una foto por cada carta (más lento, pero mucho más
+        preciso) y la IA intenta identificar cada carta; o agrégalas del catálogo sin necesidad de fotografiar cada
+        una. Tú revisas, le pones precio y publicas.
       </p>
       {error && <ErrorBox message={error} />}
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <input placeholder="Nombre de la carpeta (ej. Álbum Charizards)" value={nombreNueva}
           onChange={(e) => setNombreNueva(e.target.value)} onKeyDown={(e) => e.key === "Enter" && crearCarpeta()}
-          style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1" />
+          style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[180px]" />
+        <select value={tamanoNueva} onChange={(e) => setTamanoNueva(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm"
+          title="Cuántas cartas caben por página del álbum, como una página física de fundas.">
+          {["3x3", "3x4", "4x3", "4x4"].map((t) => <option key={t} value={t}>{t.replace("x", " × ")} por página</option>)}
+        </select>
         <button onClick={crearCarpeta} disabled={creando || !nombreNueva.trim()}
           style={{ background: COLORS.azul, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
           {creando ? "Creando..." : "+ Nueva carpeta"}
@@ -4068,7 +4113,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
         {carpetas.map((c) => (
           <div key={c.id} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3">
             <div className="flex items-center justify-between gap-2 mb-2">
-              <p className="text-sm font-semibold">{c.nombre}</p>
+              <p className="text-sm font-semibold">{c.nombre} <span style={{ color: COLORS.muted }} className="font-normal text-xs">· {c.columnas || 4}×{c.filas || 3} por página</span></p>
               <div className="flex items-center gap-2 flex-wrap">
                 <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-2 py-1.5 text-xs font-semibold cursor-pointer whitespace-nowrap">
                   {subiendoFotoPara === c.id ? "Procesando..." : "📷 Foto de la página"}
@@ -4081,6 +4126,11 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
                   <input type="file" accept="image/*" multiple className="hidden" disabled={subiendoFotoPara === c.id}
                     onChange={(e) => { const fs = Array.from(e.target.files || []); if (fs.length) subirVariasFotos(c.id, fs); e.target.value = ""; }} />
                 </label>
+                <button onClick={() => { setManualPara(manualPara === c.id ? null : c.id); setManualNuevo(vacioManual); setOkManual(false); }}
+                  style={{ border: `1px solid ${COLORS.gold}66`, color: COLORS.gold }} className="rounded-lg px-2 py-1.5 text-xs font-semibold whitespace-nowrap"
+                  title="Elige cartas del catálogo con su imagen oficial, sin necesidad de fotografiar cada una.">
+                  🃏 {manualPara === c.id ? "Cerrar" : "Agregar cartas (sin foto)"}
+                </button>
                 <button onClick={() => borrarCarpeta(c.id)} style={{ color: "#C24444" }} className="text-xs">Borrar</button>
               </div>
             </div>
@@ -4089,6 +4139,34 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
                 {c.carpeta_fotos.map((f) => (
                   <img key={f.id} src={f.imagen_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />
                 ))}
+              </div>
+            )}
+            {manualPara === c.id && (
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.gold}55` }} className="rounded-lg p-3 mt-2 grid gap-2">
+                {okManual && <p style={{ color: COLORS.gold }} className="text-xs">Agregada. Sigue eligiendo más, o cierra cuando termines.</p>}
+                <div className="mb-1"><CardPickerUniversal tcg={manualNuevo.tcg} onSelect={(sel) => setManualNuevo((n) => ({
+                  ...n, carta: sel.name, set_nombre: sel.set_nombre, card_api_id: sel.card_api_id, imagen_url: sel.imagen_url,
+                  precio_ref_mxn: sel.precio_ref_mxn, precio: n.precio || (sel.precio_ref_mxn ? String(sel.precio_ref_mxn) : ""),
+                }))} /></div>
+                {manualNuevo.imagen_url && (
+                  <div className="flex items-center gap-2">
+                    <img src={manualNuevo.imagen_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />
+                    <p className="text-sm font-semibold">{manualNuevo.carta}</p>
+                  </div>
+                )}
+                <EstadoCartaSelector value={manualNuevo.condicion} onChange={(v) => setManualNuevo((n) => ({ ...n, condicion: v }))} />
+                <IdiomaSelector value={manualNuevo.idioma} onChange={(v) => setManualNuevo((n) => ({ ...n, idioma: v }))} />
+                {contexto === "mercado" && (
+                  <ZonaSelector value={zonaMercado} onChange={setZonaMercado} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit" />
+                )}
+                <div className="flex gap-2 flex-wrap">
+                  <input type="number" placeholder="Precio" value={manualNuevo.precio} onChange={(e) => setManualNuevo((n) => ({ ...n, precio: e.target.value }))} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-28" />
+                  <input type="number" min="1" placeholder="Cantidad" value={manualNuevo.cantidad} onChange={(e) => setManualNuevo((n) => ({ ...n, cantidad: e.target.value }))} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-24" />
+                  <button onClick={() => agregarManual(c.id)} disabled={agregandoManual || !manualNuevo.carta.trim() || !manualNuevo.precio}
+                    style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+                    {agregandoManual ? "Agregando..." : "+ Agregar a la carpeta"}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -4168,6 +4246,91 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
             </button>
             <button onClick={() => { setRevision(null); setIdiomaCarpeta(""); setEstadoCarpeta(""); }} style={{ color: COLORS.muted }} className="text-sm">Cancelar</button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Vitrina pública de carpetas: lista de álbumes (nombre + tamaño de página +
+// cuántas cartas tiene) y, al abrir uno, una cuadrícula paginada de
+// columnas×filas -- como hojear un álbum físico página por página, en vez
+// de la lista plana normal del Mercado/tienda. El orden dentro de cada
+// página es por fecha en que se agregó la carta (created_at), para que
+// coincida con el orden real en que el vendedor la fue guardando.
+function CarpetasStorefront({ carpetas, items, tabla, onAbrirDetalle, colorAcento }) {
+  const [abierta, setAbierta] = useState(null);
+  const [pagina, setPagina] = useState(1);
+  const acento = colorAcento || COLORS.azulPalido;
+
+  const conCartas = (carpetas || [])
+    .map((c) => ({ c, propias: items.filter((i) => i.carpeta_id === c.id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) }))
+    .filter((g) => g.propias.length > 0);
+
+  if (conCartas.length === 0) return null;
+
+  if (!abierta) {
+    return (
+      <div className="mb-8">
+        <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">📁 Carpetas</h3>
+        <div className="grid gap-2">
+          {conCartas.map(({ c, propias }) => (
+            <button key={c.id} onClick={() => { setAbierta({ ...c, propias }); setPagina(1); }}
+              style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+              className="rounded-xl p-3 flex items-center justify-between gap-2 text-left hover:brightness-125">
+              <p className="text-sm font-semibold">{c.nombre}</p>
+              <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">{c.columnas || 4}×{c.filas || 3} · {propias.length} carta{propias.length === 1 ? "" : "s"}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const porPagina = (abierta.columnas || 4) * (abierta.filas || 3);
+  const totalPaginas = Math.max(1, Math.ceil(abierta.propias.length / porPagina));
+  const visibles = abierta.propias.slice((pagina - 1) * porPagina, pagina * porPagina);
+
+  return (
+    <div className="mb-8">
+      <button onClick={() => setAbierta(null)} style={{ color: acento }} className="flex items-center gap-1 text-sm mb-3">
+        <ChevronLeft size={16} /> Carpetas
+      </button>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-sm">{abierta.nombre}</h3>
+        <p style={{ color: COLORS.muted }} className="text-xs">{abierta.propias.length} carta{abierta.propias.length === 1 ? "" : "s"}</p>
+      </div>
+      <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: `repeat(${abierta.columnas || 4}, minmax(0,1fr))` }}>
+        {visibles.map((item) => (
+          <button key={item.id} onClick={() => onAbrirDetalle(item.id, tabla)}
+            style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+            className="rounded-lg overflow-hidden text-left hover:brightness-125 flex flex-col">
+            <div style={{ background: COLORS.surface2, aspectRatio: "3/4" }} className="flex items-center justify-center">
+              {miniaturaListing(item) ? (
+                <img src={miniaturaListing(item)} alt={item.carta || item.producto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              ) : <Package size={20} color={COLORS.muted} />}
+            </div>
+            <div className="p-1.5">
+              <p className="text-[11px] font-semibold truncate">{item.carta || item.producto}</p>
+              <p style={{ color: COLORS.gold }} className="text-xs font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+            </div>
+          </button>
+        ))}
+        {Array.from({ length: Math.max(0, porPagina - visibles.length) }).map((_, i) => (
+          <div key={`vacio-${i}`} style={{ border: `1px dashed ${COLORS.surface2}` }} className="rounded-lg" />
+        ))}
+      </div>
+      {totalPaginas > 1 && (
+        <div className="flex items-center justify-center gap-4">
+          <button onClick={() => setPagina((p) => Math.max(1, p - 1))} disabled={pagina === 1}
+            style={{ color: pagina === 1 ? COLORS.surface2 : COLORS.muted }} className="text-xs font-semibold flex items-center gap-1">
+            <ChevronLeft size={14} /> Anterior
+          </button>
+          <p className="text-xs" style={{ color: COLORS.muted }}>{pagina} / {totalPaginas}</p>
+          <button onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))} disabled={pagina === totalPaginas}
+            style={{ color: pagina === totalPaginas ? COLORS.surface2 : COLORS.muted }} className="text-xs font-semibold flex items-center gap-1">
+            Siguiente <ChevronRight size={14} />
+          </button>
         </div>
       )}
     </div>
@@ -6517,23 +6680,9 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
               </div>
             </div>
           ),
-          carpetas: vis.carpetas !== false && carpetas.length > 0 && (
+          carpetas: vis.carpetas !== false && (
             <div key="carpetas">
-              <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">📁 Carpetas</h3>
-              <div className="grid gap-3">
-                {carpetas.map((c) => (
-                  <div key={c.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3">
-                    <p className="text-sm font-semibold mb-2">{c.nombre}</p>
-                    {c.carpeta_fotos?.length > 0 ? (
-                      <div className="flex gap-2 flex-wrap">
-                        {c.carpeta_fotos.map((f) => <img key={f.id} src={f.imagen_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />)}
-                      </div>
-                    ) : (
-                      <p style={{ color: COLORS.muted }} className="text-xs">Sin fotos todavía.</p>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <CarpetasStorefront carpetas={carpetas} items={cartas} tabla="mercado_listings" onAbrirDetalle={onAbrirDetalle} colorAcento={acento} />
             </div>
           ),
         };
@@ -10002,6 +10151,7 @@ export default function EncuentraCartas() {
   const [storeVentasCompletadas, setStoreVentasCompletadas] = useState(0);
   const [storeDestellos, setStoreDestellos] = useState(0);
   const [storeSeguidores, setStoreSeguidores] = useState(0);
+  const [storeCarpetas, setStoreCarpetas] = useState([]);
 
   const [market, setMarket] = useState([]);
   const [loadingMarket, setLoadingMarket] = useState(false);
@@ -10190,7 +10340,7 @@ export default function EncuentraCartas() {
     setSelectedStore(store);
     setView("storeDetail");
     setLoadingStoreDetail(true);
-    setStoreResenas([]); setStoreVentasCompletadas(0); setStoreDestellos(0); setStoreSeguidores(0);
+    setStoreResenas([]); setStoreVentasCompletadas(0); setStoreDestellos(0); setStoreSeguidores(0); setStoreCarpetas([]);
     actualizarUrlCompartible(store.slug ? { tienda: store.slug } : {});
     Promise.all([
       sb(`inventario_tienda?select=*&tienda_id=eq.${store.id}`),
@@ -10198,6 +10348,7 @@ export default function EncuentraCartas() {
     ])
       .then(([inv, sell]) => { setStoreInventory(conBoostPrimero(inv)); setStoreSellado(conBoostPrimero(sell)); })
       .finally(() => setLoadingStoreDetail(false));
+    sb(`carpetas?select=id,nombre,columnas,filas&tienda_id=eq.${store.id}&order=created_at.desc`).then(setStoreCarpetas).catch(() => {});
     if (store.perfil_id) {
       sb(`resenas?select=*,autor:autor_perfil_id(nombre,avatar_url)&objetivo_perfil_id=eq.${store.perfil_id}&order=created_at.desc&limit=20`).then(setStoreResenas).catch(() => {});
       sb(`ventas?select=id&vendedor_perfil_id=eq.${store.perfil_id}&estado=eq.confirmada`).then((filas) => setStoreVentasCompletadas(filas.length)).catch(() => {});
@@ -11324,6 +11475,9 @@ export default function EncuentraCartas() {
 
             {loadingStoreDetail ? <Loading label="Cargando inventario..." /> : (
               <>
+                {/* sellado_tienda no tiene carpeta_id (migración 019 solo la agregó a
+                    inventario_tienda/mercado_listings) -- una carpeta solo agrupa cartas sueltas. */}
+                <CarpetasStorefront carpetas={storeCarpetas} items={storeInventory} tabla="inventario_tienda" onAbrirDetalle={abrirDetalle} />
                 <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
                 <div className="grid gap-3 mb-8">
                   {storeInventory.filter(pasaFiltroTcg).length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">{storeInventory.length === 0 ? "Esta tienda todavía no ha subido inventario." : `Esta tienda no tiene cartas de ${TCG_LABEL[tcgFiltro] || tcgFiltro} registradas.`}</p>}

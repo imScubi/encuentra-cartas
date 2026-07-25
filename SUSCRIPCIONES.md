@@ -2492,6 +2492,42 @@ Ampliación de Sorteos (sección 80) y un pendiente aparte sobre el feed de comu
 **Pendiente de aplicar en Supabase** (el conector MCP sigue
 desconectado): corre `054_sorteos_v2.sql` a mano en el SQL Editor.
 
+## 85. Carpetas: vitrina pública tipo álbum + agregar cartas sin foto
+
+Se pidió replicar la idea de otro sitio (una tienda que muestra su
+inventario organizado como si fueran páginas de un álbum físico, en vez de
+una lista plana) pero sin depender de fotografiar cada carta. Hasta ahora
+"Carpetas" (sección 24) era solo una etiqueta interna usada durante la
+creación por foto + IA -- una vez publicadas, esas cartas se veían
+mezcladas con el resto del inventario, sin ninguna vitrina especial para
+el comprador (el perfil público solo mostraba el nombre de la carpeta y
+las fotos crudas de las páginas subidas, nada navegable).
+
+- **Tamaño de página** (`carpetas.columnas`/`filas`, migración 055): al
+  crear una carpeta ahora se elige cuántas cartas caben por página (3×3,
+  3×4, 4×3 o 4×4), simulando una página real de fundas.
+- **Agregar cartas sin foto**: nuevo botón "🃏 Agregar cartas (sin foto)"
+  en cada carpeta -- usa el buscador visual del catálogo (mismo
+  `CardPickerUniversal` de siempre) para elegir la carta, con su imagen
+  oficial, y solo pide precio/cantidad/condición/idioma. No pide foto real
+  (a diferencia del alta individual normal), igual que ya hacían el
+  Importador Masivo y la publicación por IA de esta misma sección --
+  fotografiar cada carta manualmente no tiene sentido para un flujo
+  masivo.
+- **Vitrina pública** (`CarpetasStorefront`): en el perfil público y en el
+  detalle de tienda ahora aparece una lista de carpetas con foto/tamaño/
+  cantidad de cartas; al abrir una, se ve una cuadrícula de columnas×filas
+  paginada (Anterior/Siguiente), en el orden en que se fueron agregando
+  las cartas -- como hojear el álbum real. Cada carta lleva a su ficha de
+  detalle de siempre. Reemplaza la galería estática que solo mostraba
+  fotos de las páginas subidas.
+- Lectura pública nueva sobre la tabla `carpetas` (antes solo el dueño
+  podía verla) -- son solo metadatos (nombre, tamaño de página), no las
+  fotos privadas de `carpeta_fotos`, que se quedan como estaban.
+
+**Pendiente de aplicar en Supabase** (el conector MCP sigue
+desconectado): corre `055_carpetas_vitrina.sql` a mano en el SQL Editor.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
