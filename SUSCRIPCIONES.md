@@ -2557,8 +2557,65 @@ pública (para presumir la colección completa), pero no están a la venta:
 **Pendiente de aplicar en Supabase** (el conector MCP sigue
 desconectado): corre `056_carpetas_exhibicion.sql` a mano en el SQL Editor.
 
+## 87. Boletín semanal de precios (Pokémon, Magic, Yu-Gi-Oh)
+
+Se pidió un boletín cada lunes con las 20 cartas que más subieron y las
+20 que más bajaron de precio en la semana, con un análisis fácil de
+entender, dividido por TCG, alimentado por "varias fuentes como
+Collectr", con opción de "me interesa" para recibirlo por correo y un
+banner chico en Inicio.
+
+**Antes de construirlo se investigó la parte de "Collectr y otras
+fuentes"**: Collectr no tiene una API pública -- no hay forma legítima de
+conectarse a su catálogo de precios (mismo tipo de limitación que ya se
+encontró con el sitio de la sección 83: si no hay API o está bloqueada,
+no se puede integrar de verdad sin raspar su web sin permiso). Se le
+preguntó al usuario cómo proceder dado esto, y se decidió: **arrancar
+solo con Pokémon, Magic y Yu-Gi-Oh** -- los tres TCG que ya tienen una
+fuente de precio real integrada en la app (pokemontcg.io, Scryfall y
+YGOPRODeck respectivamente). Lorcana no tiene un campo de precio
+confirmado en su API gratuita y One Piece no tiene ninguna fuente de
+precio integrada todavía -- se agregan el día que exista una fuente
+confiable para cada uno, en vez de inventar números.
+
+- **Universo de cartas rastreadas**: no es un "top" genérico de todo
+  internet, sino las cartas que de verdad están publicadas en Encuentra
+  Cartas (Mercado, tiendas) -- así el boletín es relevante para quien
+  compra/vende aquí. Se limita a 60 cartas por TCG (`cartasRastreadasPorTcg`
+  en `api/cron/recordatorios.js`) para que el cron no se pase del tiempo
+  límite de la función.
+- **Migración 057**: `precio_historial_semanal` (una fila por carta por
+  semana, para comparar contra la semana pasada), `boletines` (el
+  resultado ya armado por tcg/semana, lectura pública) y
+  `boletin_subscripciones` (el "me interesa" de cada quien, por tcg).
+- **`lib/precios.js`** (nuevo, compartido -- no cuenta contra el límite de
+  12 funciones serverless): repite a propósito (en vez de importar) la
+  lógica de precio de `src/lib/pokemonApi.js` para poder correr del lado
+  del servidor sin cruzar la frontera del empaquetado de Vite.
+- **El cálculo y envío corre dentro del cron diario que ya existía**
+  (`api/cron/recordatorios.js`), y solo actúa si `hoy` es lunes -- así no
+  se suma un cron nuevo (Vercel Hobby: máximo 2, ya estaban los 2 usados)
+  ni una función serverless nueva (máximo 12, ya al tope). Se le agregó
+  `maxDuration: 60` en `vercel.json` solo a esta función, para las
+  ~180 llamadas a APIs externas que hace en el peor caso (60 cartas × 3
+  TCG), con hasta 8 en paralelo a la vez.
+- **Análisis en palabras simples**: se genera con Gemini (mismo que ya se
+  usa para Carpetas/moderación, `llamarGeminiTextoConReintento` nuevo en
+  `lib/gemini.js`, variante de solo texto) a partir de los números reales
+  calculados -- si Gemini falla o no hay llave configurada, se arma un
+  resumen simple sin IA en vez de dejar el boletín sin análisis.
+- **Frontend**: nueva vista "Boletín de precios" (selector de Pokémon/
+  Magic/Yu-Gi-Oh, análisis, las 20 que más subieron y las 20 que más
+  bajaron con imagen/precio/% de cambio) y botón "🔔 Me interesa" por TCG
+  que activa el correo semanal. Banner chico en Inicio (`BoletinBanner`)
+  con el boletín más reciente, que lleva a la vista completa.
+
+**Pendiente de aplicar en Supabase** (el conector MCP sigue
+desconectado): corre `057_boletin_precios.sql` a mano en el SQL Editor.
+
 ## Qué falta / próximos pasos posibles
 
+- Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
 - Permitir editar un torneo ya publicado (hoy solo se puede borrar y crear uno nuevo) y adjuntarle una imagen.
 - Mapa de Google en el detalle del torneo (hoy solo muestra la dirección en texto).
