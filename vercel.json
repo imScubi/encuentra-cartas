@@ -9,6 +9,11 @@
       "schedule": "0 16 * * *"
     }
   ],
+  "functions": {
+    "api/cron/recordatorios.js": {
+      "maxDuration": 60
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
