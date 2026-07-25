@@ -3876,7 +3876,9 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   const [error, setError] = useState(null);
   const [nombreNueva, setNombreNueva] = useState("");
   const [tamanoNueva, setTamanoNueva] = useState("4x3"); // tamaño de página del álbum (columnas x filas)
+  const [tipoNueva, setTipoNueva] = useState("venta"); // "venta" | "exhibicion" -- ver cambiandoTipo para cambiarlo después
   const [creando, setCreando] = useState(false);
+  const [cambiandoTipo, setCambiandoTipo] = useState(null); // id de la carpeta cuyo tipo se está cambiando
   const [subiendoFotoPara, setSubiendoFotoPara] = useState(null);
   const [revision, setRevision] = useState(null); // { carpetaId, filas: [...] }
   const [publicando, setPublicando] = useState(false);
@@ -3913,11 +3915,28 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
         perfil_id: session.user.id,
         tienda_id: contexto === "tienda" ? tiendaId : null,
         nombre: nombreNueva.trim(),
-        columnas, filas,
+        columnas, filas, tipo: tipoNueva,
       }, session);
       setNombreNueva("");
       cargar();
     } catch (e) { setError(e.message); } finally { setCreando(false); }
+  };
+
+  // Cambiar el tipo de una carpeta ya existente: además de la carpeta,
+  // hay que sincronizar en_venta en TODAS sus cartas ya publicadas -- si
+  // no, una carpeta que pasa a exhibición seguiría vendiendo lo que ya
+  // tenía adentro (y viceversa).
+  const cambiarTipoCarpeta = async (c) => {
+    const nuevoTipo = c.tipo === "exhibicion" ? "venta" : "exhibicion";
+    if (nuevoTipo === "exhibicion" && !window.confirm("Las cartas de esta carpeta dejarán de salir a la venta (no aparecerán en Mercado/Buscar/Armar mazo ni tendrán botón de Contactar/Carrito). ¿Continuar?")) return;
+    setCambiandoTipo(c.id); setError(null);
+    try {
+      await sbWrite("PATCH", `carpetas?id=eq.${c.id}`, { tipo: nuevoTipo }, session);
+      const tabla = contexto === "tienda" ? "inventario_tienda" : "mercado_listings";
+      await sbWrite("PATCH", `${tabla}?carpeta_id=eq.${c.id}`, { en_venta: nuevoTipo !== "exhibicion" }, session);
+      cargar();
+      onPublicado?.();
+    } catch (e) { setError(e.message); } finally { setCambiandoTipo(null); }
   };
 
   const agregarManual = async (carpetaId) => {
@@ -3925,6 +3944,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
     if (contexto === "mercado" && !zonaMercado) { setError("Elige tu municipio para publicar en el Mercado."); return; }
     setAgregandoManual(true); setError(null); setOkManual(false);
     try {
+      const carpetaDestino = carpetas.find((c) => c.id === carpetaId);
       const payload = {
         tcg: manualNuevo.tcg,
         carta: manualNuevo.carta,
@@ -3937,6 +3957,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
         imagen_url: manualNuevo.imagen_url || null,
         precio_ref_mxn: manualNuevo.precio_ref_mxn || null,
         carpeta_id: carpetaId,
+        en_venta: carpetaDestino?.tipo !== "exhibicion",
         ...(contexto === "tienda"
           ? { tienda_id: tiendaId }
           : { perfil_id: session.user.id, tipo: "carta", zona: zonaMercado.trim() }),
@@ -4057,6 +4078,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
     if (!estadoCarpeta) { setError("Elige el estado (condición) de estas cartas antes de publicar."); return; }
     setPublicando(true); setError(null);
     try {
+      const carpetaDestino = carpetas.find((c) => c.id === revision.carpetaId);
       const filas = validas.map((f) => ({
         tcg: "pokemon",
         carta: f.encontrada?.name || f.nombre || f.nombreManual,
@@ -4068,6 +4090,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
         card_api_id: f.encontrada?.card_api_id || null,
         imagen_url: f.imagenManual || f.encontrada?.imagen_url,
         carpeta_id: revision.carpetaId,
+        en_venta: carpetaDestino?.tipo !== "exhibicion",
         ...(contexto === "tienda"
           ? { tienda_id: tiendaId }
           : { perfil_id: session.user.id, tipo: "carta", zona: zonaMercado.trim() }),
@@ -4101,6 +4124,11 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
           title="Cuántas cartas caben por página del álbum, como una página física de fundas.">
           {["3x3", "3x4", "4x3", "4x4"].map((t) => <option key={t} value={t}>{t.replace("x", " × ")} por página</option>)}
         </select>
+        <select value={tipoNueva} onChange={(e) => setTipoNueva(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm"
+          title="De exhibición: se ve en la vitrina pública, pero las cartas no salen a la venta (sin botón de Contactar/Carrito, ni en Mercado/Buscar).">
+          <option value="venta">🛒 En venta</option>
+          <option value="exhibicion">🖼️ Solo exhibición</option>
+        </select>
         <button onClick={crearCarpeta} disabled={creando || !nombreNueva.trim()}
           style={{ background: COLORS.azul, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
           {creando ? "Creando..." : "+ Nueva carpeta"}
@@ -4113,8 +4141,16 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
         {carpetas.map((c) => (
           <div key={c.id} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3">
             <div className="flex items-center justify-between gap-2 mb-2">
-              <p className="text-sm font-semibold">{c.nombre} <span style={{ color: COLORS.muted }} className="font-normal text-xs">· {c.columnas || 4}×{c.filas || 3} por página</span></p>
+              <p className="text-sm font-semibold">
+                {c.nombre} <span style={{ color: COLORS.muted }} className="font-normal text-xs">· {c.columnas || 4}×{c.filas || 3} por página</span>
+              </p>
               <div className="flex items-center gap-2 flex-wrap">
+                <button onClick={() => cambiarTipoCarpeta(c)} disabled={cambiandoTipo === c.id}
+                  style={{ background: c.tipo === "exhibicion" ? `${COLORS.violeta}22` : `${COLORS.gold}22`, color: c.tipo === "exhibicion" ? COLORS.violeta : COLORS.gold }}
+                  className="rounded-lg px-2 py-1.5 text-xs font-semibold whitespace-nowrap"
+                  title="Cambiar entre en venta y solo exhibición (afecta a todas las cartas ya publicadas en esta carpeta).">
+                  {cambiandoTipo === c.id ? "..." : c.tipo === "exhibicion" ? "🖼️ Exhibición" : "🛒 En venta"}
+                </button>
                 <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-2 py-1.5 text-xs font-semibold cursor-pointer whitespace-nowrap">
                   {subiendoFotoPara === c.id ? "Procesando..." : "📷 Foto de la página"}
                   <input type="file" accept="image/*" className="hidden" disabled={subiendoFotoPara === c.id}
@@ -4278,7 +4314,10 @@ function CarpetasStorefront({ carpetas, items, tabla, onAbrirDetalle, colorAcent
             <button key={c.id} onClick={() => { setAbierta({ ...c, propias }); setPagina(1); }}
               style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
               className="rounded-xl p-3 flex items-center justify-between gap-2 text-left hover:brightness-125">
-              <p className="text-sm font-semibold">{c.nombre}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold">{c.nombre}</p>
+                {c.tipo === "exhibicion" && <Badge color={COLORS.violeta}>🖼️ Exhibición</Badge>}
+              </div>
               <p style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">{c.columnas || 4}×{c.filas || 3} · {propias.length} carta{propias.length === 1 ? "" : "s"}</p>
             </button>
           ))}
@@ -4297,14 +4336,17 @@ function CarpetasStorefront({ carpetas, items, tabla, onAbrirDetalle, colorAcent
         <ChevronLeft size={16} /> Carpetas
       </button>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-sm">{abierta.nombre}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-sm">{abierta.nombre}</h3>
+          {abierta.tipo === "exhibicion" && <Badge color={COLORS.violeta}>🖼️ Exhibición</Badge>}
+        </div>
         <p style={{ color: COLORS.muted }} className="text-xs">{abierta.propias.length} carta{abierta.propias.length === 1 ? "" : "s"}</p>
       </div>
       <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: `repeat(${abierta.columnas || 4}, minmax(0,1fr))` }}>
         {visibles.map((item) => (
           <button key={item.id} onClick={() => onAbrirDetalle(item.id, tabla)}
             style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
-            className="rounded-lg overflow-hidden text-left hover:brightness-125 flex flex-col">
+            className="rounded-lg overflow-hidden text-left hover:brightness-125 flex flex-col relative">
             <div style={{ background: COLORS.surface2, aspectRatio: "3/4" }} className="flex items-center justify-center">
               {miniaturaListing(item) ? (
                 <img src={miniaturaListing(item)} alt={item.carta || item.producto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
@@ -4312,7 +4354,11 @@ function CarpetasStorefront({ carpetas, items, tabla, onAbrirDetalle, colorAcent
             </div>
             <div className="p-1.5">
               <p className="text-[11px] font-semibold truncate">{item.carta || item.producto}</p>
-              <p style={{ color: COLORS.gold }} className="text-xs font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+              {item.en_venta === false ? (
+                <p style={{ color: COLORS.violeta }} className="text-[10px] font-semibold">🖼️ Exhibición</p>
+              ) : (
+                <p style={{ color: COLORS.gold }} className="text-xs font-bold">${Number(item.precio).toLocaleString("es-MX")}</p>
+              )}
             </div>
           </button>
         ))}
@@ -5575,8 +5621,8 @@ function ArmarMazoView({ session, onAbrirChat, onVerTienda }) {
     setBuscando(true); setError(null); setResultados(null);
     try {
       const [mercado, inventario] = await Promise.all([
-        sb(`mercado_listings?select=*,perfiles(nombre,avatar_url)&order=precio.asc`),
-        sb(`inventario_tienda?select=*,tiendas(id,nombre,perfil_id,perfiles!perfil_id(avatar_url))&order=precio.asc`),
+        sb(`mercado_listings?select=*,perfiles(nombre,avatar_url)&en_venta=eq.true&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(id,nombre,perfil_id,perfiles!perfil_id(avatar_url))&en_venta=eq.true&order=precio.asc`),
       ]);
 
       const vendedores = {}; // key -> { tipo, nombre, avatar, perfilId, tiendaId, coincidencias: Map(carta -> mejor item) }
@@ -6146,7 +6192,7 @@ function SiguiendoView({ session, onVerPerfil, onVerTienda }) {
         const tareas = [];
         if (individuales.length) {
           tareas.push(
-            sb(`mercado_listings?select=*,perfiles(nombre,avatar_url)&perfil_id=in.(${individuales.join(",")})&order=created_at.desc&limit=20`)
+            sb(`mercado_listings?select=*,perfiles(nombre,avatar_url)&perfil_id=in.(${individuales.join(",")})&en_venta=eq.true&order=created_at.desc&limit=20`)
           );
         }
         let tiendaIds = [];
@@ -6158,7 +6204,7 @@ function SiguiendoView({ session, onVerPerfil, onVerTienda }) {
         if (idsSoloTiendas.length) {
           tareas.push(
             Promise.all([
-              sb(`inventario_tienda?select=*&tienda_id=in.(${idsSoloTiendas.join(",")})&order=created_at.desc&limit=20`),
+              sb(`inventario_tienda?select=*&tienda_id=in.(${idsSoloTiendas.join(",")})&en_venta=eq.true&order=created_at.desc&limit=20`),
               sb(`sellado_tienda?select=*&tienda_id=in.(${idsSoloTiendas.join(",")})&order=created_at.desc&limit=20`),
             ]).then(([inv, sell]) => {
               const mapaTienda = Object.fromEntries(tiendaIds.map((t) => [t.id, t]));
@@ -6638,11 +6684,11 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
 
       {(() => {
         const bloques = {
-          publicaciones: perfil.tipo === "individual" && vis.publicaciones !== false && (cartas.length > 0 || sellado.length > 0) && (
+          publicaciones: perfil.tipo === "individual" && vis.publicaciones !== false && (cartas.some((c) => c.en_venta !== false) || sellado.length > 0) && (
             <div key="publicaciones" className="mb-8">
               <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">En venta</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {[...cartas, ...sellado].map((r) => (
+                {[...cartas.filter((c) => c.en_venta !== false), ...sellado].map((r) => (
                   <div key={r.id} onClick={() => onAbrirDetalle?.(r.id, "mercado_listings")} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}`, cursor: onAbrirDetalle ? "pointer" : "default" }} className="rounded-xl overflow-hidden flex flex-col">
                     <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
                       {miniaturaListing(r) ? <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
@@ -6710,6 +6756,7 @@ async function cargarDetalleListing(tabla, id) {
       imagen: miniaturaListing(r), fotoRealFrente: r.foto_real_url || null, fotoRealReverso: r.foto_real_reverso_url || null,
       cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
       buzonTienda: r.buzon_tienda || null, descripcion: r.descripcion || null, etiquetas: r.etiquetas || [],
+      enVenta: r.en_venta !== false,
       vendedor: { perfilId: r.perfil_id, nombre: r.perfiles?.nombre || "Usuario", avatarUrl: r.perfiles?.avatar_url, whatsapp: r.perfiles?.whatsapp, facebook: r.perfiles?.facebook, perfil: r.perfiles, esTienda: false },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""}`,
     };
@@ -6725,6 +6772,7 @@ async function cargarDetalleListing(tabla, id) {
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
       imagen: miniaturaListing(r), fotoRealFrente: r.foto_real_url || null, fotoRealReverso: r.foto_real_reverso_url || null,
       cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
+      enVenta: r.en_venta !== false,
       vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""} en ${r.tiendas?.nombre}`,
     };
@@ -7117,7 +7165,11 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
             </div>
           </button>
 
-          {!esMio && (
+          {item.enVenta === false ? (
+            <div style={{ background: `${COLORS.violeta}18`, border: `1px solid ${COLORS.violeta}55` }} className="rounded-xl p-3 mb-8 text-sm" >
+              🖼️ Esta carta es solo de exhibición -- no está a la venta.
+            </div>
+          ) : !esMio && (
             <div className="grid grid-cols-[1fr_auto] gap-2 mb-8">
               <button
                 onClick={() => onAbrirChat(item.vendedor.perfilId, item.vendedor.nombre, item.contexto, item.vendedor.whatsapp, item.vendedor.facebook, item.vendedor.avatarUrl)}
@@ -10220,8 +10272,8 @@ export default function EncuentraCartas() {
     setSearchError(null);
     const t = setTimeout(() => {
       Promise.all([
-        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&${filtroCartaSet}&order=precio.asc`),
-        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&${filtroMercado}&order=precio.asc`),
+        sb(`inventario_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&${filtroCartaSet}&en_venta=eq.true&order=precio.asc`),
+        sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&${filtroMercado}&en_venta=eq.true&order=precio.asc`),
         sb(`sellado_tienda?select=*,tiendas(nombre,zona,direccion,telefono,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&producto=ilike.${q}&order=precio.asc`),
       ])
         .then(([inv, merc, sel]) => setSearchResults({ tiendas: conBoostPrimero(inv), mercado: conBoostPrimero(merc), sellado: conBoostPrimero(sel) }))
@@ -10236,7 +10288,7 @@ export default function EncuentraCartas() {
     const necesitaVitrina = view === "search" && !query.trim();
     if ((view === "market" || necesitaVitrina) && market.length === 0) {
       setLoadingMarket(true);
-      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
+      sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&en_venta=eq.true&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
     }
     if ((view === "news" || necesitaVitrina) && news.length === 0) {
       setLoadingNews(true);
@@ -10244,7 +10296,7 @@ export default function EncuentraCartas() {
     }
     if (necesitaVitrina && inicioTienda.length === 0) {
       setLoadingInicio(true);
-      sb("inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&order=created_at.desc&limit=10")
+      sb("inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&en_venta=eq.true&order=created_at.desc&limit=10")
         .then((rows) => setInicioTienda(conBoostPrimero(rows)))
         .finally(() => setLoadingInicio(false));
     }
@@ -11480,8 +11532,8 @@ export default function EncuentraCartas() {
                 <CarpetasStorefront carpetas={storeCarpetas} items={storeInventory} tabla="inventario_tienda" onAbrirDetalle={abrirDetalle} />
                 <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
                 <div className="grid gap-3 mb-8">
-                  {storeInventory.filter(pasaFiltroTcg).length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">{storeInventory.length === 0 ? "Esta tienda todavía no ha subido inventario." : `Esta tienda no tiene cartas de ${TCG_LABEL[tcgFiltro] || tcgFiltro} registradas.`}</p>}
-                  {storeInventory.filter(pasaFiltroTcg).map((item) => (
+                  {storeInventory.filter((i) => i.en_venta !== false).filter(pasaFiltroTcg).length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">{storeInventory.length === 0 ? "Esta tienda todavía no ha subido inventario." : `Esta tienda no tiene cartas de ${TCG_LABEL[tcgFiltro] || tcgFiltro} registradas.`}</p>}
+                  {storeInventory.filter((i) => i.en_venta !== false).filter(pasaFiltroTcg).map((item) => (
                     <div key={item.id} onClick={() => abrirDetalle(item.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
                       <div className="flex items-center gap-3">
                         {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}

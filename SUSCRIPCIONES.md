@@ -2528,6 +2528,35 @@ las fotos crudas de las páginas subidas, nada navegable).
 **Pendiente de aplicar en Supabase** (el conector MCP sigue
 desconectado): corre `055_carpetas_vitrina.sql` a mano en el SQL Editor.
 
+## 86. Carpetas de exhibición (las cartas no salen a la venta)
+
+Ampliación directa de la sección 85: al crear una carpeta ahora se elige
+si es **🛒 En venta** (como hasta ahora) o **🖼️ Solo exhibición**. Las
+cartas de una carpeta de exhibición se siguen viendo en la vitrina
+pública (para presumir la colección completa), pero no están a la venta:
+
+- Migración 056: `mercado_listings.en_venta` / `inventario_tienda.en_venta`
+  (default `true`) y `carpetas.tipo` (`'venta'` | `'exhibicion'`, default
+  `'venta'`).
+- Al publicar una carta en una carpeta (por foto+IA o con el modo manual
+  de la sección 85), `en_venta` se pone según el tipo de esa carpeta.
+- Se puede cambiar el tipo de una carpeta ya creada con un botón junto a
+  su nombre (🛒/🖼️) -- el cambio se sincroniza en cascada con `en_venta`
+  de todas las cartas que ya tenía adentro, para que no quede una carpeta
+  de exhibición vendiendo cosas viejas (o viceversa).
+- Una carta con `en_venta = false`: no aparece en el Mercado, en Buscar,
+  en la vitrina de Inicio, en Armar mazo, ni en el feed de "Siguiendo";
+  en su ficha de detalle no tiene botón de Contactar/Carrito, solo un
+  aviso "🖼️ Esta carta es solo de exhibición"; y en la vitrina de
+  carpetas (`CarpetasStorefront`) se marca con una etiqueta en vez de
+  precio.
+- El perfil/tienda dueño de la carpeta sigue viendo y administrando esas
+  cartas con normalidad en su propio panel (Mi Mercado/Mi tienda) -- el
+  filtro solo aplica a las vistas que descubren cosas para comprar.
+
+**Pendiente de aplicar en Supabase** (el conector MCP sigue
+desconectado): corre `056_carpetas_exhibicion.sql` a mano en el SQL Editor.
+
 ## Qué falta / próximos pasos posibles
 
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
