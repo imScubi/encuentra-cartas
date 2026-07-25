@@ -18,6 +18,13 @@ const RUIDO_CONOCIDO = [
   // código ni algo que podamos arreglar del lado de la web.
   /iabjs:\/\//i,
   /Java object is gone/i,
+  // Lo mismo que arriba pero en iOS: el navegador integrado de Facebook/
+  // Instagram (WKWebView) intenta hablarle a su puente nativo
+  // "window.webkit.messageHandlers" desde su propio script de medición
+  // (fbevents.js, el Pixel que ya tenemos instalado) -- ese puente no
+  // siempre está listo en ese contexto y truena solo. Es código de Meta,
+  // no nuestro; llega sobre todo con clics desde anuncios (utm_source=meta).
+  /webkit\.messageHandlers/i,
   // Advertencia inofensiva y muy común de Chrome/Safari sobre el timing de
   // ResizeObserver -- no rompe nada visible.
   /ResizeObserver loop/i,
