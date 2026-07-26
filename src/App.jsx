@@ -7740,6 +7740,7 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
   const [desactivando, setDesactivando] = useState(false);
   const [destacando, setDestacando] = useState(false);
   const [aprobando, setAprobando] = useState(false);
+  const [quitandoParticipante, setQuitandoParticipante] = useState(null); // id de la fila de sorteo_participantes que se está quitando
   const [error, setError] = useState(null);
 
   const cargar = () => {
@@ -7832,6 +7833,17 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
       await sbWrite("PATCH", `sorteos?id=eq.${sorteoId}`, { estado: aprobar ? "activo" : "cancelado" }, session);
       cargar();
     } catch (e) { setError(e.message); } finally { setAprobando(false); }
+  };
+
+  // Solo Admin (ver migración 058) -- quita la participación de alguien
+  // del sorteo por completo, boletos incluidos.
+  const quitarParticipante = async (p) => {
+    if (!window.confirm(`¿Quitar a ${p.perfiles?.nombre || "este usuario"} del sorteo? Pierde todos sus boletos y no se puede deshacer.`)) return;
+    setQuitandoParticipante(p.id); setError(null);
+    try {
+      await sbWrite("DELETE", `sorteo_participantes?id=eq.${p.id}`, {}, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setQuitandoParticipante(null); }
   };
 
   const volver = (
@@ -7960,6 +7972,12 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
                     <AvatarImg url={p.perfiles?.avatar_url} size={22} />
                     <p className="text-sm flex-1 truncate">{p.perfiles?.nombre || "Usuario"}</p>
                     <Badge color={COLORS.gold}>{p.boletos} boleto{p.boletos === 1 ? "" : "s"}</Badge>
+                    {perfil?.es_admin && (
+                      <button onClick={() => quitarParticipante(p)} disabled={quitandoParticipante === p.id}
+                        style={{ color: "#C24444" }} className="text-xs font-semibold whitespace-nowrap">
+                        {quitandoParticipante === p.id ? "..." : "Quitar"}
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

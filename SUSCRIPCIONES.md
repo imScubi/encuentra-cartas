@@ -2613,6 +2613,22 @@ confiable para cada uno, en vez de inventar números.
 **Pendiente de aplicar en Supabase** (el conector MCP sigue
 desconectado): corre `057_boletin_precios.sql` a mano en el SQL Editor.
 
+## 88. Admin: quitar la participación de un usuario en un sorteo
+
+`sorteo_participantes` no tenía ninguna policy de `DELETE` -- ni siquiera
+el organizador podía quitar a nadie. Migración 058 agrega una policy
+de borrado exclusiva para Admin (`es_admin = true`), y en el detalle del
+sorteo (`SorteoDetalleView`) cada fila de la lista de participantes ahora
+tiene un botón "Quitar" que solo ve un Admin -- pide confirmación (avisa
+que se pierden los boletos y no se puede deshacer) y vuelve a cargar la
+lista. No toca `sorteo_referidos` (el historial de quién refirió a
+quién) -- solo saca al participante de la cuenta de boletos y del sorteo
+en sí.
+
+**Pendiente de aplicar en Supabase** (el conector MCP sigue
+desconectado): corre `058_admin_quita_participante_sorteo.sql` a mano en
+el SQL Editor.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
