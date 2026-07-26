@@ -1964,14 +1964,18 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           </div>
         )}
 
-        <div className="grid sm:grid-cols-4 gap-2">
+        <div className="grid sm:grid-cols-5 gap-2">
           <input placeholder="Precio" type="number" value={nueva.precio} onChange={(e) => setNueva({ ...nueva, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nueva.precio_antes} onChange={(e) => setNueva({ ...nueva, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <input placeholder="Cantidad" type="number" min="1" value={nueva.cantidad} onChange={(e) => setNueva({ ...nueva, cantidad: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" title="Cuántas copias idénticas estás vendiendo en esta publicación" />
           <ZonaSelector value={nueva.zona} onChange={(v) => setNueva({ ...nueva, zona: v })} style={inputStyle} />
           <button onClick={agregar} disabled={saving || alLimite || faltantes.length > 0} style={{ background: COLORS.azul, color: COLORS.text, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : saving ? "Publicando..." : "+ Publicar"}
           </button>
         </div>
+        {tipo === "carta" && Number(nueva.cantidad) > 1 && (
+          <p style={{ color: COLORS.muted }} className="text-xs -mt-1">Se publicará como una sola carta con {nueva.cantidad} copias disponibles (útil para cartas competitivas que la gente compra en playset).</p>
+        )}
         {!alLimite && faltantes.length > 0 && (
           <p style={{ color: COLORS.azulPalido }} className="text-xs">
             Para publicar, falta: {faltantes.join(", ")}.
@@ -2005,6 +2009,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             </div>
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
             <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
+            <input type="number" min="1" defaultValue={item.cantidad} onBlur={(e) => actualizar(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad disponible" />
             {item.tipo !== "accesorio" && !item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
             {item.tipo !== "accesorio" && (
               <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
@@ -4738,6 +4743,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
 
         <input placeholder="Precio" type="number" value={nuevaCarta.precio} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" />
         <input placeholder="Precio antes (oferta, opcional)" type="number" value={nuevaCarta.precio_antes} onChange={(e) => setNuevaCarta({ ...nuevaCarta, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" title="Si lo llenas, se muestra como oferta con el % de descuento" />
+        <input placeholder="Cantidad" type="number" min="1" value={nuevaCarta.cantidad} onChange={(e) => setNuevaCarta({ ...nuevaCarta, cantidad: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1" title="Cuántas copias idénticas tienes disponibles" />
         <div className="sm:col-span-6">
           <p style={{ color: COLORS.muted }} className="text-xs mb-1">Estado de la carta (obligatorio)</p>
           <EstadoCartaSelector value={nuevaCarta.condicion} onChange={(v) => setNuevaCarta({ ...nuevaCarta, condicion: v })} />
@@ -4838,9 +4844,10 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
             </button>
           </>
         )}
-        <div className="grid sm:grid-cols-3 gap-2">
+        <div className="grid sm:grid-cols-4 gap-2">
           <input placeholder="Precio" type="number" value={nuevoSellado.precio} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
           <input placeholder="Precio antes (oferta, opcional)" type="number" value={nuevoSellado.precio_antes} onChange={(e) => setNuevoSellado({ ...nuevoSellado, precio_antes: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          <input placeholder="Cantidad" type="number" min="1" value={nuevoSellado.cantidad} onChange={(e) => setNuevoSellado({ ...nuevoSellado, cantidad: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" title="Cuántas unidades tienes disponibles" />
           <button onClick={agregarSellado} disabled={savingSellado || alLimite} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold">
             {alLimite ? "Límite alcanzado" : savingSellado ? "Guardando..." : "+ Agregar"}
           </button>
@@ -7042,6 +7049,107 @@ function OfertasPanel({ session, listingTabla, listingId, tcg = "pokemon", esMio
   );
 }
 
+// Visor de foto en pantalla completa con zoom/pan -- para que el comprador
+// pueda picarle a la foto real que puso el vendedor y revisar de cerca
+// filos, centrado, marcas de agua, etc. antes de comprar. Zoom con rueda del
+// mouse o pellizco (touch), doble clic/doble tap para alternar, arrastre
+// para mover cuando está ampliada.
+function FotoZoomLightbox({ src, alt, onClose }) {
+  const [zoom, setZoom] = useState(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const arrastrando = useRef(false);
+  const ultimo = useRef({ x: 0, y: 0 });
+  const pinchInicial = useRef(null);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    const overflowPrevio = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = overflowPrevio; };
+  }, [onClose]);
+
+  const alternarZoom = () => { setZoom((z) => (z > 1 ? 1 : 2.5)); setPos({ x: 0, y: 0 }); };
+
+  const onWheel = (e) => {
+    e.preventDefault();
+    setZoom((z) => Math.min(4, Math.max(1, z - e.deltaY * 0.0015)));
+  };
+
+  const onMouseDown = (e) => {
+    if (zoom <= 1) return;
+    arrastrando.current = true;
+    ultimo.current = { x: e.clientX, y: e.clientY };
+  };
+  const onMouseMove = (e) => {
+    if (!arrastrando.current) return;
+    const dx = e.clientX - ultimo.current.x, dy = e.clientY - ultimo.current.y;
+    ultimo.current = { x: e.clientX, y: e.clientY };
+    setPos((p) => ({ x: p.x + dx, y: p.y + dy }));
+  };
+  const onMouseUp = () => { arrastrando.current = false; };
+
+  const distancia = (touches) => Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+
+  const onTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      pinchInicial.current = { dist: distancia(e.touches), zoom };
+    } else if (e.touches.length === 1 && zoom > 1) {
+      arrastrando.current = true;
+      ultimo.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  };
+  const onTouchMove = (e) => {
+    if (e.touches.length === 2 && pinchInicial.current) {
+      e.preventDefault();
+      const factor = distancia(e.touches) / pinchInicial.current.dist;
+      setZoom(Math.min(4, Math.max(1, pinchInicial.current.zoom * factor)));
+    } else if (e.touches.length === 1 && arrastrando.current) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - ultimo.current.x, dy = e.touches[0].clientY - ultimo.current.y;
+      ultimo.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      setPos((p) => ({ x: p.x + dx, y: p.y + dy }));
+    }
+  };
+  const onTouchEnd = (e) => { if (e.touches.length === 0) { arrastrando.current = false; pinchInicial.current = null; } };
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.92)", touchAction: "none" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onWheel={onWheel}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
+      <button onClick={onClose} style={{ color: "#fff", background: "rgba(255,255,255,0.14)" }} className="absolute top-4 right-4 z-10 rounded-full p-2">
+        <X size={22} />
+      </button>
+      <img
+        src={src} alt={alt || ""}
+        onDoubleClick={alternarZoom}
+        onMouseDown={onMouseDown}
+        draggable={false}
+        style={{
+          maxWidth: "92vw", maxHeight: "88vh", objectFit: "contain",
+          transform: `translate(${pos.x}px, ${pos.y}px) scale(${zoom})`,
+          transition: arrastrando.current ? "none" : "transform 0.15s ease-out",
+          cursor: zoom > 1 ? "grab" : "zoom-in",
+          userSelect: "none",
+        }}
+      />
+      <p style={{ color: "rgba(255,255,255,0.65)" }} className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-center px-4">
+        Pellizca o usa la rueda del mouse para zoom · doble clic/doble tap para acercar · arrastra para mover
+      </p>
+    </div>,
+    document.body
+  );
+}
+
 // Ficha de detalle de una publicación: imagen grande, estado/idioma, precio
 // propio + precio de referencia en vivo (TCGplayer/Cardmarket vía
 // pokemontcg.io), vendedor, botón de contacto y comentarios/ofertas. Se
@@ -7050,6 +7158,7 @@ function OfertasPanel({ session, listingTabla, listingId, tcg = "pokemon", esMio
 function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerfil, onAgregarCarrito, enCarrito }) {
   const [item, setItem] = useState(undefined); // undefined = cargando, null = no encontrada
   const [precioVivo, setPrecioVivo] = useState(null);
+  const [fotoZoom, setFotoZoom] = useState(null); // { src, alt } o null
   const [cargandoPrecio, setCargandoPrecio] = useState(false);
 
   useEffect(() => {
@@ -7082,7 +7191,8 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
         <div className="grid gap-3 sm:sticky sm:top-24 self-start">
           <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
             {item.imagen ? (
-              <img src={item.imagen} alt={item.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+              <img src={item.imagen} alt={item.nombre} onClick={() => setFotoZoom({ src: item.imagen, alt: item.nombre })}
+                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", cursor: "zoom-in" }} />
             ) : (
               <Package size={64} color={COLORS.muted} />
             )}
@@ -7092,17 +7202,19 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
               {item.fotoRealFrente && (
                 <div>
                   <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
-                    <img src={item.fotoRealFrente} alt={`${item.nombre} (foto real, frente)`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    <img src={item.fotoRealFrente} alt={`${item.nombre} (foto real, frente)`} onClick={() => setFotoZoom({ src: item.fotoRealFrente, alt: `${item.nombre} (foto real, frente)` })}
+                      style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", cursor: "zoom-in" }} />
                   </div>
-                  <p style={{ color: COLORS.muted }} className="text-xs text-center mt-1">Foto real (frente)</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs text-center mt-1">Foto real (frente) · toca para ampliar</p>
                 </div>
               )}
               {item.fotoRealReverso && (
                 <div>
                   <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
-                    <img src={item.fotoRealReverso} alt={`${item.nombre} (foto real, atrás)`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    <img src={item.fotoRealReverso} alt={`${item.nombre} (foto real, atrás)`} onClick={() => setFotoZoom({ src: item.fotoRealReverso, alt: `${item.nombre} (foto real, atrás)` })}
+                      style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", cursor: "zoom-in" }} />
                   </div>
-                  <p style={{ color: COLORS.muted }} className="text-xs text-center mt-1">Foto real (atrás)</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs text-center mt-1">Foto real (atrás) · toca para ampliar</p>
                 </div>
               )}
             </div>
@@ -7191,6 +7303,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
           <OfertasPanel session={session} listingTabla={tabla} listingId={id} tcg={item.tcg} esMio={esMio} />
         </div>
       </div>
+      {fotoZoom && <FotoZoomLightbox src={fotoZoom.src} alt={fotoZoom.alt} onClose={() => setFotoZoom(null)} />}
     </div>
   );
 }

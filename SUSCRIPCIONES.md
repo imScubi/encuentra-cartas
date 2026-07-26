@@ -2629,6 +2629,31 @@ en sí.
 desconectado): corre `058_admin_quita_participante_sorteo.sql` a mano en
 el SQL Editor.
 
+## 89. Cantidad por publicación (playsets) + zoom de fotos en el detalle
+
+Dos mejoras al flujo de compra/venta, sin migración nueva (el campo
+`cantidad` ya existía en `mercado_listings`/`inventario_tienda`/
+`sellado_tienda` desde antes, pero en varios formularios no había un
+input visible para cambiarlo -- siempre se publicaba en 1 aunque el
+vendedor tuviera varias copias idénticas, algo común con cartas
+competitivas que la gente compra en playset de 4).
+
+- **Cantidad al publicar**: se agregó un input "Cantidad" (numérico,
+  mínimo 1) en el formulario de "Publicar" del Mercado individual
+  (`MyMarketPanel`), en "Cartas sueltas" y "Producto sellado" de Mi
+  tienda (`MyStorePanel`), y también como campo editable en cada fila ya
+  publicada del Mercado individual (antes solo Mi tienda dejaba editar
+  la cantidad después de publicar). El comprador sigue viendo el mismo
+  aviso de siempre en el detalle ("N disponibles") cuando la cantidad es
+  mayor a 1 -- eso ya existía y no necesitó cambios.
+- **Zoom de fotos en el detalle**: nuevo componente `FotoZoomLightbox`
+  (portal a pantalla completa) -- al picarle a la imagen oficial o a
+  cualquiera de las dos fotos reales (frente/atrás) que subió el
+  vendedor en `CartaDetalleView`, se abre en grande con zoom (rueda del
+  mouse o pellizco con dos dedos en touch) y arrastre para moverse
+  cuando está ampliada; doble clic/doble tap alterna entre 1x y 2.5x.
+  Se cierra con la X, con Escape o tocando fuera de la imagen.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
