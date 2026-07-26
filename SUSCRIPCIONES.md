@@ -2654,6 +2654,42 @@ competitivas que la gente compra en playset de 4).
   cuando está ampliada; doble clic/doble tap alterna entre 1x y 2.5x.
   Se cierra con la X, con Escape o tocando fuera de la imagen.
 
+## 90. Fotos reales ya no bloquean publicar + subida más liviana
+
+Reporte real: al publicar una carta, subir la foto de frente/atrás tardaba
+muchísimo y a veces terminaba en "Failed to fetch". Dos causas de raíz y
+un cambio de flujo:
+
+- **Causa 1 -- fotos sin comprimir**: una foto de cámara de celular pesa
+  varios MB, y esa foto se manda dos veces (a moderar con Gemini y luego a
+  Storage) tal cual, sin redimensionar. Nuevo helper `comprimirImagen`
+  (`src/lib/imagen.js`) reescala al lado más largo a 1600px y recodifica a
+  JPEG calidad 0.82 antes de mandarla a cualquiera de los dos lados --
+  normalmente baja el peso a unos cientos de KB. Se usa dentro de
+  `SubirFotoManual`, así que aplica en todos los formularios que la usan
+  (Mercado individual, Mi tienda, Carpetas, etc.) sin tocar cada uno.
+- **Causa 2 -- sin margen de tiempo del lado del servidor**: la moderación
+  llama a Gemini (`api/carpetas/detectar.js`, modo `"moderar"`) y ese
+  archivo no tenía `maxDuration` configurado, así que corría con el límite
+  por default de Vercel. Se le agregó `maxDuration: 60` en `vercel.json`
+  (mismo patrón que ya tenía `api/cron/recordatorios.js`).
+- **Cambio de flujo (lo que se pidió)**: las fotos reales (frente/atrás)
+  ya NO son obligatorias para publicar, ni en el Mercado individual
+  (`MyMarketPanel`) ni en Mi tienda (`MyStorePanel`, cartas sueltas). La
+  publicación se crea de inmediato con la foto oficial del catálogo
+  nada más; las fotos reales se pueden agregar en ese mismo momento (si ya
+  se subieron) o después, sin límite de tiempo, desde el botón "Cambiar
+  foto real" que ya existía en cada fila de la lista de publicaciones. En
+  cuanto una foto termina de subir y pasar la moderación, se guarda en la
+  publicación y aparece de inmediato con la función de zoom (sección 89) --
+  no hace falta nada más porque `CartaDetalleView` ya mostraba las fotos
+  reales de forma condicional. Mientras el detalle de una carta no tiene
+  ninguna de las dos fotos reales, se le muestra al comprador un aviso
+  chico ("El vendedor todavía no sube las fotos reales..."). Como
+  protección menor: si una foto se está subiendo justo en el momento de
+  publicar, el botón de publicar espera a que termine (para no perder esa
+  subida), pero ya no exige haberla empezado siquiera.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

@@ -12,6 +12,9 @@
   "functions": {
     "api/cron/recordatorios.js": {
       "maxDuration": 60
+    },
+    "api/carpetas/detectar.js": {
+      "maxDuration": 60
     }
   },
   "headers": [

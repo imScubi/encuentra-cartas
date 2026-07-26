@@ -16,6 +16,7 @@ import {
 } from "./lib/supabase.js";
 import { setUidActual } from "./lib/errorReporting.jsx";
 import { moderarFotoReal } from "./lib/moderacion.js";
+import { comprimirImagen } from "./lib/imagen.js";
 import {
   pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
   parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
@@ -1190,27 +1191,31 @@ function CompletarPerfilOAuthModal({ session, onCreado, onCancelar }) {
   );
 }
 
-function SubirFotoManual({ session, onSubido, label }) {
+function SubirFotoManual({ session, onSubido, label, onEstadoCambia }) {
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState(null);
 
   const manejar = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setSubiendo(true); setError(null);
+    setSubiendo(true); setError(null); onEstadoCambia?.(true);
     try {
+      // Se reescala/comprime primero -- una foto de cámara sin tocar (varios
+      // MB) es la razón más común de que esto tarde una eternidad o truene
+      // con "Failed to fetch" en internet lento.
+      const comprimida = await comprimirImagen(file);
       // Se modera ANTES de subir a Storage -- así una foto indebida nunca
       // llega a guardarse ni un momento. "Fail-open": si la moderación
       // misma falla (sin conexión, IA caída), se deja pasar en vez de
       // bloquear a quien está vendiendo por un problema ajeno.
-      const veredicto = await moderarFotoReal(file);
+      const veredicto = await moderarFotoReal(comprimida);
       if (!veredicto.permitida) {
         setError(veredicto.motivo || "Esta foto no se puede usar.");
         return;
       }
-      const url = await subirImagenCarta(file, session);
+      const url = await subirImagenCarta(comprimida, session);
       onSubido(url);
-    } catch (err) { setError(err.message); } finally { setSubiendo(false); e.target.value = ""; }
+    } catch (err) { setError(err.message); } finally { setSubiendo(false); onEstadoCambia?.(false); e.target.value = ""; }
   };
 
   return (
@@ -1707,6 +1712,11 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
     descripcion: "", etiquetas: "",
   };
   const [nueva, setNueva] = useState({ ...vacio, buzon_tienda_id: buzonDefault });
+  // Mientras una foto real se está moderando/subiendo no dejamos publicar --
+  // no porque sea obligatoria (ya no lo es), sino para no perder esa subida:
+  // si el usuario publicara justo en ese momento, la publicación ya se
+  // habría creado y esa foto llegaría tarde a un formulario ya reiniciado.
+  const [subiendoFoto, setSubiendoFoto] = useState({ frente: false, atras: false });
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
@@ -1734,18 +1744,19 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const alLimite = limiteAlcanzado(perfil, publicaciones.length);
 
   // Lista legible de lo que falta para poder publicar -- antes el botón
-  // simplemente se quedaba deshabilitado sin decir por qué (sobre todo
-  // confuso desde que las 2 fotos son obligatorias), así que ahora se le
-  // muestra a la persona exactamente qué le falta en vez de dejarla
-  // adivinando por qué "no pasa nada" al hacer clic.
+  // simplemente se quedaba deshabilitado sin decir por qué, así que ahora se
+  // le muestra a la persona exactamente qué le falta en vez de dejarla
+  // adivinando por qué "no pasa nada" al hacer clic. Las fotos reales ya NO
+  // son obligatorias para publicar (ver comentario en `agregar`) -- si se
+  // están subiendo justo ahora sí bloqueamos el botón un momento, nada más
+  // para no perder esa subida.
   const faltantes = [];
   if (!nueva.carta) faltantes.push(tipo === "accesorio" ? "el nombre del accesorio" : "elegir la carta/producto");
   if (!nueva.precio) faltantes.push("el precio");
   if (!nueva.zona) faltantes.push("la zona");
   if (tipo === "carta" && !nueva.condicion) faltantes.push("el estado de la carta");
   if (tipo === "carta" && !nueva.idioma) faltantes.push("el idioma de la carta");
-  if (!nueva.foto_real_url) faltantes.push("la foto de frente");
-  if (!nueva.foto_real_reverso_url) faltantes.push("la foto de atrás");
+  if (subiendoFoto.frente || subiendoFoto.atras) faltantes.push("espera a que termine de subir la foto");
 
   const agregar = async () => {
     if (faltantes.length > 0) return;
@@ -1770,12 +1781,15 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nueva.card_api_id || null,
         imagen_url: nueva.imagen_url || null,
         precio_ref_mxn: nueva.precio_ref_mxn || null,
-        // Las fotos reales (frente/reverso) son obligatorias para las tres
-        // publicaciones; el gradeo y el buzón solo se mandan si de verdad
-        // aplican, así publicar sigue funcionando aunque esas migraciones
-        // (040, 042) todavía no hayan corrido.
-        foto_real_url: nueva.foto_real_url,
-        foto_real_reverso_url: nueva.foto_real_reverso_url,
+        // Las fotos reales (frente/reverso) ya NO son obligatorias para
+        // publicar -- si el vendedor las subió antes de dar clic, se mandan
+        // de una vez; si no, quedan en null y se pueden agregar después
+        // desde la lista de abajo sin que eso detenga la publicación. El
+        // gradeo y el buzón solo se mandan si de verdad aplican, así
+        // publicar sigue funcionando aunque esas migraciones (040, 042)
+        // todavía no hayan corrido.
+        foto_real_url: nueva.foto_real_url || null,
+        foto_real_reverso_url: nueva.foto_real_reverso_url || null,
         ...(tipo === "carta" && nueva.gradeada
           ? { gradeada: true, grado_empresa: nueva.grado_empresa || null, grado_empresa_otro: nueva.grado_empresa === "OTRO" ? nueva.grado_empresa_otro || null : null, grado_calificacion: nueva.grado_calificacion || null }
           : {}),
@@ -1882,11 +1896,12 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               <p style={{ color: COLORS.muted }} className="text-xs mt-1">Con estas palabras clave, tu accesorio aparece en Buscar aunque alguien no busque "accesorios" — por ejemplo, si pones "sylveon" aparece al buscar Sylveon.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
               {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
-              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} />
+              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, atras: v }))} />
               {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
+            <p style={{ color: COLORS.muted }} className="text-xs -mt-1">Puedes publicar sin las fotos y agregarlas después -- no detienen la publicación.</p>
           </>
         ) : tipo === "carta" ? (
           <>
@@ -1912,11 +1927,12 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               <IdiomaSelector value={nueva.idioma} onChange={(v) => setNueva({ ...nueva, idioma: v })} />
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
               {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
-              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} />
+              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, atras: v }))} />
               {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
+            <p style={{ color: COLORS.muted }} className="text-xs -mt-1">Puedes publicar sin las fotos y agregarlas después -- no detienen la publicación, y en cuanto terminen de subir y revisarse aparecen solas en tu publicación (con zoom incluido).</p>
             <GradeoFields
               gradeada={nueva.gradeada} empresa={nueva.grado_empresa} empresaOtro={nueva.grado_empresa_otro} calificacion={nueva.grado_calificacion}
               onChange={(patch) => setNueva({ ...nueva, ...patch })}
@@ -1926,11 +1942,12 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           <>
             <CardPickerUniversal tcg={nueva.tcg} soloSellado onSelect={(p) => setNueva({ ...nueva, carta: p.producto, set_nombre: p.set_nombre, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
             <div className="flex items-center gap-2 flex-wrap">
-              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} />
+              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
               {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
-              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (obligatoria)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} />
+              <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, atras: v }))} />
               {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
+            <p style={{ color: COLORS.muted }} className="text-xs -mt-1">Puedes publicar sin las fotos y agregarlas después -- no detienen la publicación.</p>
           </>
         )}
 
@@ -4460,6 +4477,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
     tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
     gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
   });
+  // Ver el comentario equivalente en MyMarketPanel: las fotos ya no son
+  // obligatorias, esto solo evita perder una subida en curso al publicar.
+  const [subiendoFotoCarta, setSubiendoFotoCarta] = useState({ frente: false, atras: false });
   const [nuevoSellado, setNuevoSellado] = useState({ tcg: "pokemon", producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
@@ -4513,8 +4533,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
   if (!nuevaCarta.precio) faltantesCarta.push("el precio");
   if (!nuevaCarta.idioma) faltantesCarta.push("el idioma de la carta");
   if (!nuevaCarta.condicion) faltantesCarta.push("el estado de la carta");
-  if (!nuevaCarta.foto_real_url) faltantesCarta.push("la foto de frente");
-  if (!nuevaCarta.foto_real_reverso_url) faltantesCarta.push("la foto de atrás");
+  if (subiendoFotoCarta.frente || subiendoFotoCarta.atras) faltantesCarta.push("espera a que termine de subir la foto");
 
   const agregarCarta = async () => {
     if (faltantesCarta.length > 0) return;
@@ -4531,10 +4550,14 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
         card_api_id: nuevaCarta.card_api_id || null,
         imagen_url: nuevaCarta.imagen_url || null,
         precio_ref_mxn: nuevaCarta.precio_ref_mxn || null,
+        // Las fotos reales ya no son obligatorias para publicar -- si no se
+        // subieron todavía, van en null y se pueden agregar después desde
+        // la lista de abajo sin que eso detenga la publicación.
+        foto_real_url: nuevaCarta.foto_real_url || null,
+        foto_real_reverso_url: nuevaCarta.foto_real_reverso_url || null,
         // Los campos de gradeo solo se mandan si de verdad aplican: así
         // seguir agregando cartas no se rompe si la migración que los
-        // agrega (040) aún no ha corrido. Las fotos reales van siempre --
-        // son obligatorias desde la migración 036/049.
+        // agrega (040) aún no ha corrido.
         ...(gradeada ? { gradeada: true, grado_empresa: grado_empresa || null, grado_empresa_otro: grado_empresa === "OTRO" ? grado_empresa_otro || null : null, grado_calificacion: grado_calificacion || null } : {}),
       };
       try {
@@ -4753,11 +4776,12 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
           <IdiomaSelector value={nuevaCarta.idioma} onChange={(v) => setNuevaCarta({ ...nuevaCarta, idioma: v })} />
         </div>
         <div className="sm:col-span-6 flex items-center gap-2 flex-wrap">
-          <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (obligatoria)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} />
+          <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFotoCarta((s) => ({ ...s, frente: v }))} />
           {nuevaCarta.foto_real_url && <img src={nuevaCarta.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
-          <SubirFotoManual session={session} label={nuevaCarta.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (obligatoria)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_reverso_url: url })} />
+          <SubirFotoManual session={session} label={nuevaCarta.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_reverso_url: url })} onEstadoCambia={(v) => setSubiendoFotoCarta((s) => ({ ...s, atras: v }))} />
           {nuevaCarta.foto_real_reverso_url && <img src={nuevaCarta.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
         </div>
+        <p style={{ color: COLORS.muted }} className="text-xs sm:col-span-6 -mt-1">Puedes agregar la carta sin las fotos y subirlas después -- no detienen la publicación, y en cuanto terminen de subir y revisarse aparecen solas con zoom incluido.</p>
         <div className="sm:col-span-6">
           <GradeoFields
             gradeada={nuevaCarta.gradeada} empresa={nuevaCarta.grado_empresa} empresaOtro={nuevaCarta.grado_empresa_otro} calificacion={nuevaCarta.grado_calificacion}
@@ -7218,6 +7242,9 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
                 </div>
               )}
             </div>
+          )}
+          {item.tipo === "carta" && !item.fotoRealFrente && !item.fotoRealReverso && (
+            <p style={{ color: COLORS.muted }} className="text-xs text-center">📷 El vendedor todavía no sube las fotos reales de esta carta -- pueden aparecer en cualquier momento.</p>
           )}
         </div>
         <div>
