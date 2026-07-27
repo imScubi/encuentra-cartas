@@ -10631,6 +10631,21 @@ export default function EncuentraCartas() {
   const [papelera, setPapelera] = useState([]);
   const [loadingPapelera, setLoadingPapelera] = useState(false);
 
+  // Push de mensajes nuevos: antes `activarPush` solo se ofrecía dentro de
+  // Wishlist Premium (plan pago), así que un usuario gratis jamás terminaba
+  // con una fila en push_subscriptions y nunca podía recibir el push de
+  // "te llegó un mensaje" (ver api/alertas/verificar.js). Se ofrece también
+  // aquí, en la bandeja de Mensajes, disponible para cualquiera con sesión.
+  const [pushChatOk, setPushChatOk] = useState(() => typeof Notification !== "undefined" && Notification.permission === "granted");
+  const [activandoPushChat, setActivandoPushChat] = useState(false);
+  const [errorPushChat, setErrorPushChat] = useState(null);
+  const handleActivarPushChat = async () => {
+    setActivandoPushChat(true); setErrorPushChat(null);
+    try { await activarPush(session); setPushChatOk(true); }
+    catch (e) { setErrorPushChat(e.message); }
+    finally { setActivandoPushChat(false); }
+  };
+
   const cargarPapelera = () => {
     setLoadingPapelera(true);
     const uid = session.user.id;
@@ -11580,6 +11595,16 @@ export default function EncuentraCartas() {
                   className="px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1"><Trash2 size={14} /> Papelera{papelera.length > 0 ? ` (${papelera.length})` : ""}</button>
               </div>
             </div>
+
+            {!pushChatOk && (
+              <div style={{ background: `${COLORS.azulMedio}11`, border: `1px solid ${COLORS.azulMedio}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+                <p className="text-sm">Activa las notificaciones push para enterarte apenas te llegue un mensaje nuevo, aunque no tengas la web abierta.</p>
+                <button onClick={handleActivarPushChat} disabled={activandoPushChat} style={{ background: COLORS.azulMedio, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+                  {activandoPushChat ? "Activando..." : "Activar notificaciones"}
+                </button>
+              </div>
+            )}
+            {errorPushChat && <div className="mb-4"><ErrorBox message={errorPushChat} /></div>}
 
             {tabInbox === "mensajes" && (
               <>

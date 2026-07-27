@@ -2712,6 +2712,41 @@ desconectado): corre `059_fix_trigger_seguidores_producto.sql` a mano en
 el SQL Editor -- esto es lo que va a arreglar el error real, hasta que se
 aplique seguirá fallando.
 
+## 92. Correo y push cuando te llega un mensaje nuevo
+
+Cuando alguien te escribe (chat 1 a 1, o el mensaje masivo desde el
+Carrito), ahora te enteras aunque no tengas la web abierta:
+
+- **Mecanismo**: se reutiliza el mismo Database Webhook que ya usaba la
+  Wishlist Premium (`notificar_alerta_wishlist()`, ver 003_webhooks.sql):
+  esa función de trigger es genérica -- solo arma
+  `{type, table: TG_TABLE_NAME, record}` y lo manda por `pg_net` a
+  `/api/alertas/verificar`. Migración 060 cuelga esa MISMA función también
+  de `mensajes` (`after insert`), y `api/alertas/verificar.js` ahora
+  despacha según `table`: si es `"mensajes"`, corre
+  `notificarMensajeNuevo()` en vez de la lógica de wishlist. No hizo falta
+  sumar ninguna función nueva a `api/` (el plan Hobby de Vercel sigue al
+  tope de 12).
+- **Push**: si el destinatario tiene una suscripción activa en
+  `push_subscriptions`, le llega "💬 {remitente} te escribió" con una
+  vista previa del mensaje (o "📷 Te mandó una foto" si no hay texto).
+- **Correo**: si el destinatario tiene correo guardado en su perfil, le
+  llega un correo con el mismo contenido -- pero solo si no le mandamos
+  otro correo de este mismo remitente en los últimos 5 minutos, para no
+  inundarlo de correos en medio de una conversación activa (el push sí se
+  manda siempre, es mucho menos intrusivo).
+- **Fix relacionado**: antes de esto, el botón "Activar notificaciones"
+  (que pide permiso al navegador y crea la fila en `push_subscriptions`)
+  solo aparecía dentro de Wishlist Premium, un beneficio de plan pago --
+  así que un usuario gratis nunca podía activar el push y jamás iba a
+  recibir el de mensajes. Ahora también se ofrece, sin ningún gate de
+  plan, arriba de la bandeja de "Mensajes" (disponible para cualquiera
+  con sesión).
+
+**Pendiente de aplicar en Supabase** (el conector MCP sigue
+desconectado): corre `060_notificar_mensajes.sql` a mano en el SQL
+Editor.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

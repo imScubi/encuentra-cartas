@@ -1,20 +1,100 @@
-// Supabase llama esta URL (Database Webhook) cada vez que se inserta una
-// fila nueva en mercado_listings, inventario_tienda o sellado_tienda.
-// Buscamos alertas de Wishlist Premium (plan Ultra Ball o superior) que
-// coincidan y les mandamos una notificación push real.
+// Supabase llama esta URL (Database Webhook, ver 003_webhooks.sql) cada vez
+// que se inserta una fila nueva en mercado_listings, inventario_tienda,
+// sellado_tienda o (desde la migración 060) mensajes -- todas usan la MISMA
+// función de trigger genérica `notificar_alerta_wishlist()`, que solo arma
+// {type, table: TG_TABLE_NAME, record} y lo manda por pg_net a esta URL; acá
+// se despacha según `table`. Se comparte el archivo (en vez de sumar uno
+// nuevo en api/) porque el plan Hobby de Vercel limita a 12 funciones
+// serverless y ya estaba al tope (ver sección 91/92 de SUSCRIPCIONES.md).
 //
 // Requiere: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, VAPID_PUBLIC_KEY,
 // VAPID_PRIVATE_KEY, VAPID_SUBJECT (ej. "mailto:contacto@tudominio.com"),
-// y (opcional) RESEND_API_KEY para además mandar un correo.
+// y (opcional) GMAIL_USER/GMAIL_APP_PASSWORD para además mandar un correo.
 import webpush from "web-push";
 import { enviarCorreo } from "../../lib/email.js";
 
 const PLANES_CON_WISHLIST = ["ultraball", "masterball", "enteball"];
 
+// Nuevo mensaje de chat (1 a 1, o el mensaje masivo desde el Carrito): avisa
+// al destinatario por push (si tiene notificaciones activadas) y por correo
+// (si tiene correo guardado) -- nunca bloquea ni hace fallar el insert del
+// mensaje, esto corre después y en paralelo.
+async function notificarMensajeNuevo(record, supabaseUrl, serviceKey, headers) {
+  const deId = record.de_perfil_id;
+  const paraId = record.para_perfil_id;
+  if (!deId || !paraId || deId === paraId) return;
+
+  const perfilesRes = await fetch(`${supabaseUrl}/rest/v1/perfiles?select=id,nombre,email&id=in.(${deId},${paraId})`, { headers });
+  const perfiles = await perfilesRes.json();
+  const remitente = perfiles.find((p) => p.id === deId);
+  const destinatario = perfiles.find((p) => p.id === paraId);
+  if (!destinatario) return;
+
+  const nombreRemitente = remitente?.nombre || "Alguien";
+  const previsualizacion = (record.texto || "").trim() || (record.imagen_url ? "📷 Te mandó una foto" : "Te mandó un mensaje");
+
+  webpush.setVapidDetails(
+    (process.env.VAPID_SUBJECT || "mailto:contacto@encuentracartas.mx").trim(),
+    (process.env.VAPID_PUBLIC_KEY || "").trim(),
+    (process.env.VAPID_PRIVATE_KEY || "").trim()
+  );
+
+  const subsRes = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?perfil_id=eq.${paraId}`, { headers });
+  const subs = await subsRes.json();
+  const payload = JSON.stringify({
+    title: `💬 ${nombreRemitente} te escribió`,
+    body: previsualizacion.slice(0, 140),
+    url: "/",
+  });
+
+  await Promise.allSettled(
+    (subs || []).map((s) =>
+      webpush
+        .sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload)
+        .catch(async (err) => {
+          if (err.statusCode === 404 || err.statusCode === 410) {
+            await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?id=eq.${s.id}`, { method: "DELETE", headers });
+          } else {
+            console.error("Error mandando push de mensaje:", err.statusCode, err.body || err.message);
+          }
+        })
+    )
+  );
+
+  if (destinatario.email) {
+    // Para no inundar de correos una conversación activa (vaivén de
+    // mensajes), solo se manda si no le mandamos otro a este mismo
+    // destinatario de parte de este mismo remitente en los últimos 5
+    // minutos. El push de arriba sí se manda siempre -- es mucho menos
+    // intrusivo y es lo esperado en un chat en vivo.
+    const cincoMinAntes = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const recientesRes = await fetch(
+      `${supabaseUrl}/rest/v1/mensajes?select=id&de_perfil_id=eq.${deId}&para_perfil_id=eq.${paraId}&created_at=gte.${cincoMinAntes}&created_at=lt.${record.created_at}&limit=1`,
+      { headers }
+    );
+    const recientes = await recientesRes.json().catch(() => []);
+    if (!recientes?.length) {
+      await enviarCorreo({
+        to: destinatario.email,
+        subject: `💬 ${nombreRemitente} te mandó un mensaje en Encuentra Cartas`,
+        html: `<p><strong>${nombreRemitente}</strong> te escribió${record.contexto ? ` sobre "${record.contexto}"` : ""}:</p><p style="padding:12px;background:#f4f4f4;border-radius:8px;">${previsualizacion}</p><p>Entra a Encuentra Cartas para responder.</p>`,
+      });
+    }
+  }
+}
+
 export default async function handler(req, res) {
   try {
-    const { record } = req.body || {};
+    const { table, record } = req.body || {};
     if (!record) return res.status(200).json({ ok: true });
+
+    if (table === "mensajes") {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+      await notificarMensajeNuevo(record, supabaseUrl, serviceKey, headers).catch((e) => console.error("Error notificando mensaje nuevo:", e));
+      return res.status(200).json({ ok: true });
+    }
 
     const nombre = record.carta || record.producto;
     const precio = Number(record.precio);
