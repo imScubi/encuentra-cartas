@@ -35,6 +35,13 @@ const RUIDO_CONOCIDO = [
   // Extensiones del navegador (bloqueadores de anuncios, gestores de
   // contraseñas, etc.) inyectando su propio script en la página.
   /chrome-extension:\/\/|moz-extension:\/\/|safari-extension:\/\//i,
+  // Safari/WebKit (iOS) usa este mensaje genérico -- literal, sin más
+  // detalle -- para CUALQUIER fetch() que falle por una razón de red: sin
+  // señal, se fue a segundo plano a medio cargar, se cortó el wifi, etc.
+  // Es el equivalente exacto a "Failed to fetch" de Chrome; no apunta a
+  // ningún endpoint ni archivo nuestro, así que no hay nada que arreglar
+  // del lado de la web -- es la conexión de quien visita en ese momento.
+  /^Load failed$/i,
 ];
 function esRuidoConocido(texto) {
   return RUIDO_CONOCIDO.some((patron) => patron.test(String(texto || "")));
