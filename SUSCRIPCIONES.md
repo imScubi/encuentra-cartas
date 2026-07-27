@@ -2690,6 +2690,28 @@ un cambio de flujo:
   publicar, el botón de publicar espera a que termine (para no perder esa
   subida), pero ya no exige haberla empezado siquiera.
 
+## 91. Fix: no se podía agregar cartas sueltas a Mi tienda ("record has no field producto")
+
+Reporte real (correo de error automático): `Error en POST inventario_tienda
+(400): record "new" has no field "producto"`. La causa era un bug real
+desde la migración 027 (sistema de "Seguir tiendas/vendedores"): el
+trigger `notificar_nueva_publicacion_seguidores()` que avisa a los
+seguidores cuando alguien publica algo nuevo hacía
+`coalesce(NEW.carta, NEW.producto)` para cualquier tabla que no fuera
+`mercado_listings` -- pero `inventario_tienda` (cartas sueltas de una
+tienda) tiene columna `carta`, no `producto` (esa solo existe en
+`sellado_tienda`). Postgres truena al leer un campo que no existe en el
+registro, y como es un trigger `AFTER INSERT`, revienta la transacción
+completa -- el insert nunca llegaba a completarse. Migración 059
+(`create or replace function`) separa explícitamente por tabla:
+`mercado_listings` e `inventario_tienda` usan `carta`, `sellado_tienda`
+usa `producto`. No requiere ningún cambio de frontend.
+
+**Pendiente de aplicar en Supabase** (el conector MCP sigue
+desconectado): corre `059_fix_trigger_seguidores_producto.sql` a mano en
+el SQL Editor -- esto es lo que va a arreglar el error real, hasta que se
+aplique seguirá fallando.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
