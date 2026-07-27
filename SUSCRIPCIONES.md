@@ -2747,6 +2747,35 @@ Carrito), ahora te enteras aunque no tengas la web abierta:
 desconectado): corre `060_notificar_mensajes.sql` a mano en el SQL
 Editor.
 
+## 93. Tablón público "¿Buscas alguna carta?"
+
+Nueva forma de encontrar cartas sin depender de que alguien ya la tenga
+publicada: cualquiera con sesión puede decir qué carta anda buscando, y
+cualquier otro usuario que la tenga puede contactarlo directo. Migración
+061 (tabla `busquedas`, lectura pública, escritura/borrado solo del
+dueño).
+
+- **Banner "¿Buscas alguna carta?"** en Inicio: abre un modal
+  (`BuscarCartaModal`) para elegir la carta (catálogo o manual, mismo
+  patrón que el resto de la app) y una nota opcional ("cuánto pagarías",
+  estado, etc.). Tope de 5 búsquedas activas por persona para que no se
+  llene de spam.
+- **Carrusel en Inicio** (`BusquedasCarrusel`): las búsquedas activas se
+  deslizan solas en un loop horizontal (CSS puro, `@keyframes
+  marqueeScroll` en `theme.js`, con la lista duplicada para que no se
+  note el corte) -- clic en cualquier carta o en "Ver todas" lleva al
+  apartado completo.
+- **Apartado completo** (`BusquedasView`, nueva entrada de nav "Cartas que
+  están buscando"): todas las búsquedas activas en cuadrícula, con botón
+  "Yo la tengo" que abre el chat directo con quien la busca (mismo
+  `abrirChat` que usa el resto del Mercado). El dueño de cada búsqueda ve
+  en su lugar "Ya la encontré / quitar" para darla de baja (no se borra,
+  se marca `activa = false`, por si se quiere reactivar después).
+
+**Pendiente de aplicar en Supabase** (el conector MCP sigue
+desconectado): corre `061_busquedas_publicas.sql` a mano en el SQL
+Editor.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

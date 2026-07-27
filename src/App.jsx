@@ -7497,6 +7497,231 @@ function BoletinBanner({ onAbrir }) {
   );
 }
 
+// ---- Tablón público "¿Buscas alguna carta?" ----
+// Cualquiera con sesión puede publicar qué carta anda buscando; el resto
+// de la comunidad la ve en el carrusel/apartado y puede contactar directo
+// a quien la busca (reusa el chat existente). No es una alerta privada
+// como la Wishlist Premium (tabla `alertas`) -- esto SÍ es público a
+// propósito, para que cualquiera con la carta en la mano pueda ofrecerla.
+const LIMITE_BUSQUEDAS_ACTIVAS = 5;
+
+function BuscarCartaModal({ session, onClose, onCreado }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [tcg, setTcg] = useState("pokemon");
+  const [carta, setCarta] = useState("");
+  const [setNombre, setSetNombre] = useState("");
+  const [cardApiId, setCardApiId] = useState("");
+  const [imagenUrl, setImagenUrl] = useState("");
+  const [notas, setNotas] = useState("");
+  const [manual, setManual] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState(null);
+  const [misActivas, setMisActivas] = useState(null); // null = cargando
+
+  useEffect(() => {
+    sb(`busquedas?select=id&perfil_id=eq.${session.user.id}&activa=eq.true`, session)
+      .then((rows) => setMisActivas(rows.length))
+      .catch(() => setMisActivas(0));
+  }, []);
+
+  const alLimite = misActivas !== null && misActivas >= LIMITE_BUSQUEDAS_ACTIVAS;
+
+  const limpiarCarta = () => { setCarta(""); setSetNombre(""); setCardApiId(""); setImagenUrl(""); };
+
+  const guardar = async () => {
+    if (!carta.trim() || alLimite) return;
+    setGuardando(true); setError(null);
+    try {
+      await sbWrite("POST", "busquedas", {
+        perfil_id: session.user.id,
+        tcg,
+        carta: carta.trim(),
+        set_nombre: setNombre || null,
+        card_api_id: cardApiId || null,
+        imagen_url: imagenUrl || null,
+        notas: notas.trim() || null,
+      }, session);
+      onCreado();
+      onClose();
+    } catch (e) { setError(e.message); } finally { setGuardando(false); }
+  };
+
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66` }} className="w-full max-w-md rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+        <button onClick={onClose} style={{ color: COLORS.muted }} className="absolute top-4 right-4"><X size={18} /></button>
+        <p className="font-semibold text-lg mb-1">🔍 ¿Buscas alguna carta?</p>
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">Publícala y que alguien que la tenga te contacte directo.</p>
+        {error && <div className="mb-3"><ErrorBox message={error} /></div>}
+        {alLimite ? (
+          <p style={{ color: COLORS.muted }} className="text-sm">
+            Ya tienes {LIMITE_BUSQUEDAS_ACTIVAS} búsquedas activas. Quita alguna desde "Cartas que están buscando" antes de publicar otra.
+          </p>
+        ) : (
+          <>
+            <div className="grid gap-2 mb-3">
+              <select value={tcg} onChange={(e) => { setTcg(e.target.value); limpiarCarta(); }} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+                {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+              {!manual ? (
+                <>
+                  <CardPickerUniversal tcg={tcg} onSelect={(c) => { setCarta(c.name); setSetNombre(c.set_nombre); setCardApiId(c.card_api_id); setImagenUrl(c.imagen_url); }} />
+                  {carta && (
+                    <div className="flex items-center gap-3 mt-1">
+                      {imagenUrl && <img src={imagenUrl} alt={carta} style={{ width: 50, height: 70, objectFit: "contain" }} />}
+                      <div>
+                        <Badge color={COLORS.azulPalido}>{carta}</Badge>
+                        <button type="button" onClick={limpiarCarta} style={{ color: COLORS.muted }} className="text-xs mt-1 block">Cambiar</button>
+                      </div>
+                    </div>
+                  )}
+                  <button type="button" onClick={() => setManual(true)} style={{ color: COLORS.muted }} className="text-xs text-left">
+                    ¿No la encuentras? Escribirla manualmente
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input placeholder="Nombre de la carta" value={carta} onChange={(e) => setCarta(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+                  <button type="button" onClick={() => setManual(false)} style={{ color: COLORS.muted }} className="text-xs text-left">
+                    ← Volver a buscar en el catálogo
+                  </button>
+                </>
+              )}
+              <textarea placeholder="Notas (opcional): estado, cuánto pagarías, etc." value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+            </div>
+            <button onClick={guardar} disabled={guardando || !carta.trim()} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: !carta.trim() ? 0.5 : 1 }} className="w-full rounded-lg py-2 text-sm font-semibold">
+              {guardando ? "Publicando..." : "Publicar búsqueda"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Carrusel horizontal que se desliza solo (una carta al lado de otra),
+// pensado para Inicio -- clic en cualquier carta (o en "Ver todas") lleva
+// al apartado completo, donde ya se puede contactar a quien busca.
+function BusquedasCarrusel({ onAbrir }) {
+  const [busquedas, setBusquedas] = useState([]);
+
+  useEffect(() => {
+    sb(`busquedas?select=*&activa=eq.true&order=created_at.desc&limit=20`)
+      .then(setBusquedas)
+      .catch(() => setBusquedas([]));
+  }, []);
+
+  if (busquedas.length === 0) return null;
+  const dobles = [...busquedas, ...busquedas]; // duplicado para que el loop del carrusel no se note
+  const mascara = "linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)";
+
+  return (
+    <div className="mb-6">
+      <button onClick={onAbrir} className="flex items-center justify-between w-full mb-2 text-left">
+        <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold">🔍 Cartas que la comunidad está buscando</p>
+        <span style={{ color: COLORS.azulPalido }} className="text-xs font-semibold whitespace-nowrap shrink-0">Ver todas →</span>
+      </button>
+      <div style={{ overflow: "hidden", WebkitMaskImage: mascara, maskImage: mascara }}>
+        <div style={{ animation: `marqueeScroll ${Math.max(15, busquedas.length * 3)}s linear infinite`, width: "max-content" }} className="flex gap-3">
+          {dobles.map((b, i) => (
+            <button key={`${b.id}-${i}`} onClick={onAbrir}
+              style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}`, width: 116 }}
+              className="rounded-xl p-2 shrink-0 text-left hover:brightness-110 transition">
+              <div style={{ background: COLORS.surface2 }} className="rounded-lg aspect-[3/4] flex items-center justify-center mb-1 overflow-hidden">
+                {b.imagen_url ? <img src={b.imagen_url} alt={b.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Search size={22} color={COLORS.muted} />}
+              </div>
+              <p className="text-xs font-semibold truncate">{b.carta}</p>
+              <p style={{ color: COLORS.muted }} className="text-[10px] truncate">{TCG_LABEL[b.tcg] || b.tcg}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BusquedasView({ session, onAbrirChat, onVerPerfil, onRequireLogin }) {
+  const [busquedas, setBusquedas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [quitando, setQuitando] = useState(null);
+  const [mostrarModal, setMostrarModal] = useState(false);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`busquedas?select=*,perfiles(nombre,avatar_url,whatsapp,facebook)&activa=eq.true&order=created_at.desc`)
+      .then(setBusquedas)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const quitar = async (id) => {
+    setQuitando(id);
+    try {
+      await sbWrite("PATCH", `busquedas?id=eq.${id}`, { activa: false }, session);
+      cargar();
+    } catch (e) { setError(e.message); } finally { setQuitando(null); }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">🔍 Cartas que están buscando</h2>
+        <button onClick={() => (session ? setMostrarModal(true) : onRequireLogin())} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+          + Publicar búsqueda
+        </button>
+      </div>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Si tienes alguna de estas cartas, contacta directo a quien la busca.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+      {loading && <Loading label="Cargando búsquedas..." />}
+      {!loading && busquedas.length === 0 && (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">Nadie ha publicado una búsqueda todavía. ¡Sé el primero!</p>
+      )}
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {busquedas.map((b) => {
+          const esMia = session && b.perfil_id === session.user.id;
+          return (
+            <div key={b.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 flex gap-3">
+              <div style={{ background: COLORS.surface2, width: 56, height: 78 }} className="rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+                {b.imagen_url ? <img src={b.imagen_url} alt={b.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Search size={22} color={COLORS.muted} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <p className="font-semibold text-sm truncate">{b.carta}</p>
+                  <Badge color={COLORS.azulPalido}>{TCG_LABEL[b.tcg] || b.tcg}</Badge>
+                </div>
+                {b.set_nombre && <p style={{ color: COLORS.muted }} className="text-xs truncate">{b.set_nombre}</p>}
+                {b.notas && <p style={{ color: COLORS.text }} className="text-xs mt-1 line-clamp-2">{b.notas}</p>}
+                <button onClick={() => onVerPerfil(b.perfil_id)} className="flex items-center gap-1 mt-2">
+                  <AvatarImg url={b.perfiles?.avatar_url} size={18} />
+                  <span style={{ color: COLORS.muted }} className="text-xs truncate">{b.perfiles?.nombre || "Usuario"}</span>
+                </button>
+                <div className="mt-2">
+                  {esMia ? (
+                    <button onClick={() => quitar(b.id)} disabled={quitando === b.id} style={{ color: "#C24444" }} className="text-xs font-semibold">
+                      {quitando === b.id ? "..." : "Ya la encontré / quitar"}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => (session ? onAbrirChat(b.perfil_id, b.perfiles?.nombre, `Busca: ${b.carta}`, b.perfiles?.whatsapp, b.perfiles?.facebook, b.perfiles?.avatar_url) : onRequireLogin())}
+                      style={{ background: COLORS.surface2, color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                      className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 font-semibold">
+                      <MessageCircle size={12} /> Yo la tengo
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {mostrarModal && <BuscarCartaModal session={session} onClose={() => setMostrarModal(false)} onCreado={cargar} />}
+    </div>
+  );
+}
+
 function TorneosView({ session, onRequireLogin }) {
   const [torneos, setTorneos] = useState([]);
   const [interesados, setInteresados] = useState(new Set());
@@ -10287,6 +10512,8 @@ export default function EncuentraCartas() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [, setTemaVersion] = useState(0);
   const [chatContext, setChatContext] = useState(null);
+  const [mostrarBuscarCarta, setMostrarBuscarCarta] = useState(false);
+  const [busquedasVersion, setBusquedasVersion] = useState(0); // bump para refrescar el carrusel tras publicar una búsqueda
   const [adminStash, setAdminStash] = useState(() => {
     const s = localStorage.getItem("ec_session_admin_stash");
     return s ? JSON.parse(s) : null;
@@ -10874,6 +11101,7 @@ export default function EncuentraCartas() {
         { id: "comunidad", label: "Comunidad", icon: Newspaper },
         { id: "news", label: "Noticias", icon: Megaphone },
         { id: "boletin", label: "Boletín de precios", icon: TrendingUp },
+        { id: "busquedas", label: "Cartas que están buscando", icon: Search },
         ...(session ? [{ id: "siguiendo", label: "Tiendas que sigo", icon: User }] : []),
       ],
     },
@@ -11018,6 +11246,9 @@ export default function EncuentraCartas() {
           onClose={() => { setChatContext(null); if (session) cargarInbox(); }}
         />
       )}
+      {mostrarBuscarCarta && session && (
+        <BuscarCartaModal session={session} onClose={() => setMostrarBuscarCarta(false)} onCreado={() => setBusquedasVersion((v) => v + 1)} />
+      )}
 
       <main style={{ position: "relative", zIndex: 1 }} className="max-w-5xl mx-auto px-4 sm:px-8 py-10">
         <div style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55`, background: `${COLORS.azulPalido}11` }}
@@ -11030,6 +11261,19 @@ export default function EncuentraCartas() {
           <div>
             {!query.trim() && <SorteoDestacadoBanner onAbrirSorteo={abrirSorteo} />}
             {!query.trim() && <BoletinBanner onAbrir={() => setView("boletin")} />}
+            {!query.trim() && (
+              <button onClick={() => (session ? setMostrarBuscarCarta(true) : setShowAccountModal(true))}
+                style={{ background: `${COLORS.violeta}1a`, border: `1px solid ${COLORS.violeta}55` }}
+                className="w-full rounded-xl p-3 mb-3 flex items-center gap-3 text-left hover:brightness-110 transition">
+                <Search size={20} color={COLORS.violeta} className="shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold">🔍 ¿Buscas alguna carta?</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs truncate">Publícala y que alguien que la tenga te contacte directo</p>
+                </div>
+                <span style={{ color: COLORS.violeta }} className="text-xs font-semibold whitespace-nowrap">Publicar →</span>
+              </button>
+            )}
+            {!query.trim() && <BusquedasCarrusel key={busquedasVersion} onAbrir={() => setView("busquedas")} />}
             <div className="text-center mb-10" style={{ animation: "fadeUp .5s ease both" }}>
               <div style={{ background: `${COLORS.violeta}1f`, border: `1px solid ${COLORS.violeta}59`, color: "#C9B6FF" }}
                 className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide mb-5">
@@ -11992,6 +12236,9 @@ export default function EncuentraCartas() {
         )}
         {view === "comunidad" && <ComunidadView session={session} onVerPerfil={verPerfil} />}
         {view === "boletin" && <BoletinView session={session} />}
+        {view === "busquedas" && (
+          <BusquedasView session={session} onAbrirChat={abrirChat} onVerPerfil={verPerfil} onRequireLogin={() => setShowAccountModal(true)} />
+        )}
         {view === "siguiendo" && session && <SiguiendoView session={session} onVerPerfil={verPerfil} onVerTienda={verTiendaDesdePerfil} />}
         {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
         {view === "recompensas" && session && <RecompensasView session={session} perfil={perfil} />}
