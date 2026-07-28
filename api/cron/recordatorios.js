@@ -85,11 +85,12 @@ async function otorgarDestellosMensuales(ahora, supabaseUrl, headers) {
 }
 
 // ============================================================
-// Boletín semanal de precios (solo corre en lunes -- ver generarYEnviarBoletines).
-// Es sobre el mercado del TCG EN GENERAL, no sobre el inventario de esta
-// plataforma -- universoGlobalPorTcg (lib/precios.js) le pregunta directo a
-// la fuente de cada juego por sus cartas, así que informa lo mismo le
-// interese a quien vende aquí o no.
+// Boletín de precios, cada 3 días (ver tocaBoletinHoy/generarYEnviarBoletines
+// más abajo -- antes era cada lunes, una semana completa). Es sobre el
+// mercado del TCG EN GENERAL, no sobre el inventario de esta plataforma --
+// universoGlobalPorTcg (lib/precios.js) le pregunta directo a la fuente de
+// cada juego por sus cartas, así que informa lo mismo le interese a quien
+// vende aquí o no.
 // Arranca con Pokémon/Magic/Yu-Gi-Oh (TCGS_CON_BOLETIN, lib/precios.js):
 // son los únicos tres TCG con una fuente de precio real ya integrada en
 // la app. Lorcana no tiene un campo de precio confirmado en su API
@@ -110,13 +111,13 @@ async function generarAnalisisBoletin(tcg, suben, bajan) {
   const nombreTcg = TCG_NOMBRE_BOLETIN[tcg] || tcg;
   const resumenSuben = suben.slice(0, 8).map((c) => `${c.nombre} (+${c.cambioPct.toFixed(0)}%, de $${Math.round(c.precioAntes)} a $${Math.round(c.precioMxn)} MXN)`).join("; ");
   const resumenBajan = bajan.slice(0, 8).map((c) => `${c.nombre} (${c.cambioPct.toFixed(0)}%, de $${Math.round(c.precioAntes)} a $${Math.round(c.precioMxn)} MXN)`).join("; ");
-  const fallback = `Esta semana, en ${nombreTcg}, las cartas que más subieron de precio fueron: ${resumenSuben || "sin datos suficientes"}. Las que más bajaron: ${resumenBajan || "sin datos suficientes"}.`;
+  const fallback = `En estos últimos días, en ${nombreTcg}, las cartas que más subieron de precio fueron: ${resumenSuben || "sin datos suficientes"}. Las que más bajaron: ${resumenBajan || "sin datos suficientes"}.`;
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) return fallback;
   try {
     const prompt =
       `Eres un analista de mercado de cartas coleccionables de ${nombreTcg} explicándole a coleccionistas que no son ` +
-      `expertos en finanzas qué pasó esta semana con los precios. Cartas que MÁS SUBIERON de precio: ${resumenSuben || "ninguna con datos suficientes"}. ` +
+      `expertos en finanzas qué pasó en estos últimos días con los precios. Cartas que MÁS SUBIERON de precio: ${resumenSuben || "ninguna con datos suficientes"}. ` +
       `Cartas que MÁS BAJARON de precio: ${resumenBajan || "ninguna con datos suficientes"}. ` +
       "Escribe un análisis breve (máximo 4-5 oraciones), en español sencillo y directo, sin tecnicismos financieros, " +
       "explicando qué tendencia general se ve y qué podría explicarla en términos simples (ej. relanzamientos, " +
@@ -136,10 +137,10 @@ async function generarBoletinTcg(tcg, semanaActual, semanaPasada, supabaseUrl, h
   const validos = await universoGlobalPorTcg(tcg, 60);
   if (validos.length === 0) return null;
 
-  // Guarda el precio de esta semana (para que la corrida de la próxima
-  // semana ya tenga con qué comparar) antes de intentar comparar contra
-  // la semana pasada, así el trabajo de cotizar no se pierde aunque algo
-  // falle más adelante.
+  // Guarda el precio de hoy (para que la corrida de dentro de 3 días ya
+  // tenga con qué comparar) antes de intentar comparar contra el corte
+  // anterior, así el trabajo de cotizar no se pierde aunque algo falle
+  // más adelante.
   await fetch(`${supabaseUrl}/rest/v1/precio_historial_semanal?on_conflict=tcg,card_api_id,semana`, {
     method: "POST",
     headers: { ...headers, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
@@ -164,9 +165,9 @@ async function generarBoletinTcg(tcg, semanaActual, semanaPasada, supabaseUrl, h
     })
     .filter(Boolean);
 
-  // Si es la primera semana rastreando este tcg, no hay con qué comparar
-  // todavía -- no truena, simplemente no hay boletín esta semana (el que
-  // sigue ya va a tener comparación).
+  // Si es la primera corrida rastreando este tcg, no hay con qué comparar
+  // todavía -- no truena, simplemente no hay boletín hoy (el de dentro de
+  // 3 días ya va a tener comparación).
   if (cambios.length === 0) return null;
 
   const suben = [...cambios].sort((a, b) => b.cambioPct - a.cambioPct).slice(0, 20);
@@ -191,7 +192,7 @@ function filaHtmlBoletin(c, signo) {
 function armarHtmlBoletin(b) {
   const nombreTcg = TCG_NOMBRE_BOLETIN[b.tcg] || b.tcg;
   return `
-    <h2>📊 Boletín semanal de ${nombreTcg}</h2>
+    <h2>📊 Boletín de ${nombreTcg}</h2>
     <p>${b.analisis || ""}</p>
     <h3>📈 Las que más subieron</h3>
     <table>${b.top_suben.map((c) => filaHtmlBoletin(c, "+")).join("")}</table>
@@ -213,17 +214,31 @@ async function enviarBoletinesPorCorreo(boletinesGenerados, supabaseUrl, headers
     const html = armarHtmlBoletin(b);
     const nombreTcg = TCG_NOMBRE_BOLETIN[b.tcg] || b.tcg;
     for (const email of destinatarios) {
-      await enviarCorreo({ to: email, subject: `📊 Boletín semanal de ${nombreTcg}`, html });
+      await enviarCorreo({ to: email, subject: `📊 Boletín de ${nombreTcg}`, html });
     }
   }
 }
 
-async function generarYEnviarBoletines(ahora, supabaseUrl, headers) {
-  if (ahora.getUTCDay() !== 1) return 0; // el cron corre a diario; el boletín solo se genera en lunes
-  const semanaActual = fechaISO(ahora);
-  const semanaPasada = fechaISO(new Date(ahora.getTime() - 7 * 24 * 60 * 60 * 1000));
+// Cadencia de 3 en 3 días -- antes era "solo lunes" (una semana completa),
+// ahora se sube un boletín nuevo cada 3 días sin importar el día de la
+// semana. No depende de getUTCDay() (eso solo da lunes/martes/etc, no
+// "cada 3er día"); en vez de eso cuenta cuántos días completos han pasado
+// desde un punto fijo (el día que se activó esta cadencia) y solo toca
+// generar cuando ese conteo es múltiplo de 3 -- así el propio día en que
+// se activó ya cuenta como corrida válida.
+const ANCLA_BOLETIN = Date.UTC(2026, 6, 28); // 28 de julio de 2026 (mes 0-indexado)
+function tocaBoletinHoy(ahora) {
+  const hoyUTC = Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate());
+  const dias = Math.round((hoyUTC - ANCLA_BOLETIN) / 86400000);
+  return dias >= 0 && dias % 3 === 0;
+}
 
-  // Idempotencia: si el cron se reintenta el mismo lunes, no regenera (ni
+async function generarYEnviarBoletines(ahora, supabaseUrl, headers) {
+  if (!tocaBoletinHoy(ahora)) return 0; // el cron corre a diario; el boletín solo se genera cada 3 días
+  const semanaActual = fechaISO(ahora);
+  const semanaPasada = fechaISO(new Date(ahora.getTime() - 3 * 24 * 60 * 60 * 1000));
+
+  // Idempotencia: si el cron se reintenta el mismo día, no regenera (ni
   // re-manda por correo) un boletín que ya se generó hoy.
   const yaRes = await fetch(`${supabaseUrl}/rest/v1/boletines?select=tcg&semana=eq.${semanaActual}`, { headers });
   const ya = new Set((await yaRes.json().catch(() => [])).map((b) => b.tcg));
@@ -338,9 +353,9 @@ export default async function handler(req, res) {
     // ---- Regalo mensual de Destellos por plan (solo el día 1) ----
     const destellosOtorgados = await otorgarDestellosMensuales(ahora, supabaseUrl, headers);
 
-    // ---- Boletín semanal de precios (solo los lunes) ----
+    // ---- Boletín de precios (cada 3 días) ----
     const boletinesGenerados = await generarYEnviarBoletines(ahora, supabaseUrl, headers).catch((e) => {
-      console.error("Error generando el boletín semanal:", e);
+      console.error("Error generando el boletín:", e);
       return 0;
     });
 
