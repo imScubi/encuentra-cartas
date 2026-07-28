@@ -2776,6 +2776,40 @@ dueño).
 desconectado): corre `061_busquedas_publicas.sql` a mano en el SQL
 Editor.
 
+## 94. Fix real: el buscador de comprador (y otros 4 buscadores) nunca encontraba a nadie
+
+Reporte: al marcar una carta como vendida, el buscador de comprador nunca
+mostraba ni un usuario, sin importar qué se escribiera. La causa era un
+efecto secundario no previsto del fix de seguridad de la sección 70
+(`pgValor()`, que envuelve el texto de búsqueda en comillas dobles para
+protegerlo de la gramática de filtros de PostgREST): envolver en comillas
+un patrón de `ilike` (`"*texto*"`) también le apaga a PostgREST la
+sustitución automática de `*` por `%` -- las comillas dejan el valor
+como texto 100% literal, así que terminaba buscando la cadena literal
+`*texto*` (que ningún nombre tiene) y por lo tanto daba **cero
+resultados siempre**, para cualquier búsqueda.
+
+Afectaba a los 5 lugares que usaban ese mismo patrón para `ilike`:
+- `BuscadorComprador` (marcar como vendida) -- el que se reportó.
+- Búsqueda de usuarios en Admin → Planes.
+- Búsqueda de publicaciones en Admin (para borrar duplicados).
+- El buscador principal de "Buscar" -- afectaba solo la mitad: el
+  producto sellado (filtro `ilike` suelto) sí estaba roto, pero cartas de
+  Mercado/tiendas seguían funcionando porque van dentro de un
+  `or=(...)` armado por `filtroPalabrasCartaOSet`, que resultó no verse
+  afectado.
+- Ese mismo `filtroPalabrasCartaOSet`, por consistencia (aunque no
+  estaba roto).
+
+**Fix**: nuevo helper `pgLikeValor()` en `lib/supabase.js`, hecho
+específicamente para patrones `ilike`/`like` -- en vez de comillas, quita
+del texto los caracteres reservados de la gramática de filtros (`,` `.`
+`(` `)`) antes de armar el `*texto*`. Perder alguno de esos caracteres en
+una búsqueda de texto libre es aceptable, y así el comodín `*` sigue
+funcionando de verdad. `pgValor()` (con comillas) se queda igual para
+cuando de verdad se necesita texto literal exacto (`eq`/`neq`, no
+`ilike`). No requiere ninguna migración -- es puro frontend.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

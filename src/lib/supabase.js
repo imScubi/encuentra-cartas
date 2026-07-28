@@ -24,6 +24,22 @@ export function pgValor(v) {
   return `"${String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+// Para armar un patrón de ilike/like (ej. "*texto*"): el "*" es el comodín
+// que PostgREST convierte a "%" del lado del servidor -- pero pgValor() de
+// arriba lo rompe, porque envolver el valor en comillas para protegerlo de
+// la gramática de filtros TAMBIÉN le apaga a PostgREST esa sustitución
+// automática (las comillas dejan el valor como texto 100% literal), así que
+// el patrón termina buscando el texto "*algo*" tal cual -- que ninguna fila
+// tiene -- y da CERO resultados siempre, sin importar qué se busque. En vez
+// de comillas, se quitan del texto los caracteres que sí son reservados en
+// la gramática de filtros (`,` `.` `(` `)`): perder alguno de esos de una
+// búsqueda de texto libre es aceptable, y así el patrón sigue siendo un
+// ilike real. (Ver bug real: BuscadorComprador nunca encontraba a nadie.)
+export function pgLikeValor(texto) {
+  const limpio = String(texto || "").replace(/[,.()]/g, " ").trim();
+  return `*${limpio}*`;
+}
+
 // El token de sesión de Supabase expira solo (~1 hora). Si una consulta falla
 // por eso, la renovamos con el refresh_token y reintentamos una sola vez.
 // onSesionRefrescada lo registra la app principal (vía setOnSesionRefrescada) para
