@@ -2810,6 +2810,46 @@ funcionando de verdad. `pgValor()` (con comillas) se queda igual para
 cuando de verdad se necesita texto literal exacto (`eq`/`neq`, no
 `ilike`). No requiere ninguna migración -- es puro frontend.
 
+## 95. Boletín: pasa a rastrear el mercado GLOBAL del TCG, no el inventario de la web
+
+Corrección de intención: el boletín se pensó para informar sobre el
+mercado del TCG en general (qué subió/bajó en todo Pokémon/Magic/Yu-Gi-Oh
+esta semana), no sobre las pocas cartas que hay publicadas en Encuentra
+Cartas -- que es justo lo que hacía antes (sección 87), y por lo que
+salía vacío casi siempre (con pocas publicaciones activas de un TCG, no
+hay universo que rastrear).
+
+- **Antes**: `cartasRastreadasPorTcg` armaba el universo a partir de
+  `mercado_listings`/`inventario_tienda`/`sellado_tienda` -- solo lo que
+  alguien ya había publicado en la plataforma.
+- **Ahora**: nueva `universoGlobalPorTcg()` en `lib/precios.js` le
+  pregunta directo a la fuente de cada juego:
+  - **Pokémon**: cartas de los 6 sets más recientes (pokemontcg.io),
+    ordenadas por precio (de mayor a menor) del lado de este código.
+  - **Magic**: Scryfall sí soporta ordenar por precio del lado del
+    servidor (`order=usd`) -- se toman directo las cartas más valiosas de
+    TODO Magic, no solo de sets recientes.
+  - **Yu-Gi-Oh**: cartas de los 6 sets más recientes (YGOPRODeck),
+    ordenadas por precio igual que Pokémon.
+  - Se enfoca en cartas recientes/valiosas a propósito: una carta clásica
+    de hace 20 años casi no cambia de precio en una semana, así que el
+    % de cambio real casi siempre está en lo que se juega/colecciona
+    ahora mismo.
+- Ya no hace falta llamar `precioActualPorTcg` carta por carta (con
+  límite de concurrencia) después -- el universo global ya trae el
+  precio de una vez, así que el cron queda más simple y más rápido.
+- El resto del mecanismo (guardar snapshot semanal, comparar contra la
+  semana pasada, top 20 suben/bajan, análisis con IA) no cambió.
+- Efecto de la transición: la primera vez que corra con el universo
+  nuevo, las cartas que antes se rastreaban (y ya no forman parte del
+  nuevo universo) simplemente dejan de compararse -- no truena nada, solo
+  significa que esa semana en particular puede salir con menos
+  coincidencias de las 60 hasta que el nuevo universo tenga ya dos
+  semanas seguidas de historial.
+
+No requiere ninguna migración -- mismas tablas, mismo cron, mismo
+horario (lunes, 15:00 UTC / 9:00 a.m. hora de Monterrey).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

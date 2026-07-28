@@ -14,7 +14,7 @@
 import webpush from "web-push";
 import { enviarCorreo } from "../../lib/email.js";
 import { llamarGeminiTextoConReintento } from "../../lib/gemini.js";
-import { precioActualPorTcg, TCGS_CON_BOLETIN } from "../../lib/precios.js";
+import { universoGlobalPorTcg, TCGS_CON_BOLETIN } from "../../lib/precios.js";
 
 const TCG_NOMBRE_BOLETIN = { pokemon: "Pokémon", magic: "Magic", yugioh: "Yu-Gi-Oh!" };
 
@@ -86,6 +86,10 @@ async function otorgarDestellosMensuales(ahora, supabaseUrl, headers) {
 
 // ============================================================
 // Boletín semanal de precios (solo corre en lunes -- ver generarYEnviarBoletines).
+// Es sobre el mercado del TCG EN GENERAL, no sobre el inventario de esta
+// plataforma -- universoGlobalPorTcg (lib/precios.js) le pregunta directo a
+// la fuente de cada juego por sus cartas, así que informa lo mismo le
+// interese a quien vende aquí o no.
 // Arranca con Pokémon/Magic/Yu-Gi-Oh (TCGS_CON_BOLETIN, lib/precios.js):
 // son los únicos tres TCG con una fuente de precio real ya integrada en
 // la app. Lorcana no tiene un campo de precio confirmado en su API
@@ -94,47 +98,6 @@ async function otorgarDestellosMensuales(ahora, supabaseUrl, headers) {
 // cada uno, en vez de inventar números.
 // ============================================================
 const fechaISO = (d) => d.toISOString().slice(0, 10);
-
-// Ejecuta `fn` sobre `items` con un límite de tareas en paralelo -- llamar
-// a una API externa una por una para ~60 cartas sería lentísimo, pero
-// lanzar las 60 a la vez arriesga un 429 de rate limit; un lote de 8 a la
-// vez es un punto medio razonable dado el tiempo límite de la función.
-async function conLimiteDeConcurrencia(items, limite, fn) {
-  const resultados = [];
-  for (let i = 0; i < items.length; i += limite) {
-    const lote = items.slice(i, i + limite);
-    resultados.push(...(await Promise.all(lote.map(fn))));
-  }
-  return resultados;
-}
-
-// Universo de cartas a rastrear para un tcg: las que de verdad están
-// publicadas en la plataforma (Mercado, tiendas), no un top genérico de
-// internet -- así el boletín es relevante para quien compra/vende aquí.
-// Se limita a 60 por tcg para que el cron no se tarde una eternidad ni
-// se pase del tiempo límite de la función.
-async function cartasRastreadasPorTcg(tcg, supabaseUrl, headers) {
-  const mapa = new Map(); // card_api_id -> { nombre, setNombre }
-  const fuentes = [
-    { tabla: "mercado_listings", campoNombre: "carta" },
-    { tabla: "inventario_tienda", campoNombre: "carta" },
-    { tabla: "sellado_tienda", campoNombre: "producto" },
-  ];
-  for (const { tabla, campoNombre } of fuentes) {
-    if (mapa.size >= 60) break;
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/${tabla}?select=card_api_id,${campoNombre},set_nombre&tcg=eq.${tcg}&card_api_id=not.is.null&order=created_at.desc&limit=100`,
-      { headers }
-    );
-    const filas = await res.json().catch(() => []);
-    for (const f of filas || []) {
-      if (!f.card_api_id || mapa.has(f.card_api_id)) continue;
-      mapa.set(f.card_api_id, { nombre: f[campoNombre], setNombre: f.set_nombre || null });
-      if (mapa.size >= 60) break;
-    }
-  }
-  return mapa;
-}
 
 function formatearEntradaBoletin(c) {
   return {
@@ -167,14 +130,10 @@ async function generarAnalisisBoletin(tcg, suben, bajan) {
 }
 
 async function generarBoletinTcg(tcg, semanaActual, semanaPasada, supabaseUrl, headers) {
-  const rastreadas = await cartasRastreadasPorTcg(tcg, supabaseUrl, headers);
-  if (rastreadas.size === 0) return null;
-
-  const actuales = await conLimiteDeConcurrencia([...rastreadas.entries()], 8, async ([cardApiId, info]) => {
-    const precio = await precioActualPorTcg(tcg, cardApiId);
-    return precio ? { cardApiId, ...info, ...precio } : null;
-  });
-  const validos = actuales.filter(Boolean);
+  // universoGlobalPorTcg pregunta directo a la fuente de cada juego (no al
+  // inventario de esta plataforma) por sus cartas más recientes/valiosas --
+  // el boletín es sobre el mercado del TCG en general, ver lib/precios.js.
+  const validos = await universoGlobalPorTcg(tcg, 60);
   if (validos.length === 0) return null;
 
   // Guarda el precio de esta semana (para que la corrida de la próxima

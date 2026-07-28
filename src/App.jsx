@@ -7401,9 +7401,9 @@ function BoletinView({ session }) {
     <div>
       <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1 flex items-center gap-2"><TrendingUp size={20} /> Boletín semanal de precios</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">
-        Cada lunes: las 20 cartas que más subieron y las 20 que más bajaron de precio esa semana, con un análisis
-        fácil de entender. Solo cartas realmente publicadas en Encuentra Cartas, con datos de fuentes reales
-        (pokemontcg.io, Scryfall, YGOPRODeck) -- nada inventado.
+        Cada lunes: las 20 cartas que más subieron y las 20 que más bajaron de precio esa semana en el mercado del
+        TCG en general (no solo lo publicado en Encuentra Cartas), con un análisis fácil de entender. Datos de
+        fuentes reales (pokemontcg.io, Scryfall, YGOPRODeck) -- nada inventado.
       </p>
 
       <div className="flex gap-2 mb-4 flex-wrap">
