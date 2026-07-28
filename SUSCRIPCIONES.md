@@ -2850,6 +2850,36 @@ hay universo que rastrear).
 No requiere ninguna migración -- mismas tablas, mismo cron, mismo
 horario (lunes, 15:00 UTC / 9:00 a.m. hora de Monterrey).
 
+## 96. Boletín: cadencia de cada 3 días (antes cada lunes)
+
+Cambio de frecuencia: el boletín ya no espera una semana completa, ahora
+se genera un boletín nuevo cada 3 días -- el mismo día que se activó este
+cambio ya cuenta como una corrida válida.
+
+- Nueva `tocaBoletinHoy()` en `api/cron/recordatorios.js`: en vez de
+  `ahora.getUTCDay() === 1` (solo lunes), cuenta cuántos días completos
+  han pasado desde una fecha ancla fija (`ANCLA_BOLETIN`, el día de este
+  cambio) y toca generar cuando ese conteo es múltiplo de 3 -- así no
+  depende del día de la semana y corre de 3 en 3 sin importar cuándo.
+- La comparación contra "la corrida anterior" pasa de 7 a 3 días
+  (`semanaPasada` ahora resta 3 días, no 7).
+- Se actualizó todo el texto visible (vista del boletín, banner, correo,
+  análisis generado por IA) de "semanal"/"cada lunes"/"esta semana" a
+  reflejar la cadencia de 3 días, sin cambiar el nombre de las columnas
+  en base de datos (`semana` en `boletines`/`precio_historial_semanal`
+  sigue significando "la fecha de este corte", ya no literalmente una
+  semana calendario -- no hizo falta ninguna migración).
+- Efecto de la transición: las cartas que ya tenían un precio guardado
+  hace 7 días (bajo la cadencia vieja) simplemente no calzan con la
+  ventana de 3 días de la primera corrida nueva -- no truena nada, solo
+  significa que esa primera corrida bajo la cadencia nueva puede salir
+  con menos comparaciones hasta que se acumulen corridas seguidas de 3
+  en 3 días.
+
+No requiere ninguna migración -- mismo cron, mismo horario diario
+(15:00 UTC / 9:00 a.m. hora de Monterrey), solo cambia qué días de esos
+sí generan boletín.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

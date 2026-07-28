@@ -7335,7 +7335,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
   );
 }
 
-// TCG con boletín semanal de precios (ver lib/precios.js del lado del
+// TCG con boletín de precios, cada 3 días (ver lib/precios.js del lado del
 // servidor): solo los que ya tienen una fuente de precio real integrada
 // (Pokémon: pokemontcg.io, Magic: Scryfall, Yu-Gi-Oh: YGOPRODeck).
 // Lorcana/One Piece se agregan aquí el día que tengan una fuente
@@ -7358,10 +7358,10 @@ function FilaBoletin({ c, signo, color }) {
   );
 }
 
-// Vista dedicada del boletín semanal: selector de TCG, análisis en
-// palabras simples generado por IA, y las 20 cartas que más subieron/
-// bajaron de precio esa semana. "Me interesa" suscribe (boletin_subscripciones)
-// para que el mismo boletín también llegue por correo cada lunes.
+// Vista dedicada del boletín: selector de TCG, análisis en palabras
+// simples generado por IA, y las 20 cartas que más subieron/bajaron de
+// precio en el periodo. "Me interesa" suscribe (boletin_subscripciones)
+// para que el mismo boletín también llegue por correo cada 3 días.
 function BoletinView({ session }) {
   const [tcg, setTcg] = useState("pokemon");
   const [boletin, setBoletin] = useState(undefined); // undefined = cargando, null = sin boletín todavía
@@ -7399,11 +7399,11 @@ function BoletinView({ session }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1 flex items-center gap-2"><TrendingUp size={20} /> Boletín semanal de precios</h2>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1 flex items-center gap-2"><TrendingUp size={20} /> Boletín de precios</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">
-        Cada lunes: las 20 cartas que más subieron y las 20 que más bajaron de precio esa semana en el mercado del
-        TCG en general (no solo lo publicado en Encuentra Cartas), con un análisis fácil de entender. Datos de
-        fuentes reales (pokemontcg.io, Scryfall, YGOPRODeck) -- nada inventado.
+        Cada 3 días: las 20 cartas que más subieron y las 20 que más bajaron de precio en el mercado del TCG en
+        general (no solo lo publicado en Encuentra Cartas), con un análisis fácil de entender. Datos de fuentes
+        reales (pokemontcg.io, Scryfall, YGOPRODeck) -- nada inventado.
       </p>
 
       <div className="flex gap-2 mb-4 flex-wrap">
@@ -7448,14 +7448,14 @@ function BoletinView({ session }) {
             <div>
               <h3 style={{ color: COLORS.gold }} className="font-semibold text-sm uppercase mb-2 flex items-center gap-1"><TrendingUp size={14} /> Las que más subieron</h3>
               <div className="grid gap-2">
-                {boletin.top_suben.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs">Sin datos suficientes esta semana.</p>}
+                {boletin.top_suben.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs">Sin datos suficientes por ahora.</p>}
                 {boletin.top_suben.map((c, i) => <FilaBoletin key={i} c={c} signo="+" color={COLORS.gold} />)}
               </div>
             </div>
             <div>
               <h3 style={{ color: COLORS.azulClaro }} className="font-semibold text-sm uppercase mb-2">📉 Las que más bajaron</h3>
               <div className="grid gap-2">
-                {boletin.top_bajan.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs">Sin datos suficientes esta semana.</p>}
+                {boletin.top_bajan.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs">Sin datos suficientes por ahora.</p>}
                 {boletin.top_bajan.map((c, i) => <FilaBoletin key={i} c={c} signo="" color={COLORS.azulClaro} />)}
               </div>
             </div>
@@ -7487,9 +7487,9 @@ function BoletinBanner({ onAbrir }) {
       className="w-full rounded-xl p-3 mb-6 flex items-center gap-3 text-left hover:brightness-110 transition">
       <TrendingUp size={20} color={COLORS.azulClaro} className="shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold">📊 Boletín semanal de {TCG_LABEL[boletin.tcg] || boletin.tcg}</p>
+        <p className="text-sm font-semibold">📊 Boletín de {TCG_LABEL[boletin.tcg] || boletin.tcg}</p>
         <p style={{ color: COLORS.muted }} className="text-xs truncate">
-          {destacada ? `${destacada.nombre} subió +${destacada.cambio_pct}% esta semana -- ` : ""}Ver los 20 que más subieron y bajaron
+          {destacada ? `${destacada.nombre} subió +${destacada.cambio_pct}% -- ` : ""}Ver los 20 que más subieron y bajaron
         </p>
       </div>
       <span style={{ color: COLORS.azulClaro }} className="text-xs font-semibold whitespace-nowrap">Ver boletín →</span>
