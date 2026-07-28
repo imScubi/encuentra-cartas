@@ -604,16 +604,22 @@ export async function obtenerCartasDeSetCatalogo(tcg, setId) {
 // One Piece todavía no tiene una fuente gratis confiable de texto libre —
 // usa TCGplayerPicker (elegir set, luego buscar dentro de ese set) en vez
 // de este despachador; ver App.jsx.
+// A diferencia de obtenerErasYSetsCatalogo/obtenerCartasDeSetCatalogo, este
+// despachador NO atrapa el error aquí: su único punto de uso (CardPicker,
+// el cuadro de búsqueda al publicar una carta) ya distingue "no se pudo
+// conectar" de "sin resultados" con su propio try/catch, para mostrarle a
+// quien está publicando el mensaje correcto en cada caso. Atraparlo aquí
+// también (como se hizo por error para los otros dos despachadores) hacía
+// que una caída real de Scryfall/pokemontcg.io/YGOPRODeck/lorcana-api se
+// viera igual que "esa carta no existe" -- quien buscaba una carta de
+// Magic real se quedaba viendo "sin resultados" para CUALQUIER búsqueda,
+// sin ninguna pista de que el problema era la conexión y no el catálogo.
 export async function buscarCartasCatalogo(tcg, texto) {
-  try {
-    if (tcg === "magic") return await buscarCartasMagic(texto);
-    if (tcg === "pokemon") return await buscarCartasVisual(texto);
-    if (tcg === "yugioh") return await buscarCartasYugioh(texto);
-    if (tcg === "lorcana") return await buscarCartasLorcana(texto);
-    return [];
-  } catch {
-    return [];
-  }
+  if (tcg === "magic") return buscarCartasMagic(texto);
+  if (tcg === "pokemon") return buscarCartasVisual(texto);
+  if (tcg === "yugioh") return buscarCartasYugioh(texto);
+  if (tcg === "lorcana") return buscarCartasLorcana(texto);
+  return [];
 }
 
 export async function obtenerPrecioRefActualPorTcg(tcg, cardApiId) {

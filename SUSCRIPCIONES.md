@@ -2918,6 +2918,35 @@ se ven todas al publicarlo.
   anuncios viejos (sin `imagenes_urls`, de antes de la migración 062)
   se siguen viendo bien sin tener que backfillear nada a mano.
 
+## 98. Fix: buscador de cartas (Magic y los demás TCG con catálogo) mostraba "sin resultados" cuando en realidad era un error de conexión
+
+Reporte: al publicar una carta de Magic, el buscador no traía absolutamente
+ninguna carta, para cualquier nombre que se escribiera.
+
+Causa real: `buscarCartasCatalogo` (en `src/lib/pokemonApi.js`) — el
+despachador que usa `CardPicker` para buscar mientras se escribe — atrapaba
+CUALQUIER error con un `try/catch` que regresaba `[]` sin distinguir nada.
+Ese `try/catch` se agregó en la sección 202 pensando en `CatalogoView` (que
+sí se quedaba pegada en "Cargando..." para siempre si la API fallaba), pero
+se aplicó también, por error, al buscador de texto libre -- que es un caso
+distinto: `CardPicker` YA tenía su propio manejo para separar "no se pudo
+conectar" (mensaje: *"No se pudo conectar con el catálogo. Espera un
+momento e intenta de nuevo."*) de "sin resultados" (mensaje: *"Sin
+resultados. Prueba con otro nombre, número o set."*). Al atraparse también
+en el despachador, una caída real de Scryfall (o de pokemontcg.io/
+YGOPRODeck/lorcana-api, según el TCG) se disfrazaba de "esa carta no
+existe" -- si la caída no era momentánea, se sentía como que el buscador
+completo de ese TCG estaba roto, para cualquier búsqueda.
+
+Arreglo: se quitó el `try/catch` de `buscarCartasCatalogo` (su único punto
+de uso, `CardPicker`, ya maneja el error correctamente y no le avisa al
+admin por esto, así que no hay riesgo de volver a generar el ruido que la
+sección 202 quería evitar). `obtenerErasYSetsCatalogo` y
+`obtenerCartasDeSetCatalogo` (los que sí alimentan `CatalogoView`, sin un
+manejo de error propio) se quedan igual que antes, atrapando el error.
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
