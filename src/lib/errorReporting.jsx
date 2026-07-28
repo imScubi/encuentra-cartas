@@ -42,6 +42,14 @@ const RUIDO_CONOCIDO = [
   // ningún endpoint ni archivo nuestro, así que no hay nada que arreglar
   // del lado de la web -- es la conexión de quien visita en ese momento.
   /^Load failed$/i,
+  // Chrome/Edge/Android (Chromium): mismo caso que "Load failed" de arriba,
+  // pero con la redacción que usa ese motor -- se dispara con cualquier
+  // fetch() que no logra conectar por señal débil, el sitio pasó a segundo
+  // plano a medio cargar, DNS caído, etc. Sin URL ni detalle porque el
+  // navegador nunca llegó a recibir respuesta del servidor.
+  /^Failed to fetch$/i,
+  // Firefox: la misma redacción del navegador para el mismo caso.
+  /^NetworkError when attempting to fetch resource\.?$/i,
 ];
 function esRuidoConocido(texto) {
   return RUIDO_CONOCIDO.some((patron) => patron.test(String(texto || "")));
