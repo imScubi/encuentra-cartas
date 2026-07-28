@@ -2710,8 +2710,8 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
   const [contenidoAnuncio, setContenidoAnuncio] = useState("");
   const [modoAnuncio, setModoAnuncio] = useState("ahora"); // ahora | programar
   const [programarFecha, setProgramarFecha] = useState("");
-  const [imagenAnuncio, setImagenAnuncio] = useState(null);
-  const [imagenAnuncioPreview, setImagenAnuncioPreview] = useState(null);
+  const [imagenesAnuncio, setImagenesAnuncio] = useState([]);
+  const [imagenesAnuncioPreview, setImagenesAnuncioPreview] = useState([]);
   const [creandoAnuncio, setCreandoAnuncio] = useState(false);
   const [errorAnuncio, setErrorAnuncio] = useState(null);
   const [pendientes, setPendientes] = useState([]);
@@ -2751,12 +2751,13 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
     if (modoAnuncio === "programar" && !programarFecha) { setErrorAnuncio("Elige la fecha y hora de publicación."); return; }
     setCreandoAnuncio(true); setErrorAnuncio(null);
     try {
-      const imagen_url = imagenAnuncio ? await subirImagenAnuncio(imagenAnuncio, session) : null;
+      const urls = imagenesAnuncio.length ? await Promise.all(imagenesAnuncio.map((f, i) => subirImagenAnuncio(f, session, i))) : [];
       const creado = await sbWrite("POST", "noticias", {
         tipo: "anuncio",
         titulo: tituloAnuncio.trim(),
         contenido: contenidoAnuncio.trim(),
-        imagen_url,
+        imagen_url: urls[0] || null,
+        imagenes_urls: urls.length ? urls : null,
         tienda_id: null,
         creado_por: session.user.id,
         estado: esProgramado ? "programado" : "publicado",
@@ -2766,7 +2767,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
       const fila = Array.isArray(creado) ? creado[0] : creado;
       if (!esProgramado && fila?.id) await notificarAnuncio(fila.id);
       setTituloAnuncio(""); setContenidoAnuncio(""); setProgramarFecha(""); setModoAnuncio("ahora");
-      setImagenAnuncio(null); setImagenAnuncioPreview(null);
+      setImagenesAnuncio([]); setImagenesAnuncioPreview([]);
       cargarAnuncios();
     } catch (e) { setErrorAnuncio(e.message); } finally { setCreandoAnuncio(false); }
   };
@@ -2792,28 +2793,30 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
 
   // ---- Editar o borrar un anuncio ya publicado ----
   const [editandoAnuncio, setEditandoAnuncio] = useState(null); // id
-  const [anuncioEdit, setAnuncioEdit] = useState({ titulo: "", contenido: "", imagen_url: "" });
-  const [nuevaImagenEdit, setNuevaImagenEdit] = useState(null);
-  const [nuevaImagenEditPreview, setNuevaImagenEditPreview] = useState(null);
+  const [anuncioEdit, setAnuncioEdit] = useState({ titulo: "", contenido: "", imagenesExistentes: [] });
+  const [nuevasImagenesEdit, setNuevasImagenesEdit] = useState([]);
+  const [nuevasImagenesEditPreview, setNuevasImagenesEditPreview] = useState([]);
   const [guardandoAnuncio, setGuardandoAnuncio] = useState(null);
   const [borrandoAnuncio, setBorrandoAnuncio] = useState(null);
 
   const abrirEditorAnuncio = (n) => {
     setEditandoAnuncio(n.id);
-    setAnuncioEdit({ titulo: n.titulo || "", contenido: n.contenido || "", imagen_url: n.imagen_url || "" });
-    setNuevaImagenEdit(null);
-    setNuevaImagenEditPreview(null);
+    setAnuncioEdit({ titulo: n.titulo || "", contenido: n.contenido || "", imagenesExistentes: imagenesDeAnuncio(n) });
+    setNuevasImagenesEdit([]);
+    setNuevasImagenesEditPreview([]);
   };
 
   const guardarAnuncioEditado = async (id) => {
     if (!anuncioEdit.titulo.trim() || !anuncioEdit.contenido.trim()) return;
     setGuardandoAnuncio(id);
     try {
-      const imagen_url = nuevaImagenEdit ? await subirImagenAnuncio(nuevaImagenEdit, session) : anuncioEdit.imagen_url || null;
+      const nuevas = nuevasImagenesEdit.length ? await Promise.all(nuevasImagenesEdit.map((f, i) => subirImagenAnuncio(f, session, i))) : [];
+      const urls = [...anuncioEdit.imagenesExistentes, ...nuevas];
       await sbWrite("PATCH", `noticias?id=eq.${id}`, {
         titulo: anuncioEdit.titulo.trim(),
         contenido: anuncioEdit.contenido.trim(),
-        imagen_url,
+        imagen_url: urls[0] || null,
+        imagenes_urls: urls.length ? urls : null,
       }, session);
       setEditandoAnuncio(null);
       cargarAnuncios();
@@ -3331,21 +3334,11 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
           style={inputStyleAnuncio} className="rounded-lg px-3 py-2 text-sm" />
         <textarea placeholder="Contenido del anuncio" rows={3} value={contenidoAnuncio} onChange={(e) => setContenidoAnuncio(e.target.value)}
           style={inputStyleAnuncio} className="rounded-lg px-3 py-2 text-sm" />
-        <div className="flex items-center gap-3">
-          {imagenAnuncioPreview && <img src={imagenAnuncioPreview} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />}
-          <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer">
-            {imagenAnuncioPreview ? "Cambiar imagen" : "+ Agregar imagen (opcional)"}
-            <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              setImagenAnuncio(file);
-              setImagenAnuncioPreview(URL.createObjectURL(file));
-            }} />
-          </label>
-          {imagenAnuncioPreview && (
-            <button type="button" onClick={() => { setImagenAnuncio(null); setImagenAnuncioPreview(null); }} style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
-          )}
-        </div>
+        <SelectorImagenesAnuncio
+          nuevasPreviews={imagenesAnuncioPreview}
+          onAgregar={(files) => { setImagenesAnuncio((a) => [...a, ...files]); setImagenesAnuncioPreview((p) => [...p, ...files.map((f) => URL.createObjectURL(f))]); }}
+          onQuitarNueva={(i) => { setImagenesAnuncio((a) => a.filter((_, j) => j !== i)); setImagenesAnuncioPreview((p) => p.filter((_, j) => j !== i)); }}
+        />
         <div className="flex items-center gap-4 flex-wrap text-sm">
           <label className="flex items-center gap-1.5">
             <input type="radio" checked={modoAnuncio === "ahora"} onChange={() => setModoAnuncio("ahora")} /> Publicar ahora
@@ -3375,7 +3368,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                   <AvatarImg url={n.tiendas?.perfiles?.avatar_url} size={24} />
                   <p className="text-sm font-semibold">{n.tiendas?.nombre || "Tienda"}</p>
                 </div>
-                {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 140, objectFit: "cover" }} className="rounded-lg mb-2 w-full" />}
+                <GaleriaAnuncio n={n} maxHeight={140} />
                 <p className="font-semibold">{n.titulo}</p>
                 <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
                 <div className="flex gap-2 mt-3">
@@ -3404,7 +3397,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                 <p style={{ color: COLORS.muted }} className="text-xs mb-1">
                   Se publica: {new Date(n.fecha_publicacion).toLocaleString("es-MX")}
                 </p>
-                {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 140, objectFit: "cover" }} className="rounded-lg mb-2 w-full" />}
+                <GaleriaAnuncio n={n} maxHeight={140} />
                 <p className="font-semibold">{n.titulo}</p>
                 <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
                 <button onClick={() => borrarAnuncio(n)} disabled={borrandoAnuncio === n.id}
@@ -3428,24 +3421,14 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                     <textarea placeholder="Contenido del anuncio" rows={3} value={anuncioEdit.contenido}
                       onChange={(e) => setAnuncioEdit({ ...anuncioEdit, contenido: e.target.value })}
                       style={inputStyleAnuncio} className="rounded-lg px-3 py-2 text-sm" />
-                    <div className="flex items-center gap-3">
-                      {(nuevaImagenEditPreview || anuncioEdit.imagen_url) && (
-                        <img src={nuevaImagenEditPreview || anuncioEdit.imagen_url} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />
-                      )}
-                      <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer">
-                        Cambiar imagen
-                        <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          setNuevaImagenEdit(file);
-                          setNuevaImagenEditPreview(URL.createObjectURL(file));
-                        }} />
-                      </label>
-                      {(nuevaImagenEditPreview || anuncioEdit.imagen_url) && (
-                        <button type="button" onClick={() => { setNuevaImagenEdit(null); setNuevaImagenEditPreview(null); setAnuncioEdit({ ...anuncioEdit, imagen_url: "" }); }}
-                          style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
-                      )}
-                    </div>
+                    <SelectorImagenesAnuncio
+                      existentes={anuncioEdit.imagenesExistentes}
+                      onQuitarExistente={(i) => setAnuncioEdit({ ...anuncioEdit, imagenesExistentes: anuncioEdit.imagenesExistentes.filter((_, j) => j !== i) })}
+                      nuevasPreviews={nuevasImagenesEditPreview}
+                      onAgregar={(files) => { setNuevasImagenesEdit((a) => [...a, ...files]); setNuevasImagenesEditPreview((p) => [...p, ...files.map((f) => URL.createObjectURL(f))]); }}
+                      onQuitarNueva={(i) => { setNuevasImagenesEdit((a) => a.filter((_, j) => j !== i)); setNuevasImagenesEditPreview((p) => p.filter((_, j) => j !== i)); }}
+                      label="+ Agregar imágenes"
+                    />
                     <div className="flex gap-2">
                       <button onClick={() => guardarAnuncioEditado(n.id)} disabled={guardandoAnuncio === n.id || !anuncioEdit.titulo.trim() || !anuncioEdit.contenido.trim()}
                         style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
@@ -3459,7 +3442,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                     <p style={{ color: COLORS.muted }} className="text-xs mb-1">
                       Publicado: {new Date(n.fecha_publicacion).toLocaleString("es-MX")}
                     </p>
-                    {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 140, objectFit: "cover" }} className="rounded-lg mb-2 w-full" />}
+                    <GaleriaAnuncio n={n} maxHeight={140} />
                     <p className="font-semibold">{n.titulo}</p>
                     <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
                     <div className="flex gap-2 mt-3">
@@ -4910,12 +4893,82 @@ const ESTADO_ANUNCIO_INFO = {
   rechazado: { label: "Rechazado", color: "#C24444" },
 };
 
+function imagenesDeAnuncio(n) {
+  return n.imagenes_urls?.length ? n.imagenes_urls : n.imagen_url ? [n.imagen_url] : [];
+}
+
+// Selector de imágenes para crear/editar un anuncio: soporta varias a la vez,
+// separando las que ya están subidas ("existentes", solo aplica al editar)
+// de las que se acaban de elegir en este picker y todavía no se suben.
+function SelectorImagenesAnuncio({ existentes = [], onQuitarExistente, nuevasPreviews = [], onAgregar, onQuitarNueva, label = "+ Agregar imágenes (opcional)" }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {(existentes.length > 0 || nuevasPreviews.length > 0) && (
+        <div className="flex gap-2 flex-wrap">
+          {existentes.map((url, i) => (
+            <div key={`e${i}`} className="relative">
+              <img src={url} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />
+              <button type="button" onClick={() => onQuitarExistente(i)} style={{ background: "#00000099", color: "#fff" }} className="absolute -top-1.5 -right-1.5 rounded-full w-5 h-5 text-xs leading-none">×</button>
+            </div>
+          ))}
+          {nuevasPreviews.map((url, i) => (
+            <div key={`n${i}`} className="relative">
+              <img src={url} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />
+              <button type="button" onClick={() => onQuitarNueva(i)} style={{ background: "#00000099", color: "#fff" }} className="absolute -top-1.5 -right-1.5 rounded-full w-5 h-5 text-xs leading-none">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer w-fit">
+        {label}
+        <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => {
+          const files = Array.from(e.target.files || []);
+          if (files.length) onAgregar(files);
+          e.target.value = "";
+        }} />
+      </label>
+    </div>
+  );
+}
+
+// Galería para mostrar un anuncio ya publicado: una sola imagen se ve igual
+// que antes, y varias se ven en una tira horizontal con scroll.
+function GaleriaAnuncio({ n, maxHeight = 140, imgClassName = "rounded-lg mb-2 w-full" }) {
+  const urls = imagenesDeAnuncio(n);
+  if (urls.length === 0) return null;
+  if (urls.length === 1) {
+    return <img src={urls[0]} alt="" style={{ maxHeight, objectFit: "cover" }} className={imgClassName} />;
+  }
+  return (
+    <div className={`flex gap-2 overflow-x-auto ${imgClassName}`} style={{ scrollSnapType: "x mandatory" }}>
+      {urls.map((u, i) => (
+        <img key={i} src={u} alt="" style={{ maxHeight, minWidth: 160, objectFit: "cover", scrollSnapAlign: "start" }} className="rounded-lg shrink-0" />
+      ))}
+    </div>
+  );
+}
+
+// Miniatura compacta (una sola imagen) con un "+N" cuando hay más -- para
+// listas apretadas donde no cabe una galería completa.
+function MiniaturaAnuncio({ n, style, className }) {
+  const urls = imagenesDeAnuncio(n);
+  if (urls.length === 0) return null;
+  return (
+    <div className="relative shrink-0">
+      <img src={urls[0]} alt="" style={style} className={className} />
+      {urls.length > 1 && (
+        <span style={{ background: "#000000CC", color: "#fff" }} className="absolute bottom-1 right-1 rounded-full px-1.5 text-[10px] font-semibold">+{urls.length - 1}</span>
+      )}
+    </div>
+  );
+}
+
 function ProponerAnuncio({ session, tiendaId }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [titulo, setTitulo] = useState("");
   const [contenido, setContenido] = useState("");
-  const [imagen, setImagen] = useState(null);
-  const [imagenPreview, setImagenPreview] = useState(null);
+  const [imagenes, setImagenes] = useState([]);
+  const [imagenesPreview, setImagenesPreview] = useState([]);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(null);
   const [misAnuncios, setMisAnuncios] = useState([]);
@@ -4935,18 +4988,19 @@ function ProponerAnuncio({ session, tiendaId }) {
     if (!titulo.trim() || !contenido.trim()) return;
     setEnviando(true); setError(null);
     try {
-      const imagen_url = imagen ? await subirImagenAnuncio(imagen, session) : null;
+      const urls = imagenes.length ? await Promise.all(imagenes.map((f, i) => subirImagenAnuncio(f, session, i))) : [];
       await sbWrite("POST", "noticias", {
         tipo: "anuncio",
         titulo: titulo.trim(),
         contenido: contenido.trim(),
-        imagen_url,
+        imagen_url: urls[0] || null,
+        imagenes_urls: urls.length ? urls : null,
         tienda_id: tiendaId,
         creado_por: session.user.id,
         estado: "pendiente",
         publicado: false,
       }, session);
-      setTitulo(""); setContenido(""); setImagen(null); setImagenPreview(null);
+      setTitulo(""); setContenido(""); setImagenes([]); setImagenesPreview([]);
       cargar();
     } catch (e) { setError(e.message); } finally { setEnviando(false); }
   };
@@ -4961,21 +5015,11 @@ function ProponerAnuncio({ session, tiendaId }) {
         {error && <ErrorBox message={error} />}
         <input placeholder="Título del anuncio" value={titulo} onChange={(e) => setTitulo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
         <textarea placeholder="Contenido del anuncio" rows={3} value={contenido} onChange={(e) => setContenido(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-        <div className="flex items-center gap-3">
-          {imagenPreview && <img src={imagenPreview} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />}
-          <label style={{ border: `1px solid ${COLORS.azul}66`, color: COLORS.azulPalido }} className="rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer">
-            {imagenPreview ? "Cambiar imagen" : "+ Agregar imagen (opcional)"}
-            <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              setImagen(file);
-              setImagenPreview(URL.createObjectURL(file));
-            }} />
-          </label>
-          {imagenPreview && (
-            <button type="button" onClick={() => { setImagen(null); setImagenPreview(null); }} style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
-          )}
-        </div>
+        <SelectorImagenesAnuncio
+          nuevasPreviews={imagenesPreview}
+          onAgregar={(files) => { setImagenes((a) => [...a, ...files]); setImagenesPreview((p) => [...p, ...files.map((f) => URL.createObjectURL(f))]); }}
+          onQuitarNueva={(i) => { setImagenes((a) => a.filter((_, j) => j !== i)); setImagenesPreview((p) => p.filter((_, j) => j !== i)); }}
+        />
         <button onClick={enviar} disabled={enviando || !titulo.trim() || !contenido.trim()}
           style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
           {enviando ? "Enviando..." : "Enviar para aprobación"}
@@ -4988,7 +5032,7 @@ function ProponerAnuncio({ session, tiendaId }) {
             const info = ESTADO_ANUNCIO_INFO[n.estado] || ESTADO_ANUNCIO_INFO.pendiente;
             return (
               <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex gap-3">
-                {n.imagen_url && <img src={n.imagen_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded-lg shrink-0" />}
+                <MiniaturaAnuncio n={n} style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded-lg" />
                 <div className="min-w-0">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <p className="font-medium text-sm">{n.titulo}</p>
@@ -11333,8 +11377,8 @@ export default function EncuentraCartas() {
                         <button key={n.id} onClick={() => setView("news")}
                           style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}`, minWidth: 220, maxWidth: 220 }}
                           className="text-left rounded-xl overflow-hidden shrink-0">
-                          {n.imagen_url ? (
-                            <img src={n.imagen_url} alt="" style={{ height: 100, objectFit: "cover" }} className="w-full" />
+                          {imagenesDeAnuncio(n).length > 0 ? (
+                            <MiniaturaAnuncio n={n} style={{ height: 100, objectFit: "cover" }} className="w-full" />
                           ) : (
                             <div style={{ background: COLORS.surface2, height: 100 }} className="flex items-center justify-center">
                               <Megaphone size={24} color={COLORS.muted} />
@@ -11813,7 +11857,7 @@ export default function EncuentraCartas() {
                     </div>
                     <Badge color={n.tipo === "anuncio" ? COLORS.azulPalido : COLORS.azulMedio}>{n.tipo}</Badge>
                   </div>
-                  {n.imagen_url && <img src={n.imagen_url} alt="" style={{ maxHeight: 260, objectFit: "cover" }} className="rounded-lg mb-3 w-full" />}
+                  <GaleriaAnuncio n={n} maxHeight={260} imgClassName="rounded-lg mb-3 w-full" />
                   <p className="font-semibold text-lg">{n.titulo}</p>
                   <p style={{ color: COLORS.muted }} className="text-sm mt-1">{n.contenido}</p>
                   <p style={{ color: COLORS.muted }} className="text-xs mt-2">

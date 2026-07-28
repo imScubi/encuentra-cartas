@@ -220,9 +220,9 @@ export async function subirAvatar(file, session) {
   return `${SUPABASE_URL}/storage/v1/object/public/avatars/${path}?t=${Date.now()}`;
 }
 
-export async function subirImagenAnuncio(file, session) {
+export async function subirImagenAnuncio(file, session, indice = 0) {
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const path = `${session.user.id}/${Date.now()}.${ext}`;
+  const path = `${session.user.id}/${Date.now()}-${indice}.${ext}`;
   const subir = (s) =>
     fetch(`${SUPABASE_URL}/storage/v1/object/anuncios/${path}`, {
       method: "POST",

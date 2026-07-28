@@ -2880,6 +2880,44 @@ No requiere ninguna migración -- mismo cron, mismo horario diario
 (15:00 UTC / 9:00 a.m. hora de Monterrey), solo cambia qué días de esos
 sí generan boletín.
 
+## 97. Anuncios: adjuntar varias imágenes (antes solo una)
+
+Antes un anuncio (el del admin o el que propone una tienda) solo podía
+llevar una imagen (`imagen_url`). Ahora se le pueden adjuntar varias, y
+se ven todas al publicarlo.
+
+- **Migración 062** (`062_anuncios_multiples_imagenes.sql`): agrega
+  `noticias.imagenes_urls` (`text[]`). `imagen_url` se conserva (guarda
+  siempre la primera imagen) para no romper nada que todavía la lea
+  directo; la migración también rellena `imagenes_urls` para los
+  anuncios que ya existían con una sola imagen.
+- `subirImagenAnuncio(file, session, indice)` (en `src/lib/supabase.js`)
+  ahora recibe un índice que se mete en el nombre del archivo -- subir
+  varias fotos casi al mismo tiempo (`Promise.all`) ya no corre el
+  riesgo de que dos terminen con el mismo nombre (antes solo usaba
+  `Date.now()`, que puede repetirse en el mismo milisegundo) y se
+  pisen entre sí en el bucket.
+- Nuevos componentes compartidos en `src/App.jsx`:
+  - `SelectorImagenesAnuncio`: el picker para crear/editar un anuncio,
+    con miniaturas y una × para quitar cada imagen (ya subida o recién
+    elegida) antes de guardar. Reemplaza al picker de una sola imagen
+    en los 3 lugares donde se crea/edita un anuncio (el admin al crear
+    uno, el admin al editar uno ya publicado, y la tienda al proponer
+    uno).
+  - `GaleriaAnuncio`: cómo se ve un anuncio ya publicado -- si tiene una
+    sola imagen se ve igual que antes; si tiene varias, se ve una tira
+    horizontal con scroll. Se usa en las listas del admin (pendientes,
+    programados, publicados) y en la vista pública "Anuncios y
+    noticias".
+  - `MiniaturaAnuncio`: para los espacios chicos donde no cabe una
+    galería completa (el carrusel de "Anuncios recientes" en Inicio, y
+    la lista compacta de "mis anuncios propuestos" de la tienda) --
+    muestra solo la primera imagen con un "+N" si hay más.
+- `imagenesDeAnuncio(n)`: helper que arma la lista a mostrar, usando
+  `imagenes_urls` si existe y si no cae en `[imagen_url]` -- así los
+  anuncios viejos (sin `imagenes_urls`, de antes de la migración 062)
+  se siguen viendo bien sin tener que backfillear nada a mano.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
