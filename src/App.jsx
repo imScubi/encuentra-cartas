@@ -12,7 +12,7 @@ import {
   setOnSesionRefrescada,
   sb, sbWrite, authSignUp, authSignIn,
   subirAvatar, subirImagenAnuncio, subirImagenABucket, subirImagenCarta, subirImagenMensaje,
-  urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken, pgValor,
+  urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken, pgLikeValor,
 } from "./lib/supabase.js";
 import { setUidActual } from "./lib/errorReporting.jsx";
 import { moderarFotoReal } from "./lib/moderacion.js";
@@ -486,7 +486,7 @@ function BuscadorComprador({ session, excluirId, onSelect }) {
     if (texto.length < 2) { setResultados([]); return; }
     setBuscando(true);
     const t = setTimeout(() => {
-      sb(`perfiles?select=id,nombre,avatar_url,tipo&nombre=ilike.${encodeURIComponent(pgValor(`*${texto}*`))}&id=neq.${excluirId}&limit=8`, session)
+      sb(`perfiles?select=id,nombre,avatar_url,tipo&nombre=ilike.${encodeURIComponent(pgLikeValor(texto))}&id=neq.${excluirId}&limit=8`, session)
         .then(setResultados)
         .catch(() => setResultados([]))
         .finally(() => setBuscando(false));
@@ -2060,7 +2060,7 @@ function CambiarPlanAdmin({ session }) {
     if (!query.trim()) return;
     setBuscando(true); setError(null); setOk(null);
     try {
-      const q = encodeURIComponent(pgValor(`*${query.trim()}*`));
+      const q = encodeURIComponent(pgLikeValor(query));
       const rows = await sb(`perfiles?select=id,nombre,email,tipo,plan,plan_vence,mp_preapproval_id&or=(nombre.ilike.${q},email.ilike.${q})&limit=15`, session);
       setResultados(rows);
     } catch (e) { setError(e.message); } finally { setBuscando(false); }
@@ -2978,7 +2978,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
     if (!buscarPub.trim()) return;
     setBuscandoPub(true); setError(null);
     try {
-      const q = encodeURIComponent(pgValor(`*${buscarPub.trim()}*`));
+      const q = encodeURIComponent(pgLikeValor(buscarPub));
       const [inv, sel, merc] = await Promise.all([
         sb(`inventario_tienda?select=*,tiendas(nombre)&carta=ilike.${q}&order=carta.asc`, session),
         sb(`sellado_tienda?select=*,tiendas(nombre)&producto=ilike.${q}&order=producto.asc`, session),
@@ -9960,7 +9960,7 @@ function filtroPalabrasCartaOSet(texto, campoExtra) {
     .filter(Boolean);
   if (!palabras.length) return "";
   const grupos = palabras.map((w) => {
-    const valor = encodeURIComponent(pgValor(`*${w}*`));
+    const valor = encodeURIComponent(pgLikeValor(w));
     const campos = [`carta.ilike.${valor}`, `set_nombre.ilike.${valor}`];
     // etiquetas_texto: para que un accesorio (mercado_listings.tipo="accesorio")
     // aparezca al buscar una palabra clave (ej. "sylveon") aunque no sea el
@@ -10809,7 +10809,7 @@ export default function EncuentraCartas() {
       setSearchResults({ tiendas: [], mercado: [], sellado: [] });
       return;
     }
-    const q = encodeURIComponent(pgValor(`*${query.trim()}*`));
+    const q = encodeURIComponent(pgLikeValor(query));
     const filtroCartaSet = filtroPalabrasCartaOSet(query);
     // mercado_listings también incluye accesorios (tipo="accesorio") — se buscan
     // además por sus etiquetas_texto, para que "sylveon" encuentre un accesorio
