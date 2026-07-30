@@ -1273,16 +1273,24 @@ function CardPicker({ tcg = "pokemon", onSelect }) {
     // escribía. Solo la búsqueda vigente cuando la promesa resuelve puede
     // actualizar la pantalla.
     let cancelado = false;
+    // Además de ignorar una respuesta vieja (arriba), se cancela de plano la
+    // petición todavía en curso en cuanto se escribe la siguiente letra --
+    // antes se dejaba viva compitiendo por ancho de banda y por el cupo de
+    // tasa de la API externa con la búsqueda nueva, lo que hacía sentir más
+    // lenta justo a la búsqueda que sí importa.
+    let controller = null;
     const t = setTimeout(() => {
-      buscarCartasCatalogo(tcg, q.trim())
+      controller = new AbortController();
+      buscarCartasCatalogo(tcg, q.trim(), controller.signal)
         .then((r) => { if (!cancelado) { setResults(r); setError(false); } })
         // Un error real (falló la conexión con el catálogo, ya con reintentos
         // agotados) es distinto de "no hay resultados" — si se muestran igual,
         // el usuario no puede saber si debe reintentar o de plano no existe la carta.
-        .catch(() => { if (!cancelado) { setResults([]); setError(true); } })
+        // Un abort (búsqueda cancelada a propósito) no es un error real.
+        .catch((e) => { if (!cancelado && e?.name !== "AbortError") { setResults([]); setError(true); } })
         .finally(() => { if (!cancelado) setLoading(false); });
     }, 400);
-    return () => { cancelado = true; clearTimeout(t); };
+    return () => { cancelado = true; clearTimeout(t); controller?.abort(); };
   }, [q, tcg]);
 
   const seleccionar = (c) => {
