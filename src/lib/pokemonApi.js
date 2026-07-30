@@ -1,5 +1,15 @@
 import { USD_TO_MXN, EUR_TO_MXN } from "../theme.js";
 
+// ---- Llave gratuita opcional de pokemontcg.io ----
+// pokemontcg.io es, con mucho, la fuente más castigada por su propio límite
+// de tasa sin llave (Pokémon es el TCG con más tráfico de búsqueda de la
+// app) -- registrarse es gratis e instantáneo en https://pokemontcg.io/ y
+// sube ese límite bastante. Se lee de una variable de entorno de Vite para
+// no depender de que alguien la escriba directo en el código; si no está
+// puesta, todo sigue funcionando exactamente igual que antes (sin llave).
+const POKEMONTCG_API_KEY = import.meta.env?.VITE_POKEMONTCG_API_KEY || null;
+const HEADERS_POKEMONTCG = POKEMONTCG_API_KEY ? { "X-Api-Key": POKEMONTCG_API_KEY } : undefined;
+
 // ---- Reintentos para llamadas a APIs externas (pokemontcg.io, Scryfall,
 // YGOPRODeck, lorcana-api) ----
 // Ninguna de estas APIs usa llave (para no pedirle una cuenta al usuario),
@@ -10,17 +20,31 @@ import { USD_TO_MXN, EUR_TO_MXN } from "../theme.js";
 // "no hay resultados" de forma intermitente, aunque la carta/set sí
 // existiera. Con reintento + espera creciente, la enorme mayoría de esos
 // fallos transitorios se resuelven solos sin que el usuario note nada.
-async function fetchConReintento(url, intentos = 3, esperaBaseMs = 500) {
+// "signal" (opcional) es un AbortSignal: cuando quien busca ya escribió la
+// siguiente letra o cerró el buscador, CardPicker cancela la petición
+// anterior en vez de dejarla viva compitiendo por ancho de banda/cupo de
+// tasa con la petición nueva (antes se seguía esperando su respuesta aunque
+// a nadie ya le importara, lo que hacía más lenta a la búsqueda vigente y
+// gastaba peticiones del límite gratuito de la API sin necesidad).
+// "headers" (opcional) se usa solo para mandar la llave de pokemontcg.io
+// cuando existe (ver POKEMONTCG_API_KEY más abajo).
+async function fetchConReintento(url, intentos = 3, esperaBaseMs = 500, signal, headers) {
   let ultimoError;
+  const opciones = {};
+  if (signal) opciones.signal = signal;
+  if (headers) opciones.headers = headers;
   for (let i = 0; i < intentos; i++) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, opciones);
       if (res.ok) return res;
       // Un 429 (límite de tasa) o 5xx vale la pena reintentar; un 4xx normal
       // (ej. 404 de "sin resultados") no va a cambiar si lo repetimos.
       if (res.status !== 429 && res.status < 500) return res;
       ultimoError = new Error(`HTTP ${res.status}`);
     } catch (e) {
+      // Cancelado a propósito (búsqueda nueva o se cerró el buscador) --
+      // no tiene caso reintentar algo que ya nadie espera.
+      if (e?.name === "AbortError") throw e;
       ultimoError = e;
     }
     if (i < intentos - 1) await new Promise((r) => setTimeout(r, esperaBaseMs * (i + 1)));
@@ -70,7 +94,7 @@ export async function buscarImagenRespaldo(nombre, numero, setNombre) {
     const buscar = async (conSet) => {
       let query = `name:"${nombre}" number:"${numero}"`;
       if (conSet && setNombre) query += ` set.name:"${setNombre}"`;
-      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=20`);
+      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=20`, HEADERS_POKEMONTCG ? { headers: HEADERS_POKEMONTCG } : undefined);
       if (!res.ok) return [];
       const data = await res.json();
       return data?.data || [];
@@ -211,7 +235,7 @@ function mapearYOrdenarCartasPokemonTCG(cartas, numero) {
   }));
 }
 
-export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
+export async function buscarCartasVisual(texto, itemsPorCombo = 8, signal) {
   const q = (texto || "").trim();
   if (q.length < 3) return [];
   const { restante, numero } = extraerNumeroDeTexto(q);
@@ -233,13 +257,16 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8) {
     const query = construirQueryPokemonTCG({ nombre, set, numero });
     if (!query) continue;
     try {
-      const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=${itemsPorCombo}`);
+      const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=${itemsPorCombo}`, 3, 500, signal, HEADERS_POKEMONTCG);
       algunaConectoBien = true;
       if (!res.ok) continue; // 404 normal de "esta combinación no existe" -- se prueba la siguiente
       const data = await res.json();
       const cartas = data?.data || [];
       if (cartas.length > 0) return mapearYOrdenarCartasPokemonTCG(cartas, numero);
     } catch (e) {
+      // Cancelado a propósito -- no tiene caso seguir probando más
+      // combinaciones de una búsqueda que ya nadie espera.
+      if (e?.name === "AbortError") throw e;
       // Falló de verdad esta combinación (agotó los reintentos) -- se
       // prueba la siguiente combinación en vez de rendirse de una vez.
       ultimoError = e;
@@ -272,10 +299,10 @@ function precioRefDeCartaScryfall(c) {
   return null;
 }
 
-export async function buscarCartasMagic(texto, limite = 24) {
+export async function buscarCartasMagic(texto, limite = 24, signal) {
   const q = (texto || "").trim();
   if (q.length < 3) return [];
-  const res = await fetchConReintento(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&order=name&unique=cards`);
+  const res = await fetchConReintento(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&order=name&unique=cards`, 3, 500, signal);
   if (!res.ok) return []; // incluye el 404 de "sin resultados" de Scryfall, no es un error real
   const data = await res.json();
   return (data?.data || []).slice(0, limite).map((c) => ({
@@ -318,10 +345,10 @@ function precioRefDeCartaYgoprodeck(c) {
   return null;
 }
 
-export async function buscarCartasYugioh(texto, limite = 24) {
+export async function buscarCartasYugioh(texto, limite = 24, signal) {
   const q = (texto || "").trim();
   if (q.length < 3) return [];
-  const res = await fetchConReintento(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+  const res = await fetchConReintento(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`, 3, 500, signal);
   if (!res.ok) return []; // YGOPRODeck responde 400 cuando no hay ninguna coincidencia, no es un error real
   const data = await res.json();
   return (data?.data || []).slice(0, limite).map((c) => ({
@@ -359,22 +386,22 @@ export async function obtenerPrecioRefActualYugioh(cardApiId) {
 // variantes (may­úscula/minúscula) por si acaso; si algo sale con nombre o
 // imagen en blanco, avisa para ajustar el mapeo.
 let _lorcanaCache = null;
-async function obtenerTodasLasCartasLorcana() {
+async function obtenerTodasLasCartasLorcana(signal) {
   if (_lorcanaCache) return _lorcanaCache;
   // Ojo: no se cachea un [] por error de red — si se cacheara, un fallo
   // transitorio dejaría el catálogo de Lorcana "vacío" para el resto de la
   // sesión sin volver a intentarlo nunca. Solo se guarda en cache un
   // resultado que sí llegó bien.
-  const res = await fetchConReintento("https://api.lorcana-api.com/cards/all");
+  const res = await fetchConReintento("https://api.lorcana-api.com/cards/all", 3, 500, signal);
   const data = await res.json();
   _lorcanaCache = Array.isArray(data) ? data : (data?.cards || data?.results || []);
   return _lorcanaCache;
 }
 
-export async function buscarCartasLorcana(texto, limite = 24) {
+export async function buscarCartasLorcana(texto, limite = 24, signal) {
   const q = (texto || "").trim().toLowerCase();
   if (q.length < 3) return [];
-  const todas = await obtenerTodasLasCartasLorcana();
+  const todas = await obtenerTodasLasCartasLorcana(signal);
   return todas
     .filter((c) => (c.Name || c.name || "").toLowerCase().includes(q))
     .slice(0, limite)
@@ -412,7 +439,7 @@ export async function obtenerErasYSetsPokemon() {
   // No se cachea un [] por error — si el fetch de verdad falla, se deja
   // _setsPokemonCache sin tocar para que el siguiente intento vuelva a
   // pedirlo, en vez de quedar "vacío" para siempre en esta sesión.
-  const res = await fetchConReintento("https://api.pokemontcg.io/v2/sets?pageSize=250&orderBy=-releaseDate");
+  const res = await fetchConReintento("https://api.pokemontcg.io/v2/sets?pageSize=250&orderBy=-releaseDate", 3, 500, undefined, HEADERS_POKEMONTCG);
   const data = await res.json();
   const sets = data?.data || [];
   const porEra = new Map();
@@ -441,7 +468,7 @@ export async function obtenerErasYSetsPokemon() {
 export async function obtenerCartasDeSetPokemon(setId) {
   const cartas = [];
   for (let page = 1; page <= 2; page++) {
-    const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=set.id:${encodeURIComponent(setId)}&pageSize=250&page=${page}&orderBy=number`);
+    const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=set.id:${encodeURIComponent(setId)}&pageSize=250&page=${page}&orderBy=number`, 3, 500, undefined, HEADERS_POKEMONTCG);
     if (!res.ok) break;
     const data = await res.json();
     const lote = data?.data || [];
@@ -599,6 +626,17 @@ export async function obtenerCartasDeSetCatalogo(tcg, setId) {
   }
 }
 
+// Cache de resultados de búsqueda por (tcg + texto exacto), de corta
+// duración -- mientras alguien escribe suele pausarse, borrar una letra y
+// volver a escribirla, o reabrir el buscador para la misma carta que ya
+// buscó hace un momento; sin esto cada una de esas repeticiones vuelve a
+// gastar una petición completa contra la API externa (y su límite de tasa)
+// por algo que ya se sabía. 2 minutos es corto a propósito: lo justo para
+// cubrir ese vaivén normal de tipeo sin arriesgarse a mostrar un precio de
+// referencia desactualizado por mucho tiempo.
+const CACHE_BUSQUEDA_TTL_MS = 2 * 60 * 1000;
+const _cacheBusqueda = new Map();
+
 // Elige el catálogo correcto según el TCG de la publicación (ver
 // TCG_CON_CATALOGO en theme.js: qué TCG ya tienen buscador de texto libre).
 // One Piece todavía no tiene una fuente gratis confiable de texto libre —
@@ -614,12 +652,23 @@ export async function obtenerCartasDeSetCatalogo(tcg, setId) {
 // viera igual que "esa carta no existe" -- quien buscaba una carta de
 // Magic real se quedaba viendo "sin resultados" para CUALQUIER búsqueda,
 // sin ninguna pista de que el problema era la conexión y no el catálogo.
-export async function buscarCartasCatalogo(tcg, texto) {
-  if (tcg === "magic") return buscarCartasMagic(texto);
-  if (tcg === "pokemon") return buscarCartasVisual(texto);
-  if (tcg === "yugioh") return buscarCartasYugioh(texto);
-  if (tcg === "lorcana") return buscarCartasLorcana(texto);
-  return [];
+// "signal" (opcional): CardPicker cancela la búsqueda anterior en cuanto
+// hay una nueva, para no dejar peticiones viejas compitiendo con la vigente.
+export async function buscarCartasCatalogo(tcg, texto, signal) {
+  const clave = `${tcg}::${(texto || "").trim().toLowerCase()}`;
+  const enCache = _cacheBusqueda.get(clave);
+  if (enCache && Date.now() - enCache.ts < CACHE_BUSQUEDA_TTL_MS) return enCache.resultado;
+
+  let resultado;
+  if (tcg === "magic") resultado = await buscarCartasMagic(texto, 24, signal);
+  else if (tcg === "pokemon") resultado = await buscarCartasVisual(texto, 8, signal);
+  else if (tcg === "yugioh") resultado = await buscarCartasYugioh(texto, 24, signal);
+  else if (tcg === "lorcana") resultado = await buscarCartasLorcana(texto, 24, signal);
+  else resultado = [];
+
+  if (_cacheBusqueda.size > 200) _cacheBusqueda.clear(); // tope simple, no hace falta ser precisos aquí
+  _cacheBusqueda.set(clave, { ts: Date.now(), resultado });
+  return resultado;
 }
 
 export async function obtenerPrecioRefActualPorTcg(tcg, cardApiId) {

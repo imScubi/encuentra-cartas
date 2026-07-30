@@ -2947,6 +2947,51 @@ manejo de error propio) se quedan igual que antes, atrapando el error.
 
 No requiere ninguna migración.
 
+## 99. Optimizar el buscador de cartas al publicar (lento e inconsistente)
+
+Reporte: el buscador de cartas al publicar tardaba mucho en responder y a
+veces no traía las cartas buscadas -- para los 4 TCG con buscador de texto
+(Pokémon, Magic, Yu-Gi-Oh, Lorcana), todos apoyados en APIs gratis y sin
+llave (pokemontcg.io, Scryfall, YGOPRODeck, lorcana-api). Cambios, todos en
+`src/lib/pokemonApi.js` salvo el último:
+
+- **Cancelar la búsqueda anterior de verdad**: antes, al escribir la
+  siguiente letra, la petición anterior se ignoraba pero se dejaba viva de
+  todos modos -- seguía gastando ancho de banda y cupo del límite de tasa
+  de la API compitiendo con la búsqueda que sí importa. Ahora `CardPicker`
+  (en `src/App.jsx`) crea un `AbortController` por búsqueda y cancela el
+  anterior en cuanto hay uno nuevo (o se cierra el buscador); `fetchConReintento`
+  ya no reintenta un `AbortError` (cancelar a propósito no es una falla).
+- **Cache corta de búsquedas repetidas** (`buscarCartasCatalogo`, 2
+  minutos): escribir, pausar, borrar una letra y volver a escribirla, o
+  reabrir el buscador para la misma carta ya buscada hace un momento, antes
+  volvía a gastar una petición completa contra la API por algo que ya se
+  sabía. Ahora esa repetición exacta (mismo TCG + mismo texto) responde al
+  instante desde memoria.
+- **Llave gratuita opcional de pokemontcg.io**: de las 4 fuentes, esta es
+  la más castigada por su límite de tasa sin llave -- y Pokémon es, con
+  mucho, el TCG con más búsquedas de la app. Se agregó soporte para una
+  variable de entorno `VITE_POKEMONTCG_API_KEY` (Vercel → Settings →
+  Environment Variables): si está puesta, se manda como header `X-Api-Key`
+  en todas las llamadas a pokemontcg.io (búsqueda, Catálogo por sets,
+  respaldo de imagen); si no está, todo sigue exactamente igual que antes.
+  Conseguirla es gratis e instantáneo en https://pokemontcg.io/ (crear
+  cuenta → la llave aparece en el dashboard) y sube bastante el límite de
+  peticiones por minuto -- es, con diferencia, el cambio de mayor impacto
+  posible para la lentitud/inconsistencia de Pokémon, pero requiere que
+  alguien con acceso a Vercel la agregue como variable de entorno; no se
+  puede activar solo con código.
+
+Lo que se dejó igual a propósito: la búsqueda de Pokémon sigue probando sus
+hasta 5 combinaciones de nombre/set EN ORDEN (no en paralelo) -- así se
+dejó desde la sección 178 precisamente para no saturar el límite de tasa
+sin llave. Revertir eso de forma segura sí conviene una vez que la llave de
+pokemontcg.io esté puesta (más margen para probar combinaciones en
+paralelo sin arriesgarse a los 429 de antes); queda como posible siguiente
+paso, no se tocó en este cambio.
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
