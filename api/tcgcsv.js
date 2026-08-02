@@ -97,7 +97,16 @@ async function justTcgProxy(req, res) {
     const crudo = await upstream.text();
     let data;
     try { data = JSON.parse(crudo); } catch { data = { crudo }; }
-    res.status(200).json({ statusJustTcg: upstream.status, urlConsultada: url, data });
+    // Si JustTCG nos está limitando (429), reenviamos su "Retry-After" para
+    // que la página del experimento espere lo que realmente pide, en vez de
+    // adivinar cuánto.
+    const retryAfterSeg = Number(upstream.headers.get("retry-after"));
+    res.status(200).json({
+      statusJustTcg: upstream.status,
+      urlConsultada: url,
+      retryAfterMs: Number.isFinite(retryAfterSeg) && retryAfterSeg > 0 ? retryAfterSeg * 1000 : null,
+      data,
+    });
   } catch (e) {
     res.status(502).json({ error: "No se pudo conectar con JustTCG.", detalle: e.message });
   }

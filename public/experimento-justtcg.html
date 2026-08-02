@@ -132,11 +132,25 @@
       const candidato = variante?.price ?? variante?.market ?? variante?.marketPrice ?? carta?.price ?? carta?.market_price ?? null;
       return candidato != null ? Number(candidato) : null;
     }
+    // JustTCG nos limita si mandamos peticiones muy seguido (429). Si pasa,
+    // esperamos lo que su header "Retry-After" pida (o 2s/4s/8s si no lo
+    // manda) y reintentamos, en vez de reportar error de inmediato.
+    async function fetchJustTcgConReintento(url, intentos = 4) {
+      let esperaMs = 2000;
+      for (let i = 0; i < intentos; i++) {
+        const res = await fetch(url);
+        const envoltura = await res.json();
+        $("crudo").textContent = JSON.stringify(envoltura, null, 2);
+        if (envoltura.statusJustTcg === 429 && i < intentos - 1) {
+          await new Promise((r) => setTimeout(r, envoltura.retryAfterMs || esperaMs));
+          esperaMs *= 2;
+          continue;
+        }
+        return envoltura;
+      }
+    }
     async function buscarEnJustTcg(juego, texto) {
-      const res = await fetch(`/api/tcgcsv?fuente=justtcg&game=${encodeURIComponent(juego)}&q=${encodeURIComponent(texto)}`);
-      const envoltura = await res.json();
-      $("crudo").textContent = JSON.stringify(envoltura, null, 2);
-      return envoltura;
+      return fetchJustTcgConReintento(`/api/tcgcsv?fuente=justtcg&game=${encodeURIComponent(juego)}&q=${encodeURIComponent(texto)}`);
     }
 
     // ---- PARTE 1 ----
@@ -198,7 +212,7 @@
 
     async function cargarPublicacionesReales() {
       const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
-      const campos = "id,carta,tcg,precio,precio_ref_mxn,imagen_url";
+      const campos = "id,carta,tcg,set_nombre,precio,precio_ref_mxn,imagen_url";
       const [mercado, tienda] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/mercado_listings?select=${campos}&tipo=eq.carta&en_venta=eq.true&order=created_at.desc&limit=6`, { headers }).then((r) => r.json()),
         fetch(`${SUPABASE_URL}/rest/v1/inventario_tienda?select=${campos}&en_venta=eq.true&order=created_at.desc&limit=6`, { headers }).then((r) => r.json()),
@@ -253,9 +267,7 @@
       const contenedor = document.getElementById(contenedorId);
       contenedor.innerHTML = '<p class="estado">Consultando historial en JustTCG...</p>';
       try {
-        const res = await fetch(`/api/tcgcsv?fuente=justtcg&cardId=${encodeURIComponent(cardId)}`);
-        const envoltura = await res.json();
-        $("crudo").textContent = JSON.stringify(envoltura, null, 2);
+        const envoltura = await fetchJustTcgConReintento(`/api/tcgcsv?fuente=justtcg&cardId=${encodeURIComponent(cardId)}`);
         if (envoltura.error || envoltura.statusJustTcg >= 400) {
           contenedor.innerHTML = `<p class="estado">No se pudo traer el detalle (${envoltura.error || "status " + envoltura.statusJustTcg}). Revisa "Ver respuesta cruda" -- puede que el endpoint de detalle no sea /v1/cards/{id} en su API real.</p>`;
           return;
@@ -302,7 +314,7 @@
           <div class="info">
             <span class="origen">${f.origen}</span>
             <div><b>${f.carta}</b></div>
-            <div class="estado">Nuestro precio: $${Number(f.precio).toLocaleString("es-MX")} MXN${f.precio_ref_mxn ? ` · ref. guardada: ~$${Number(f.precio_ref_mxn).toLocaleString("es-MX")} MXN` : ""}</div>
+            <div class="estado">Nuestro precio: $${Number(f.precio).toLocaleString("es-MX")} MXN${f.precio_ref_mxn ? ` · ref. guardada: ~$${Number(f.precio_ref_mxn).toLocaleString("es-MX")} MXN` : ""}${f.set_nombre ? ` · nuestro set: ${f.set_nombre}` : ""}</div>
           </div>
           <div class="comparacion" id="comp-${i}">Esperando turno...</div>
           <div class="grafica-wrap" id="graf-${i}"></div>
@@ -326,9 +338,20 @@
               const primera = lista[0];
               const precioJustTcg = extraerPrecio(primera);
               const cardId = primera.id || primera.cardId || primera.tcgplayerId || "";
+              const setJustTcg = primera.set || primera.set_name || primera.expansion || "";
+              // JustTCG solo empareja por nombre (no tenemos su ID guardado
+              // desde que se publicó la carta), así que puede regresar otra
+              // versión/impresión -- ej. un promo "jumbo" en vez de la carta
+              // de set normal. Si el set que regresó no se parece en nada al
+              // que tenemos nosotros, lo avisamos en vez de dar el precio
+              // como si fuera un match confirmado.
+              const setsNoCoinciden = f.set_nombre && setJustTcg &&
+                !setJustTcg.toLowerCase().includes(f.set_nombre.toLowerCase().slice(0, 6)) &&
+                !f.set_nombre.toLowerCase().includes(setJustTcg.toLowerCase().slice(0, 6));
               compEl.innerHTML = `
                 <span class="ok">JustTCG: ${precioJustTcg != null ? "$" + precioJustTcg.toLocaleString("en-US") + " USD" : "sin precio"}</span><br/>
-                <span style="color:#8291B5; font-size:12px;">${primera.name || ""}${primera.set ? " · " + primera.set : ""}</span><br/>
+                <span style="color:#8291B5; font-size:12px;">${primera.name || ""}${setJustTcg ? " · " + setJustTcg : ""}</span><br/>
+                ${setsNoCoinciden ? '<span style="color:#E8B84B; font-size:11px;">⚠️ El set no coincide con el nuestro -- probablemente es otra versión/impresión de la carta, no la misma.</span><br/>' : ""}
                 ${cardId ? `<button class="secundario" style="margin-top:6px;" onclick="verHistorial('${cardId}', 'graf-${i}')">Ver historial de precio</button>` : ""}
               `;
             }
@@ -336,7 +359,7 @@
         } catch (e) {
           compEl.innerHTML = `<span class="no">Error: ${e.message}</span>`;
         }
-        await new Promise((r) => setTimeout(r, 350)); // no saturar la cuota de JustTCG
+        await new Promise((r) => setTimeout(r, 1200)); // no saturar la cuota de JustTCG (con 350ms se topó con 429 seguido)
       }
       estadoComparar.textContent = "Listo.";
       btnComparar.disabled = false;
