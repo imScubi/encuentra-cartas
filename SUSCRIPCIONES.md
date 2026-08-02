@@ -3155,6 +3155,44 @@ experimento, al estilo de Collectr.
 
 No requiere ninguna migración.
 
+## 105. Experimento JustTCG: corregir 429, slugs de juego y panel de diagnóstico compartido
+
+Petición (seguimiento de la 104, con capturas de pantalla reales del
+experimento en producción): el comparador se topaba con error 429
+("demasiadas peticiones") en varias filas pese al primer intento de
+espaciar las búsquedas, y una carta de tienda ("Mega Greninja ex") hacía
+match con una versión "jumbo" que no era la misma carta publicada.
+
+- **429 con reintento real**: el proxy (`api/tcgcsv.js`) ahora reenvía el
+  header `Retry-After` de JustTCG como `retryAfterMs`, y la página
+  reintenta automáticamente esperando ese tiempo (o 2s/4s/8s si no lo
+  manda) en vez de reportar error de inmediato. También se subió la
+  pausa entre búsquedas del comparador de 350ms a 1.2s.
+- **Bug real encontrado con los datos de prueba**: los slugs de juego
+  que se le mandaban a JustTCG para One Piece y Lorcana (`onepiece`,
+  `lorcana`) eran inválidos -- JustTCG regresó en un error 400 su lista
+  completa de slugs aceptados, y los correctos son
+  `one-piece-card-game` y `disney-lorcana`. Esto hacía que **toda**
+  búsqueda de esos dos TCG fallara con 400, no que las cartas no
+  existieran en JustTCG como se pensó al principio. Ya corregido en el
+  selector de la parte 1 y en el mapa `JUEGO_JUSTTCG` de la parte 2.
+- **Aviso de versión distinta (set no coincide)**: como JustTCG solo
+  empareja por nombre, ahora compara el `set_nombre` guardado en la
+  publicación real contra el set que regresó JustTCG, y muestra
+  "⚠️ El set no coincide con el nuestro" cuando no se parecen -- así se
+  detectó el caso de Mega Greninja ex (nuestro set "Chaos Rising"
+  vs. el "jumbo-cards-pokemon" que regresó JustTCG).
+- **Fix de UX en el diagnóstico**: el panel compartido "Ver respuesta
+  cruda" se estaba pisando solo -- como el comparador sigue buscando
+  fila por fila en segundo plano, para cuando el usuario abría el panel
+  después de pedir el historial de una carta, ya mostraba la respuesta
+  de una fila distinta más abajo en la lista. Ahora las búsquedas
+  automáticas del comparador ya no tocan ese panel compartido; cada fila
+  guarda su propia respuesta y tiene su botón "Ver respuesta cruda de
+  esta fila" para inspeccionarla sin que se sobreescriba.
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
