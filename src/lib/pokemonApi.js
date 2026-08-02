@@ -212,19 +212,23 @@ function construirQueryPokemonTCG({ nombre, set, numero }) {
 // precio de referencia en blanco. Lo mismo del lado de Cardmarket: si no
 // hay "trendPrice" (que también depende de ventas históricas) se prueba con
 // el precio promedio de venta o el más bajo disponible.
+// Regresa { precioMxn, fuente } en vez de solo el número -- "fuente" es de
+// dónde salió ese precio (TCGplayer o Cardmarket), para poder mostrarlo
+// junto al precio de referencia en vez de dejar que parezca un número que
+// la app se inventó.
 function precioRefDeCartaPokemonTCG(c) {
   const tp = c.tcgplayer?.prices;
   if (tp) {
     const variante = tp.normal || tp.holofoil || tp.reverseHolofoil || tp.unlimited || tp["1stEditionHolofoil"];
     const precio = variante?.market ?? variante?.mid ?? variante?.low;
-    if (precio) return Math.round(precio * USD_TO_MXN);
+    if (precio) return { precioMxn: Math.round(precio * USD_TO_MXN), fuente: "TCGplayer" };
   }
   const cm = c.cardmarket?.prices;
   if (cm) {
     const precio = cm.trendPrice ?? cm.averageSellPrice ?? cm.avg1 ?? cm.lowPrice;
-    if (precio) return Math.round(precio * EUR_TO_MXN);
+    if (precio) return { precioMxn: Math.round(precio * EUR_TO_MXN), fuente: "Cardmarket" };
   }
-  return null;
+  return { precioMxn: null, fuente: null };
 }
 
 function mapearYOrdenarCartasPokemonTCG(cartas, numero) {
@@ -236,15 +240,19 @@ function mapearYOrdenarCartasPokemonTCG(cartas, numero) {
       return bExacta - aExacta;
     });
   }
-  return combinado.slice(0, 24).map((c) => ({
-    id: c.id,
-    name: c.name,
-    localId: c.number,
-    setName: c.set?.name || "",
-    setTotal: c.set?.printedTotal || c.set?.total || "",
-    image: c.images?.large || c.images?.small || null,
-    precioRefMxn: precioRefDeCartaPokemonTCG(c),
-  }));
+  return combinado.slice(0, 24).map((c) => {
+    const precio = precioRefDeCartaPokemonTCG(c);
+    return {
+      id: c.id,
+      name: c.name,
+      localId: c.number,
+      setName: c.set?.name || "",
+      setTotal: c.set?.printedTotal || c.set?.total || "",
+      image: c.images?.large || c.images?.small || null,
+      precioRefMxn: precio.precioMxn,
+      precioRefFuente: precio.fuente,
+    };
+  });
 }
 
 export async function buscarCartasVisual(texto, itemsPorCombo = 8, signal) {
@@ -303,16 +311,19 @@ function imagenDeCartaScryfall(c) {
     || c.card_faces?.[0]?.image_uris?.normal || c.card_faces?.[0]?.image_uris?.large || null;
 }
 
+// Regresa { precioMxn, fuente } -- Scryfall documenta que sus precios "usd"
+// vienen de TCGplayer y los "eur" de Cardmarket, así que se le atribuye la
+// fuente real y no "Scryfall" (que solo es quien lo reenvía).
 function precioRefDeCartaScryfall(c) {
   // "usd_etched" (versión con acabado "etched") como último respaldo -- no
   // cubre el caso de una carta genuinamente recién salida sin ninguna venta
   // registrada todavía, pero sí ayuda con variantes de foil que a veces
   // llegan sin el precio "usd" normal pero sí con el de etched.
   const usd = c.prices?.usd || c.prices?.usd_foil || c.prices?.usd_etched;
-  if (usd) return Math.round(Number(usd) * USD_TO_MXN);
+  if (usd) return { precioMxn: Math.round(Number(usd) * USD_TO_MXN), fuente: "TCGplayer" };
   const eur = c.prices?.eur || c.prices?.eur_foil || c.prices?.eur_etched;
-  if (eur) return Math.round(Number(eur) * EUR_TO_MXN);
-  return null;
+  if (eur) return { precioMxn: Math.round(Number(eur) * EUR_TO_MXN), fuente: "Cardmarket" };
+  return { precioMxn: null, fuente: null };
 }
 
 export async function buscarCartasMagic(texto, limite = 24, signal) {
@@ -321,15 +332,19 @@ export async function buscarCartasMagic(texto, limite = 24, signal) {
   const res = await fetchConReintento(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&order=name&unique=cards`, 3, 500, signal);
   if (!res.ok) return []; // incluye el 404 de "sin resultados" de Scryfall, no es un error real
   const data = await res.json();
-  return (data?.data || []).slice(0, limite).map((c) => ({
-    id: c.id,
-    name: c.name,
-    localId: c.collector_number,
-    setName: c.set_name || "",
-    setTotal: "",
-    image: imagenDeCartaScryfall(c),
-    precioRefMxn: precioRefDeCartaScryfall(c),
-  }));
+  return (data?.data || []).slice(0, limite).map((c) => {
+    const precio = precioRefDeCartaScryfall(c);
+    return {
+      id: c.id,
+      name: c.name,
+      localId: c.collector_number,
+      setName: c.set_name || "",
+      setTotal: "",
+      image: imagenDeCartaScryfall(c),
+      precioRefMxn: precio.precioMxn,
+      precioRefFuente: precio.fuente,
+    };
+  });
 }
 
 export async function obtenerPrecioRefActualMagic(cardApiId) {
@@ -338,8 +353,10 @@ export async function obtenerPrecioRefActualMagic(cardApiId) {
     const res = await fetch(`https://api.scryfall.com/cards/${encodeURIComponent(cardApiId)}`);
     if (!res.ok) return null;
     const c = await res.json();
+    const precio = precioRefDeCartaScryfall(c);
     return {
-      precioRefMxn: precioRefDeCartaScryfall(c),
+      precioRefMxn: precio.precioMxn,
+      precioRefFuente: precio.fuente,
       tcgplayerUrl: c.purchase_uris?.tcgplayer || null,
       cardmarketUrl: c.purchase_uris?.cardmarket || null,
     };
@@ -351,14 +368,25 @@ export async function obtenerPrecioRefActualMagic(cardApiId) {
 // ---- Yu-Gi-Oh! — YGOPRODeck, gratis y sin llave. A diferencia de Scryfall,
 // el precio viene ya calculado por carta (varias fuentes) en la misma
 // respuesta, no hay que pedirlo aparte. ----
+// Regresa { precioMxn, fuente } -- a diferencia de Pokémon/Magic, YGOPRODeck
+// junta varias fuentes de precio distintas en la misma respuesta, así que
+// aquí sí importa cuál de ellas fue realmente la que trajo el número.
 function precioRefDeCartaYgoprodeck(c) {
   const precios = c.card_prices?.[0];
-  if (!precios) return null;
-  const usd = Number(precios.tcgplayer_price || precios.ebay_price || precios.amazon_price || precios.coolstuffinc_price || 0);
-  if (usd > 0) return Math.round(usd * USD_TO_MXN);
+  if (!precios) return { precioMxn: null, fuente: null };
+  const candidatosUsd = [
+    ["TCGplayer", precios.tcgplayer_price],
+    ["eBay", precios.ebay_price],
+    ["Amazon", precios.amazon_price],
+    ["CoolStuffInc", precios.coolstuffinc_price],
+  ];
+  for (const [fuente, valor] of candidatosUsd) {
+    const usd = Number(valor || 0);
+    if (usd > 0) return { precioMxn: Math.round(usd * USD_TO_MXN), fuente };
+  }
   const eur = Number(precios.cardmarket_price || 0);
-  if (eur > 0) return Math.round(eur * EUR_TO_MXN);
-  return null;
+  if (eur > 0) return { precioMxn: Math.round(eur * EUR_TO_MXN), fuente: "Cardmarket" };
+  return { precioMxn: null, fuente: null };
 }
 
 export async function buscarCartasYugioh(texto, limite = 24, signal) {
@@ -367,15 +395,19 @@ export async function buscarCartasYugioh(texto, limite = 24, signal) {
   const res = await fetchConReintento(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`, 3, 500, signal);
   if (!res.ok) return []; // YGOPRODeck responde 400 cuando no hay ninguna coincidencia, no es un error real
   const data = await res.json();
-  return (data?.data || []).slice(0, limite).map((c) => ({
-    id: String(c.id),
-    name: c.name,
-    localId: c.card_sets?.[0]?.set_code || "",
-    setName: c.card_sets?.[0]?.set_name || c.type || "",
-    setTotal: "",
-    image: c.card_images?.[0]?.image_url || null,
-    precioRefMxn: precioRefDeCartaYgoprodeck(c),
-  }));
+  return (data?.data || []).slice(0, limite).map((c) => {
+    const precio = precioRefDeCartaYgoprodeck(c);
+    return {
+      id: String(c.id),
+      name: c.name,
+      localId: c.card_sets?.[0]?.set_code || "",
+      setName: c.card_sets?.[0]?.set_name || c.type || "",
+      setTotal: "",
+      image: c.card_images?.[0]?.image_url || null,
+      precioRefMxn: precio.precioMxn,
+      precioRefFuente: precio.fuente,
+    };
+  });
 }
 
 export async function obtenerPrecioRefActualYugioh(cardApiId) {
@@ -385,7 +417,8 @@ export async function obtenerPrecioRefActualYugioh(cardApiId) {
     if (!res.ok) return null;
     const c = (await res.json())?.data?.[0];
     if (!c) return null;
-    return { precioRefMxn: precioRefDeCartaYgoprodeck(c), tcgplayerUrl: null, cardmarketUrl: null };
+    const precio = precioRefDeCartaYgoprodeck(c);
+    return { precioRefMxn: precio.precioMxn, precioRefFuente: precio.fuente, tcgplayerUrl: null, cardmarketUrl: null };
   } catch {
     return null;
   }
@@ -491,11 +524,15 @@ export async function obtenerCartasDeSetPokemon(setId) {
     cartas.push(...lote);
     if (lote.length < 250) break;
   }
-  return cartas.map((c) => ({
-    id: c.id, name: c.name, localId: c.number,
-    image: c.images?.small || c.images?.large || null,
-    precioRefMxn: precioRefDeCartaPokemonTCG(c),
-  }));
+  return cartas.map((c) => {
+    const precio = precioRefDeCartaPokemonTCG(c);
+    return {
+      id: c.id, name: c.name, localId: c.number,
+      image: c.images?.small || c.images?.large || null,
+      precioRefMxn: precio.precioMxn,
+      precioRefFuente: precio.fuente,
+    };
+  });
 }
 
 // Nombres de set_type de Scryfall en español, para que la agrupación por
@@ -537,11 +574,15 @@ export async function obtenerCartasDeSetMagic(code) {
     cartas.push(...(data?.data || []));
     url = data?.has_more ? data.next_page : null;
   }
-  return cartas.map((c) => ({
-    id: c.id, name: c.name, localId: c.collector_number,
-    image: imagenDeCartaScryfall(c),
-    precioRefMxn: precioRefDeCartaScryfall(c),
-  }));
+  return cartas.map((c) => {
+    const precio = precioRefDeCartaScryfall(c);
+    return {
+      id: c.id, name: c.name, localId: c.collector_number,
+      image: imagenDeCartaScryfall(c),
+      precioRefMxn: precio.precioMxn,
+      precioRefFuente: precio.fuente,
+    };
+  });
 }
 
 let _setsYugiohCache = null;
@@ -565,12 +606,16 @@ export async function obtenerCartasDeSetYugioh(setName) {
   const res = await fetchConReintento(`https://db.ygoprodeck.com/api/v7/cardinfo.php?cardset=${encodeURIComponent(setName)}`);
   if (!res.ok) return [];
   const data = await res.json();
-  return (data?.data || []).map((c) => ({
-    id: String(c.id), name: c.name,
-    localId: c.card_sets?.find((s) => s.set_name === setName)?.set_code || "",
-    image: c.card_images?.[0]?.image_url_small || c.card_images?.[0]?.image_url || null,
-    precioRefMxn: precioRefDeCartaYgoprodeck(c),
-  }));
+  return (data?.data || []).map((c) => {
+    const precio = precioRefDeCartaYgoprodeck(c);
+    return {
+      id: String(c.id), name: c.name,
+      localId: c.card_sets?.find((s) => s.set_name === setName)?.set_code || "",
+      image: c.card_images?.[0]?.image_url_small || c.card_images?.[0]?.image_url || null,
+      precioRefMxn: precio.precioMxn,
+      precioRefFuente: precio.fuente,
+    };
+  });
 }
 
 export async function obtenerSetsLorcana() {
@@ -748,8 +793,10 @@ export async function obtenerPrecioRefActual(cardApiId) {
     const data = await res.json();
     const c = data?.data;
     if (!c) return null;
+    const precio = precioRefDeCartaPokemonTCG(c);
     return {
-      precioRefMxn: precioRefDeCartaPokemonTCG(c),
+      precioRefMxn: precio.precioMxn,
+      precioRefFuente: precio.fuente,
       tcgplayerUrl: c.tcgplayer?.url || null,
       cardmarketUrl: c.cardmarket?.url || null,
     };

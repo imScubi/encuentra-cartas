@@ -3026,6 +3026,62 @@ ensuciaría la comparación de qué subió o bajó de verdad.
 
 No requiere ninguna migración.
 
+## 101. Cartas de tienda verificada ahora salen también en "Mercado entre usuarios"
+
+Reporte: cuando una tienda verificada sube una carta suelta (inventario de
+tienda, no producto sellado), esa carta no aparecía en "Mercado entre
+usuarios" -- solo se veía en la vitrina de la tienda y en "Buscar".
+
+Causa real: la pestaña "Mercado entre usuarios" (`src/App.jsx`) solo
+consultaba `mercado_listings` (publicaciones de cuentas individuales) --
+nunca consultó `inventario_tienda` (cartas sueltas de una tienda), a
+diferencia de "Buscar" y la vitrina de inicio, que sí mezclan ambas fuentes
+desde antes.
+
+Arreglo: se agregó una segunda carga (`marketTiendas`, sin límite de
+resultados, a diferencia del "Recién publicado" de la vitrina que sí
+recorta a 10) y un helper `marketNormalizado()` que junta
+`mercado_listings` + `inventario_tienda` en una sola lista -- cada tarjeta
+ahora trae una insignia "Mercado" o "Tienda" para distinguir el origen, y
+"Contactar"/carrito/abrir detalle apuntan a la tabla correcta según de
+dónde vino cada resultado. El producto sellado de tienda (`sellado_tienda`)
+se dejó fuera a propósito -- el reporte era específicamente sobre cartas,
+y esa pestaña de "Sellado" ya muestra lo que suben cuentas individuales;
+mezclar sellado de tienda ahí queda como posible siguiente paso si se pide.
+
+No requiere ninguna migración.
+
+## 102. Mostrar de dónde sale el precio de referencia (TCGplayer, Cardmarket, etc.)
+
+Petición: que el precio de referencia diga de dónde salió (ej. "Referencia
+de TCGplayer: $X") en vez de solo el número.
+
+- **`src/lib/pokemonApi.js`**: las funciones que calculan el precio de
+  referencia (Pokémon, Magic, Yu-Gi-Oh) ahora regresan también `fuente`
+  además del precio -- "TCGplayer" o "Cardmarket" para Pokémon/Magic (así
+  documenta Scryfall de dónde saca sus precios "usd"/"eur"); para Yu-Gi-Oh
+  puede ser "TCGplayer", "eBay", "Amazon", "CoolStuffInc" o "Cardmarket"
+  según cuál de esas trajo el número (YGOPRODeck junta varias fuentes en
+  la misma respuesta). El picker de TCGplayer/TCGCSV (sellado y los TCG sin
+  buscador de texto todavía) siempre reporta "TCGplayer".
+- **Migración 063** (`063_precio_ref_fuente.sql`): agrega
+  `precio_ref_fuente` a `mercado_listings`, `inventario_tienda`,
+  `sellado_tienda` y `alertas` -- se guarda junto con `precio_ref_mxn` al
+  momento de publicar/crear una alerta de precio, para poder mostrarlo
+  después en la publicación ya guardada (no solo mientras se está
+  publicando).
+- Se muestra junto al precio en: el aviso "Precio de referencia" que sale
+  al elegir una carta/producto en cualquier formulario de publicar
+  (Mercado, Mi tienda, alertas de Wishlist), el "ref. mercado" que se ve
+  en las tarjetas de publicaciones (Mercado, Buscar, Carrito, Mis compras
+  y ventas), y el precio en vivo de la ficha de detalle de una publicación
+  (`CartaDetalleView`, tanto el precio consultado al momento como el
+  guardado desde que se publicó).
+- Las cartas ofrecidas en una oferta de intercambio y el picker de
+  Subastas guardan `precio_ref_fuente` en su estado por consistencia, pero
+  no lo muestran en pantalla porque ninguno de los dos mostraba el precio
+  de referencia antes tampoco.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
