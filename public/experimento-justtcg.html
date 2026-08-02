@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Experimento: JustTCG — Encuentra Cartas</title>
+  <link rel="icon" type="image/png" href="/branding/logo-icon.png" />
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #050810;
+      color: #F4F6FB;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 40px 20px 80px; }
+    .aviso { background: #2A1C0A; border: 1px solid #8A5A1E; color: #E8C99A; border-radius: 12px; padding: 14px 16px; font-size: 13px; margin-bottom: 28px; }
+    h1 { font-size: 24px; font-weight: 700; margin: 0 0 4px; }
+    .sub { color: #8291B5; font-size: 14px; margin: 0 0 28px; }
+    .panel { background: #0A1330; border: 1px solid #101A36; border-radius: 16px; padding: 20px; margin-bottom: 20px; }
+    label { display: block; font-size: 12px; color: #8291B5; text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 6px; }
+    .fila { display: flex; gap: 10px; flex-wrap: wrap; }
+    select, input[type=text] {
+      background: #050810; color: #F4F6FB; border: 1px solid #23335C; border-radius: 8px;
+      padding: 10px 12px; font-size: 14px;
+    }
+    input[type=text] { flex: 1; min-width: 220px; }
+    button {
+      background: #4F7FD1; color: #050810; border: none; border-radius: 8px;
+      padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .estado { font-size: 13px; color: #8291B5; margin-top: 10px; }
+    .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }
+    .carta { background: #050810; border: 1px solid #101A36; border-radius: 12px; padding: 12px; }
+    .carta img { width: 100%; aspect-ratio: 63/88; object-fit: contain; background: #0A1330; border-radius: 8px; margin-bottom: 8px; }
+    .carta b { font-size: 13px; display: block; margin-bottom: 2px; }
+    .carta .set { color: #8291B5; font-size: 12px; }
+    .carta .precio { color: #E8C56B; font-weight: 700; margin-top: 4px; }
+    details { margin-top: 20px; }
+    summary { cursor: pointer; color: #9EC0EE; font-size: 13px; font-weight: 700; }
+    pre { background: #050810; border: 1px solid #101A36; border-radius: 10px; padding: 14px; overflow: auto; font-size: 12px; color: #C7D0E8; max-height: 480px; }
+    a.volver { color: #8291B5; text-decoration: none; font-size: 14px; display: inline-block; margin-bottom: 24px; }
+    a.volver:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="volver" href="/">← Volver a Encuentra Cartas</a>
+
+    <div class="aviso">
+      🧪 Página de experimento, aislada de la app principal (no está enlazada desde ningún menú). Sirve para probar si JustTCG es viable como fuente de precios antes de considerar usarlo en Encuentra Cartas de verdad. No se cambió nada del buscador/catálogo actual.
+    </div>
+
+    <h1>Experimento: JustTCG</h1>
+    <p class="sub">Busca una carta y compara lo que regresa JustTCG contra lo que ya usamos hoy (pokemontcg.io / Scryfall / YGOPRODeck).</p>
+
+    <div class="panel">
+      <div class="fila">
+        <div>
+          <label for="juego">TCG</label>
+          <select id="juego">
+            <option value="pokemon">Pokémon</option>
+            <option value="mtg">Magic</option>
+            <option value="yugioh">Yu-Gi-Oh!</option>
+            <option value="onepiece">One Piece</option>
+            <option value="lorcana">Lorcana</option>
+          </select>
+        </div>
+        <div style="flex:1; min-width:220px;">
+          <label for="texto">Nombre de la carta</label>
+          <input type="text" id="texto" placeholder="ej. Charizard" />
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button id="btnBuscar">Buscar</button>
+        </div>
+      </div>
+      <p class="estado" id="estado"></p>
+    </div>
+
+    <div class="tarjetas" id="tarjetas"></div>
+
+    <details id="crudoWrap">
+      <summary>Ver respuesta cruda de JustTCG (para ajustar el experimento si algo no calza)</summary>
+      <pre id="crudo">Todavía no has buscado nada.</pre>
+    </details>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const btn = $("btnBuscar");
+    const estado = $("estado");
+    const tarjetas = $("tarjetas");
+    const crudo = $("crudo");
+
+    // La forma exacta de la respuesta de JustTCG no se pudo confirmar en vivo
+    // al armar este experimento -- se prueban varias formas comunes de traer
+    // la lista de cartas en vez de asumir una sola, y de cualquier forma
+    // siempre se puede ver la respuesta cruda de abajo para ajustar esto.
+    function extraerLista(data) {
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.data)) return data.data;
+      if (Array.isArray(data?.cards)) return data.cards;
+      if (Array.isArray(data?.results)) return data.results;
+      return [];
+    }
+
+    function extraerPrecio(carta) {
+      const variante = carta?.variants?.[0] || carta?.prices?.[0] || carta;
+      const candidato = variante?.price ?? variante?.market ?? variante?.marketPrice ?? carta?.price ?? carta?.market_price ?? null;
+      return candidato != null ? Number(candidato) : null;
+    }
+
+    async function buscar() {
+      const juego = $("juego").value;
+      const texto = $("texto").value.trim();
+      if (texto.length < 2) { estado.textContent = "Escribe al menos 2 letras."; return; }
+
+      btn.disabled = true;
+      estado.textContent = "Buscando...";
+      tarjetas.innerHTML = "";
+      crudo.textContent = "Cargando...";
+
+      try {
+        const res = await fetch(`/api/tcgcsv?fuente=justtcg&game=${encodeURIComponent(juego)}&q=${encodeURIComponent(texto)}`);
+        const envoltura = await res.json();
+        crudo.textContent = JSON.stringify(envoltura, null, 2);
+
+        if (envoltura.error) {
+          estado.textContent = `Error: ${envoltura.error}${envoltura.detalle ? " — " + envoltura.detalle : ""}`;
+          return;
+        }
+
+        const statusJustTcg = envoltura.statusJustTcg;
+        if (statusJustTcg && statusJustTcg >= 400) {
+          estado.textContent = `JustTCG respondió ${statusJustTcg} -- revisa "Ver respuesta cruda" para ver el mensaje exacto y ajustar el endpoint/parámetros.`;
+          return;
+        }
+
+        const lista = extraerLista(envoltura.data);
+        if (lista.length === 0) {
+          estado.textContent = "JustTCG respondió sin error, pero no se encontró ninguna carta con este texto (o la forma de la respuesta es distinta a la esperada -- revisa la respuesta cruda).";
+          return;
+        }
+
+        estado.textContent = `${lista.length} resultado(s).`;
+        tarjetas.innerHTML = lista.slice(0, 24).map((c) => {
+          const nombre = c.name || c.title || "(sin nombre)";
+          const set = c.set || c.set_name || c.expansion || "";
+          const imagen = c.image || c.image_url || c.imageUrl || "";
+          const precio = extraerPrecio(c);
+          return `
+            <div class="carta">
+              ${imagen ? `<img src="${imagen}" alt="" onerror="this.style.display='none'" />` : ""}
+              <b>${nombre}</b>
+              <div class="set">${set}</div>
+              <div class="precio">${precio != null ? "$" + precio.toLocaleString("en-US") + " USD" : "sin precio"}</div>
+            </div>`;
+        }).join("");
+      } catch (e) {
+        estado.textContent = "Error de red al conectar con nuestro propio servidor: " + e.message;
+        crudo.textContent = String(e);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    btn.addEventListener("click", buscar);
+    $("texto").addEventListener("keydown", (e) => { if (e.key === "Enter") buscar(); });
+  </script>
+</body>
+</html>

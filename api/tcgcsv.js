@@ -3,12 +3,14 @@
 // que el navegador le pregunte directamente (política de seguridad de ellos, no nuestra).
 //
 // También atiende `fuente=shopify` (importar el catálogo de la tienda
-// Shopify PROPIA de un vendedor, ver ImportadorShopify en App.jsx) --
-// vive en el mismo archivo por el límite de 12 funciones serverless del
-// plan Hobby de Vercel (ya estaba al tope, igual que la moderación de
-// fotos de la sección 74). El servidor arma la URL final a partir de un
-// origen y una colección por separado (nunca una ruta libre que mande el
-// cliente) para no abrir un proxy genérico hacia cualquier URL.
+// Shopify PROPIA de un vendedor, ver ImportadorShopify en App.jsx) y
+// `fuente=justtcg` (experimento aislado, ver comentario de justTcgProxy
+// más abajo y public/experimento-justtcg.html) -- viven en el mismo
+// archivo por el límite de 12 funciones serverless del plan Hobby de
+// Vercel (ya estaba al tope, igual que la moderación de fotos de la
+// sección 74). El servidor arma la URL final a partir de un origen y una
+// colección por separado (nunca una ruta libre que mande el cliente) para
+// no abrir un proxy genérico hacia cualquier URL.
 const HOSTNAMES_BLOQUEADOS = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/i;
 
 function origenValido(origin) {
@@ -55,9 +57,45 @@ async function importarShopify(req, res) {
   }
 }
 
+// ---- Experimento: JustTCG como posible reemplazo de las APIs de precio
+// actuales (pokemontcg.io/Scryfall/YGOPRODeck) -- ver sección 103 de
+// SUSCRIPCIONES.md. Vive completamente aislado de la app principal: solo
+// lo usa public/experimento-justtcg.html (una página suelta, sin liga
+// desde el nav ni el resto del código), para poder probar sin arriesgar
+// nada de lo que ya funciona. La llave vive solo aquí en el servidor
+// (JUSTTCG_API_KEY en Vercel), nunca en el navegador.
+//
+// No se pudo confirmar en vivo desde este entorno (proxy de red
+// restringido, igual que con las demás fuentes de precio) la forma exacta
+// del endpoint/parámetros/respuesta de JustTCG -- por eso este proxy
+// regresa el cuerpo Y el status code de JustTCG tal cual al navegador
+// (incluyendo errores), en vez de interpretarlos: así la página del
+// experimento puede mostrar el error real de su API para ajustar el
+// endpoint/parámetros con datos reales en vez de adivinar dos veces.
+async function justTcgProxy(req, res) {
+  const apiKey = process.env.JUSTTCG_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: "Falta configurar JUSTTCG_API_KEY como variable de entorno en Vercel." });
+  const texto = String(req.query.q || "").trim();
+  if (texto.length < 2) return res.status(400).json({ error: "Escribe al menos 2 letras para buscar." });
+  const juego = String(req.query.game || "pokemon").trim();
+  const url = `https://api.justtcg.com/v1/cards?game=${encodeURIComponent(juego)}&q=${encodeURIComponent(texto)}`;
+  try {
+    const upstream = await fetch(url, { headers: { "x-api-key": apiKey } });
+    const crudo = await upstream.text();
+    let data;
+    try { data = JSON.parse(crudo); } catch { data = { crudo }; }
+    res.status(200).json({ statusJustTcg: upstream.status, urlConsultada: url, data });
+  } catch (e) {
+    res.status(502).json({ error: "No se pudo conectar con JustTCG.", detalle: e.message });
+  }
+}
+
 export default async function handler(req, res) {
   if (req.query.fuente === "shopify") {
     return importarShopify(req, res);
+  }
+  if (req.query.fuente === "justtcg") {
+    return justTcgProxy(req, res);
   }
 
   const { path } = req.query;

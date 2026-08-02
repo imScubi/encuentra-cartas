@@ -3082,6 +3082,41 @@ de TCGplayer: $X") en vez de solo el número.
   no lo muestran en pantalla porque ninguno de los dos mostraba el precio
   de referencia antes tampoco.
 
+## 103. Experimento aislado: JustTCG como posible reemplazo de las APIs de precio
+
+Petición: probar JustTCG (justtcg.com) como alternativa a pokemontcg.io/
+Scryfall/YGOPRODeck, pero solo como experimento -- sin tocar el buscador
+real de la app.
+
+- **`public/experimento-justtcg.html`**: página suelta, servida directo
+  como archivo estático (mismo patrón que `privacidad.html`), sin liga
+  desde ningún menú ni componente de React -- para llegar hay que escribir
+  la URL a mano (`/experimento-justtcg.html`). Deja elegir TCG + buscar
+  por nombre, muestra las cartas encontradas (imagen/set/precio si los
+  trae) y siempre incluye un desplegable con la respuesta cruda de
+  JustTCG, para poder diagnosticar sin adivinar si algo no calza.
+- **`api/tcgcsv.js`**: se le agregó `fuente=justtcg` (mismo patrón que
+  `fuente=shopify`, vive en el mismo archivo por el límite de 12 funciones
+  serverless del plan Hobby, ya al tope). Reenvía la búsqueda a
+  `api.justtcg.com` con la llave (`JUSTTCG_API_KEY`, variable de entorno
+  en Vercel -- nunca en el navegador) y regresa la respuesta de JustTCG
+  tal cual, con su código de estado, en vez de interpretarla.
+- **Aviso de honestidad**: no se pudo confirmar en vivo desde este entorno
+  (mismo proxy de red restringido que bloqueó también apitcg.com/Scrydex
+  antes) la forma exacta del endpoint, los parámetros o la respuesta de
+  JustTCG -- el endpoint/parámetros que usa el proxy (`GET /v1/cards?
+  game=...&q=...`, header `x-api-key`) son la mejor suposición posible,
+  no algo verificado. Por eso la página del experimento muestra la
+  respuesta cruda siempre visible: si algo no coincide, el primer intento
+  real (ya en producción, donde si hay salida a internet) lo va a decir
+  con el error exacto de JustTCG, y de ahí se ajusta con datos reales en
+  vez de adivinar una segunda vez.
+- Para probarlo: agrega `JUSTTCG_API_KEY` en Vercel → Settings →
+  Environment Variables con tu llave, espera a que redepliegue, y abre
+  `https://tu-dominio.vercel.app/experimento-justtcg.html`.
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
