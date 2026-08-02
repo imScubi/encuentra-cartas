@@ -205,13 +205,25 @@ function construirQueryPokemonTCG({ nombre, set, numero }) {
   return partes.join(" ");
 }
 
+// "market" (precio basado en ventas reales) es el más confiable, pero una
+// carta recién salida todavía no acumula ventas suficientes para tenerlo --
+// en ese caso se usa "mid" o "low" (el rango que TCGplayer sí calcula desde
+// el día 1, con base en las publicaciones activas) en vez de dejar el
+// precio de referencia en blanco. Lo mismo del lado de Cardmarket: si no
+// hay "trendPrice" (que también depende de ventas históricas) se prueba con
+// el precio promedio de venta o el más bajo disponible.
 function precioRefDeCartaPokemonTCG(c) {
   const tp = c.tcgplayer?.prices;
   if (tp) {
     const variante = tp.normal || tp.holofoil || tp.reverseHolofoil || tp.unlimited || tp["1stEditionHolofoil"];
-    if (variante?.market) return Math.round(variante.market * USD_TO_MXN);
+    const precio = variante?.market ?? variante?.mid ?? variante?.low;
+    if (precio) return Math.round(precio * USD_TO_MXN);
   }
-  if (c.cardmarket?.prices?.trendPrice) return Math.round(c.cardmarket.prices.trendPrice * EUR_TO_MXN);
+  const cm = c.cardmarket?.prices;
+  if (cm) {
+    const precio = cm.trendPrice ?? cm.averageSellPrice ?? cm.avg1 ?? cm.lowPrice;
+    if (precio) return Math.round(precio * EUR_TO_MXN);
+  }
   return null;
 }
 
@@ -292,9 +304,13 @@ function imagenDeCartaScryfall(c) {
 }
 
 function precioRefDeCartaScryfall(c) {
-  const usd = c.prices?.usd || c.prices?.usd_foil;
+  // "usd_etched" (versión con acabado "etched") como último respaldo -- no
+  // cubre el caso de una carta genuinamente recién salida sin ninguna venta
+  // registrada todavía, pero sí ayuda con variantes de foil que a veces
+  // llegan sin el precio "usd" normal pero sí con el de etched.
+  const usd = c.prices?.usd || c.prices?.usd_foil || c.prices?.usd_etched;
   if (usd) return Math.round(Number(usd) * USD_TO_MXN);
-  const eur = c.prices?.eur || c.prices?.eur_foil;
+  const eur = c.prices?.eur || c.prices?.eur_foil || c.prices?.eur_etched;
   if (eur) return Math.round(Number(eur) * EUR_TO_MXN);
   return null;
 }
@@ -338,7 +354,7 @@ export async function obtenerPrecioRefActualMagic(cardApiId) {
 function precioRefDeCartaYgoprodeck(c) {
   const precios = c.card_prices?.[0];
   if (!precios) return null;
-  const usd = Number(precios.tcgplayer_price || precios.ebay_price || precios.amazon_price || 0);
+  const usd = Number(precios.tcgplayer_price || precios.ebay_price || precios.amazon_price || precios.coolstuffinc_price || 0);
   if (usd > 0) return Math.round(usd * USD_TO_MXN);
   const eur = Number(precios.cardmarket_price || 0);
   if (eur > 0) return Math.round(eur * EUR_TO_MXN);

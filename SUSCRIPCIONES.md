@@ -2992,6 +2992,40 @@ paso, no se tocó en este cambio.
 
 No requiere ninguna migración.
 
+## 100. Ampliar cuándo sale precio de referencia (cartas muy nuevas)
+
+Pregunta/reporte: algunas cartas, sobre todo las recién salidas, no traían
+precio de referencia al elegirlas en el buscador.
+
+Causa real: no es que la API "no tenga" la carta (por eso sí aparece en el
+buscador) -- es que el precio "de mercado" (`market` en TCGplayer, `trendPrice`
+en Cardmarket) se calcula con base en ventas reales, y una carta con días de
+haber salido todavía no acumula suficientes para tener uno. Esto es una
+limitación de cualquier fuente de precios (pokemontcg.io, Scryfall,
+apitcg.com, la que sea) -- ninguna puede inventar un precio de mercado que
+todavía no existe.
+
+Lo que sí se puede hacer, y se hizo (`src/lib/pokemonApi.js`): en vez de
+exigir SOLO el precio "de mercado", ahora se prueban también los precios
+que las mismas fuentes sí calculan desde el primer día (el rango de precio
+`mid`/`low` de TCGplayer, basado en publicaciones activas aunque no haya
+ventas todavía; `averageSellPrice`/`avg1`/`lowPrice` de Cardmarket como
+respaldo de `trendPrice`; `usd_etched`/`eur_etched` en Scryfall para
+variantes que a veces traen ese precio pero no el normal; el precio de
+CoolStuffInc como respaldo más en YGOPRODeck). Esto reduce, pero no
+elimina del todo, los casos sin precio -- una carta genuinamente recién
+anunciada, sin ninguna publicación activa en ningún lado todavía, seguirá
+sin precio de referencia hasta que exista alguno real que mostrar (ahí sí
+no hay atajo posible: quien publica simplemente escribe el precio a mano,
+como con cualquier carta sin catálogo).
+
+No se tocó `lib/precios.js` (el que arma el boletín de precios) a
+propósito: ese sí debe seguir exigiendo el precio "de mercado" real, porque
+compara semana contra semana -- mezclar ahí un precio estimado (`mid`/`low`)
+ensuciaría la comparación de qué subió o bajó de verdad.
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
