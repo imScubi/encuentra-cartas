@@ -3193,6 +3193,24 @@ match con una versión "jumbo" que no era la misma carta publicada.
 
 No requiere ninguna migración.
 
+## 106. Cancelar el experimento JustTCG
+
+Después de varias rondas de pruebas reales (secciones 103-105), no
+convenció como reemplazo -- se cancela y se regresa todo a la normalidad.
+
+- Se borró `public/experimento-justtcg.html` por completo.
+- Se quitó `justTcgProxy` y la rama `fuente=justtcg` de `api/tcgcsv.js`
+  (queda igual que antes de la sección 103, solo con `fuente=shopify`).
+- El buscador/catálogo real de la app (pokemontcg.io/Scryfall/YGOPRODeck)
+  nunca se tocó durante el experimento -- no hay nada más que revertir.
+- Si en el futuro se quiere retomar la idea, las secciones 103-105 quedan
+  como referencia de lo que ya se investigó (incluyendo los slugs de
+  juego correctos que confirmó JustTCG y el problema de límite de
+  peticiones de su plan gratuito).
+
+No requiere ninguna migración (la columna `precio_ref_fuente` de la
+sección 102 no tiene relación con este experimento y se queda igual).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
