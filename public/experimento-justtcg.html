@@ -79,8 +79,8 @@
             <option value="pokemon">Pokémon</option>
             <option value="mtg">Magic</option>
             <option value="yugioh">Yu-Gi-Oh!</option>
-            <option value="onepiece">One Piece</option>
-            <option value="lorcana">Lorcana</option>
+            <option value="one-piece-card-game">One Piece</option>
+            <option value="disney-lorcana">Lorcana</option>
           </select>
         </div>
         <div style="flex:1; min-width:220px;">
@@ -116,9 +116,13 @@
     // ---- Config compartida ----
     const SUPABASE_URL = "https://nulypgaaekexlbxbxdwq.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51bHlwZ2FhZWtleGxieGJ4ZHdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzOTk3OTcsImV4cCI6MjA5OTk3NTc5N30.9qxfcmUx5k1br1CH3DIFI2EplFJWYeRyg6HFeZNN7og";
-    // Nuestro tcg -> el "game" que espera JustTCG. Mismo aviso que el resto
-    // del experimento: es la mejor suposición, no algo confirmado.
-    const JUEGO_JUSTTCG = { pokemon: "pokemon", magic: "mtg", yugioh: "yugioh", lorcana: "lorcana", onepiece: "onepiece" };
+    // Nuestro tcg -> el "game" que espera JustTCG. A diferencia del resto del
+    // experimento, esto sí quedó confirmado con datos reales: JustTCG
+    // regresó su lista completa de slugs válidos en un error 400
+    // ("Invalid game parameter. Must be one of: ..."), y "lorcana"/"onepiece"
+    // no estaban en la lista -- los correctos son "disney-lorcana" y
+    // "one-piece-card-game".
+    const JUEGO_JUSTTCG = { pokemon: "pokemon", magic: "mtg", yugioh: "yugioh", lorcana: "disney-lorcana", onepiece: "one-piece-card-game" };
 
     function extraerLista(data) {
       if (Array.isArray(data)) return data;
@@ -135,12 +139,20 @@
     // JustTCG nos limita si mandamos peticiones muy seguido (429). Si pasa,
     // esperamos lo que su header "Retry-After" pida (o 2s/4s/8s si no lo
     // manda) y reintentamos, en vez de reportar error de inmediato.
-    async function fetchJustTcgConReintento(url, intentos = 4) {
+    //
+    // `actualizarCrudo` está apagado por default para las búsquedas
+    // automáticas de la parte 2 (fila por fila, en segundo plano): si se
+    // deja prendido, cada una va pisando el panel de "respuesta cruda"
+    // mientras el usuario todavía está leyendo la de otra fila (así se vio
+    // la respuesta de otra carta al pedir el historial de Mega Greninja).
+    // Solo se actualiza en acciones que el usuario pidió directamente:
+    // la búsqueda de la parte 1 y "Ver historial de precio".
+    async function fetchJustTcgConReintento(url, intentos = 4, actualizarCrudo = true) {
       let esperaMs = 2000;
       for (let i = 0; i < intentos; i++) {
         const res = await fetch(url);
         const envoltura = await res.json();
-        $("crudo").textContent = JSON.stringify(envoltura, null, 2);
+        if (actualizarCrudo) $("crudo").textContent = JSON.stringify(envoltura, null, 2);
         if (envoltura.statusJustTcg === 429 && i < intentos - 1) {
           await new Promise((r) => setTimeout(r, envoltura.retryAfterMs || esperaMs));
           esperaMs *= 2;
@@ -149,8 +161,8 @@
         return envoltura;
       }
     }
-    async function buscarEnJustTcg(juego, texto) {
-      return fetchJustTcgConReintento(`/api/tcgcsv?fuente=justtcg&game=${encodeURIComponent(juego)}&q=${encodeURIComponent(texto)}`);
+    async function buscarEnJustTcg(juego, texto, actualizarCrudo = true) {
+      return fetchJustTcgConReintento(`/api/tcgcsv?fuente=justtcg&game=${encodeURIComponent(juego)}&q=${encodeURIComponent(texto)}`, 4, actualizarCrudo);
     }
 
     // ---- PARTE 1 ----
@@ -289,10 +301,19 @@
     }
     window.verHistorial = verHistorial;
 
+    let respuestasCrudasComparar = [];
+    function verCrudoFila(i) {
+      $("crudo").textContent = JSON.stringify(respuestasCrudasComparar[i], null, 2);
+      $("crudoWrap").open = true;
+      $("crudoWrap").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    window.verCrudoFila = verCrudoFila;
+
     async function comparar() {
       btnComparar.disabled = true;
       estadoComparar.textContent = "Cargando publicaciones...";
       listaComparar.innerHTML = "";
+      respuestasCrudasComparar = [];
       let filas;
       try {
         filas = await cargarPublicacionesReales();
@@ -327,13 +348,19 @@
         compEl.textContent = "Buscando en JustTCG...";
         try {
           const juego = JUEGO_JUSTTCG[f.tcg] || "pokemon";
-          const envoltura = await buscarEnJustTcg(juego, f.carta);
+          // No actualizamos el panel compartido de "respuesta cruda" aquí --
+          // el loop sigue corriendo fila por fila en segundo plano y lo iría
+          // pisando antes de que puedas leerlo. Guardamos la respuesta de
+          // esta fila aparte y dejamos un botón para verla cuando quieras.
+          const envoltura = await buscarEnJustTcg(juego, f.carta, false);
+          respuestasCrudasComparar[i] = envoltura;
+          const botonCrudo = `<button class="secundario" style="margin-top:6px;" onclick="verCrudoFila(${i})">Ver respuesta cruda de esta fila</button>`;
           if (envoltura.error || envoltura.statusJustTcg >= 400) {
-            compEl.innerHTML = `<span class="no">JustTCG: error (${envoltura.error || envoltura.statusJustTcg})</span>`;
+            compEl.innerHTML = `<span class="no">JustTCG: error (${envoltura.error || envoltura.statusJustTcg})</span><br/>${botonCrudo}`;
           } else {
             const lista = extraerLista(envoltura.data);
             if (lista.length === 0) {
-              compEl.innerHTML = '<span class="no">JustTCG: no la encontró</span>';
+              compEl.innerHTML = `<span class="no">JustTCG: no la encontró</span><br/>${botonCrudo}`;
             } else {
               const primera = lista[0];
               const precioJustTcg = extraerPrecio(primera);
@@ -353,6 +380,7 @@
                 <span style="color:#8291B5; font-size:12px;">${primera.name || ""}${setJustTcg ? " · " + setJustTcg : ""}</span><br/>
                 ${setsNoCoinciden ? '<span style="color:#E8B84B; font-size:11px;">⚠️ El set no coincide con el nuestro -- probablemente es otra versión/impresión de la carta, no la misma.</span><br/>' : ""}
                 ${cardId ? `<button class="secundario" style="margin-top:6px;" onclick="verHistorial('${cardId}', 'graf-${i}')">Ver historial de precio</button>` : ""}
+                ${botonCrudo}
               `;
             }
           }
