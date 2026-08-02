@@ -3117,6 +3117,44 @@ real de la app.
 
 No requiere ninguna migración.
 
+## 104. Experimento JustTCG, parte 2: publicaciones reales + gráfica de historial
+
+Petición: seguir con el mismo experimento aislado de la sección 103, pero
+ahora (1) probarlo contra publicaciones que ya existen de verdad en la
+app, y (2) agregar una gráfica de precio histórico por carta en el
+experimento, al estilo de Collectr.
+
+- **Parte 2 en `public/experimento-justtcg.html`** ("Comparar con
+  publicaciones reales de tu web"): un botón que lee hasta 6 publicaciones
+  de `mercado_listings` y 6 de `inventario_tienda` (las más recientes,
+  cartas en venta) directo de Supabase con la llave pública anónima
+  (la misma que ya usa toda la app en el navegador, no es una llave
+  nueva ni un riesgo distinto), y por cada una busca esa carta en JustTCG
+  para comparar el precio que ya tenemos guardado contra el de JustTCG.
+  Las búsquedas se hacen una por una con una pequeña pausa entre cada
+  una (350ms) para no golpear de más la API de JustTCG.
+- **Gráfica de historial de precio**: si una carta se encontró en
+  JustTCG, aparece un botón "Ver historial de precio" que llama a
+  `api/tcgcsv.js` (ahora con un modo nuevo, `cardId=...`, mismo proxy de
+  la sección 103) y, si la respuesta trae algún campo con historial,
+  dibuja una gráfica de líneas simple (hecha a mano con SVG, sin agregar
+  ninguna librería nueva al proyecto) con el precio a través del tiempo,
+  parecido a como lo muestra Collectr.
+- **Mismo aviso de honestidad que la parte 1**: no se pudo confirmar en
+  vivo desde este entorno si JustTCG realmente expone un endpoint de
+  detalle/historial en `GET /v1/cards/{id}` ni qué forma tiene esa
+  respuesta -- es la mejor suposición posible, no algo verificado. Si el
+  campo de historial no aparece con ninguno de los nombres que se
+  intentan reconocer, la página lo dice claramente ("no encontramos
+  historial de precio para esta carta") en vez de mostrar una gráfica
+  vacía o inventada. El primer intento real en producción va a decir si
+  el endpoint/plan de JustTCG sí trae ese dato o no.
+- Para probarlo: abre `/experimento-justtcg.html` (mismo link de la
+  sección 103) y baja hasta "Comparar con publicaciones reales de tu
+  web".
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

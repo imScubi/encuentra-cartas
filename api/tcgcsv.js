@@ -75,10 +75,23 @@ async function importarShopify(req, res) {
 async function justTcgProxy(req, res) {
   const apiKey = process.env.JUSTTCG_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "Falta configurar JUSTTCG_API_KEY como variable de entorno en Vercel." });
-  const texto = String(req.query.q || "").trim();
-  if (texto.length < 2) return res.status(400).json({ error: "Escribe al menos 2 letras para buscar." });
-  const juego = String(req.query.game || "pokemon").trim();
-  const url = `https://api.justtcg.com/v1/cards?game=${encodeURIComponent(juego)}&q=${encodeURIComponent(texto)}`;
+
+  // Modo "detalle/historial": se le pasa el id que regresó una búsqueda
+  // anterior, para la parte del experimento que intenta graficar el
+  // historial de precio de una carta ya publicada (ver sección 104 de
+  // SUSCRIPCIONES.md). No se pudo confirmar en vivo si este es el
+  // endpoint/forma correcta -- mismo criterio que el resto del proxy:
+  // se regresa la respuesta cruda para diagnosticar con datos reales.
+  const cardId = String(req.query.cardId || "").trim();
+  const url = cardId
+    ? `https://api.justtcg.com/v1/cards/${encodeURIComponent(cardId)}`
+    : (() => {
+        const texto = String(req.query.q || "").trim();
+        const juego = String(req.query.game || "pokemon").trim();
+        return texto.length >= 2 ? `https://api.justtcg.com/v1/cards?game=${encodeURIComponent(juego)}&q=${encodeURIComponent(texto)}` : null;
+      })();
+  if (!url) return res.status(400).json({ error: "Escribe al menos 2 letras para buscar (o manda cardId)." });
+
   try {
     const upstream = await fetch(url, { headers: { "x-api-key": apiKey } });
     const crudo = await upstream.text();

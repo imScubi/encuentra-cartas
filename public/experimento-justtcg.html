@@ -16,11 +16,12 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       line-height: 1.6;
     }
-    .wrap { max-width: 860px; margin: 0 auto; padding: 40px 20px 80px; }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 40px 20px 80px; }
     .aviso { background: #2A1C0A; border: 1px solid #8A5A1E; color: #E8C99A; border-radius: 12px; padding: 14px 16px; font-size: 13px; margin-bottom: 28px; }
     h1 { font-size: 24px; font-weight: 700; margin: 0 0 4px; }
-    .sub { color: #8291B5; font-size: 14px; margin: 0 0 28px; }
-    .panel { background: #0A1330; border: 1px solid #101A36; border-radius: 16px; padding: 20px; margin-bottom: 20px; }
+    h2 { font-size: 17px; font-weight: 700; margin: 0 0 4px; color: #9EC0EE; }
+    .sub { color: #8291B5; font-size: 14px; margin: 0 0 20px; }
+    .panel { background: #0A1330; border: 1px solid #101A36; border-radius: 16px; padding: 20px; margin-bottom: 24px; }
     label { display: block; font-size: 12px; color: #8291B5; text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 6px; }
     .fila { display: flex; gap: 10px; flex-wrap: wrap; }
     select, input[type=text] {
@@ -33,6 +34,7 @@
       padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
     }
     button:disabled { opacity: 0.5; cursor: default; }
+    button.secundario { background: transparent; color: #9EC0EE; border: 1px solid #23335C; padding: 6px 12px; font-size: 12px; }
     .estado { font-size: 13px; color: #8291B5; margin-top: 10px; }
     .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }
     .carta { background: #050810; border: 1px solid #101A36; border-radius: 12px; padding: 12px; }
@@ -45,6 +47,15 @@
     pre { background: #050810; border: 1px solid #101A36; border-radius: 10px; padding: 14px; overflow: auto; font-size: 12px; color: #C7D0E8; max-height: 480px; }
     a.volver { color: #8291B5; text-decoration: none; font-size: 14px; display: inline-block; margin-bottom: 24px; }
     a.volver:hover { text-decoration: underline; }
+
+    .fila-comparar { display: flex; gap: 12px; align-items: flex-start; background: #050810; border: 1px solid #101A36; border-radius: 12px; padding: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+    .fila-comparar img { width: 52px; height: 72px; object-fit: contain; background: #0A1330; border-radius: 6px; flex-shrink: 0; }
+    .fila-comparar .info { flex: 1; min-width: 160px; }
+    .fila-comparar .origen { display: inline-block; font-size: 10px; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; background: #101A36; color: #9EC0EE; margin-bottom: 3px; }
+    .fila-comparar .comparacion { min-width: 220px; font-size: 13px; }
+    .fila-comparar .comparacion .ok { color: #6FCF97; }
+    .fila-comparar .comparacion .no { color: #E08484; }
+    .fila-comparar .grafica-wrap { width: 100%; margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -56,9 +67,11 @@
     </div>
 
     <h1>Experimento: JustTCG</h1>
-    <p class="sub">Busca una carta y compara lo que regresa JustTCG contra lo que ya usamos hoy (pokemontcg.io / Scryfall / YGOPRODeck).</p>
+    <p class="sub">Parte 1: busca una carta suelta. Parte 2: compara contra publicaciones reales ya creadas en tu web, y prueba si hay historial de precio (estilo Collectr).</p>
 
+    <!-- ---- PARTE 1: búsqueda libre ---- -->
     <div class="panel">
+      <h2>1. Buscar una carta</h2>
       <div class="fila">
         <div>
           <label for="juego">TCG</label>
@@ -79,27 +92,34 @@
         </div>
       </div>
       <p class="estado" id="estado"></p>
+      <div class="tarjetas" id="tarjetas"></div>
     </div>
 
-    <div class="tarjetas" id="tarjetas"></div>
+    <!-- ---- PARTE 2: comparar contra publicaciones reales ---- -->
+    <div class="panel">
+      <h2>2. Comparar con publicaciones reales de tu web</h2>
+      <p class="sub" style="margin-bottom:12px;">Trae las últimas publicaciones de "Mercado" y "Mi tienda" directo de tu base de datos (lectura pública, igual que ya hace la app) y busca cada una en JustTCG para ver si la encuentra y qué tan cerca sale el precio.</p>
+      <button id="btnComparar">Cargar publicaciones recientes</button>
+      <p class="estado" id="estadoComparar"></p>
+      <div id="listaComparar"></div>
+    </div>
 
     <details id="crudoWrap">
-      <summary>Ver respuesta cruda de JustTCG (para ajustar el experimento si algo no calza)</summary>
+      <summary>Ver última respuesta cruda de JustTCG (para ajustar el experimento si algo no calza)</summary>
       <pre id="crudo">Todavía no has buscado nada.</pre>
     </details>
   </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const btn = $("btnBuscar");
-    const estado = $("estado");
-    const tarjetas = $("tarjetas");
-    const crudo = $("crudo");
 
-    // La forma exacta de la respuesta de JustTCG no se pudo confirmar en vivo
-    // al armar este experimento -- se prueban varias formas comunes de traer
-    // la lista de cartas en vez de asumir una sola, y de cualquier forma
-    // siempre se puede ver la respuesta cruda de abajo para ajustar esto.
+    // ---- Config compartida ----
+    const SUPABASE_URL = "https://nulypgaaekexlbxbxdwq.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51bHlwZ2FhZWtleGxieGJ4ZHdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzOTk3OTcsImV4cCI6MjA5OTk3NTc5N30.9qxfcmUx5k1br1CH3DIFI2EplFJWYeRyg6HFeZNN7og";
+    // Nuestro tcg -> el "game" que espera JustTCG. Mismo aviso que el resto
+    // del experimento: es la mejor suposición, no algo confirmado.
+    const JUEGO_JUSTTCG = { pokemon: "pokemon", magic: "mtg", yugioh: "yugioh", lorcana: "lorcana", onepiece: "onepiece" };
+
     function extraerLista(data) {
       if (Array.isArray(data)) return data;
       if (Array.isArray(data?.data)) return data.data;
@@ -107,12 +127,22 @@
       if (Array.isArray(data?.results)) return data.results;
       return [];
     }
-
     function extraerPrecio(carta) {
       const variante = carta?.variants?.[0] || carta?.prices?.[0] || carta;
       const candidato = variante?.price ?? variante?.market ?? variante?.marketPrice ?? carta?.price ?? carta?.market_price ?? null;
       return candidato != null ? Number(candidato) : null;
     }
+    async function buscarEnJustTcg(juego, texto) {
+      const res = await fetch(`/api/tcgcsv?fuente=justtcg&game=${encodeURIComponent(juego)}&q=${encodeURIComponent(texto)}`);
+      const envoltura = await res.json();
+      $("crudo").textContent = JSON.stringify(envoltura, null, 2);
+      return envoltura;
+    }
+
+    // ---- PARTE 1 ----
+    const btn = $("btnBuscar");
+    const estado = $("estado");
+    const tarjetas = $("tarjetas");
 
     async function buscar() {
       const juego = $("juego").value;
@@ -122,30 +152,22 @@
       btn.disabled = true;
       estado.textContent = "Buscando...";
       tarjetas.innerHTML = "";
-      crudo.textContent = "Cargando...";
 
       try {
-        const res = await fetch(`/api/tcgcsv?fuente=justtcg&game=${encodeURIComponent(juego)}&q=${encodeURIComponent(texto)}`);
-        const envoltura = await res.json();
-        crudo.textContent = JSON.stringify(envoltura, null, 2);
-
+        const envoltura = await buscarEnJustTcg(juego, texto);
         if (envoltura.error) {
           estado.textContent = `Error: ${envoltura.error}${envoltura.detalle ? " — " + envoltura.detalle : ""}`;
           return;
         }
-
-        const statusJustTcg = envoltura.statusJustTcg;
-        if (statusJustTcg && statusJustTcg >= 400) {
-          estado.textContent = `JustTCG respondió ${statusJustTcg} -- revisa "Ver respuesta cruda" para ver el mensaje exacto y ajustar el endpoint/parámetros.`;
+        if (envoltura.statusJustTcg >= 400) {
+          estado.textContent = `JustTCG respondió ${envoltura.statusJustTcg} -- revisa "Ver respuesta cruda" para el mensaje exacto.`;
           return;
         }
-
         const lista = extraerLista(envoltura.data);
         if (lista.length === 0) {
-          estado.textContent = "JustTCG respondió sin error, pero no se encontró ninguna carta con este texto (o la forma de la respuesta es distinta a la esperada -- revisa la respuesta cruda).";
+          estado.textContent = "JustTCG respondió sin error, pero no se encontró ninguna carta (o la forma de la respuesta es distinta a la esperada -- revisa la respuesta cruda).";
           return;
         }
-
         estado.textContent = `${lista.length} resultado(s).`;
         tarjetas.innerHTML = lista.slice(0, 24).map((c) => {
           const nombre = c.name || c.title || "(sin nombre)";
@@ -162,14 +184,164 @@
         }).join("");
       } catch (e) {
         estado.textContent = "Error de red al conectar con nuestro propio servidor: " + e.message;
-        crudo.textContent = String(e);
       } finally {
         btn.disabled = false;
       }
     }
-
     btn.addEventListener("click", buscar);
     $("texto").addEventListener("keydown", (e) => { if (e.key === "Enter") buscar(); });
+
+    // ---- PARTE 2: comparar contra publicaciones reales ----
+    const btnComparar = $("btnComparar");
+    const estadoComparar = $("estadoComparar");
+    const listaComparar = $("listaComparar");
+
+    async function cargarPublicacionesReales() {
+      const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
+      const campos = "id,carta,tcg,precio,precio_ref_mxn,imagen_url";
+      const [mercado, tienda] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/mercado_listings?select=${campos}&tipo=eq.carta&en_venta=eq.true&order=created_at.desc&limit=6`, { headers }).then((r) => r.json()),
+        fetch(`${SUPABASE_URL}/rest/v1/inventario_tienda?select=${campos}&en_venta=eq.true&order=created_at.desc&limit=6`, { headers }).then((r) => r.json()),
+      ]);
+      return [
+        ...(Array.isArray(mercado) ? mercado : []).map((r) => ({ ...r, origen: "Mercado" })),
+        ...(Array.isArray(tienda) ? tienda : []).map((r) => ({ ...r, origen: "Tienda" })),
+      ];
+    }
+
+    function extraerHistorial(data) {
+      const candidatos = [
+        data?.priceHistory, data?.price_history, data?.history,
+        data?.data?.priceHistory, data?.data?.price_history, data?.data?.history,
+        data?.data?.variants?.[0]?.priceHistory, data?.data?.variants?.[0]?.history,
+      ];
+      for (const c of candidatos) {
+        if (Array.isArray(c) && c.length > 0) return c;
+      }
+      return null;
+    }
+    function normalizarPuntos(historial) {
+      return historial
+        .map((h) => ({
+          fecha: h.date || h.fecha || h.timestamp || h.t || "",
+          precio: Number(h.price ?? h.precio ?? h.market ?? h.value ?? h.v ?? NaN),
+        }))
+        .filter((p) => p.fecha && !Number.isNaN(p.precio))
+        .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+    }
+    function dibujarGraficaSVG(puntos) {
+      const w = 420, h = 130, pad = 30;
+      const precios = puntos.map((p) => p.precio);
+      const min = Math.min(...precios), max = Math.max(...precios);
+      const rango = (max - min) || 1;
+      const paso = (w - pad * 2) / Math.max(1, puntos.length - 1);
+      const coords = puntos.map((p, i) => [pad + i * paso, h - pad - ((p.precio - min) / rango) * (h - pad * 2)]);
+      const linea = coords.map((c) => c.join(",")).join(" ");
+      const fechaCorta = (f) => { try { return new Date(f).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }); } catch { return f; } };
+      return `
+        <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="max-width:100%;">
+          <polyline points="${linea}" fill="none" stroke="#4F7FD1" stroke-width="2" />
+          ${coords.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.5" fill="#9EC0EE" />`).join("")}
+          <text x="${pad}" y="${h - 8}" fill="#8291B5" font-size="10">${fechaCorta(puntos[0].fecha)}</text>
+          <text x="${w - pad - 50}" y="${h - 8}" fill="#8291B5" font-size="10">${fechaCorta(puntos[puntos.length - 1].fecha)}</text>
+          <text x="4" y="14" fill="#E8C56B" font-size="10">$${max.toLocaleString("en-US")}</text>
+          <text x="4" y="${h - pad + 4}" fill="#E8C56B" font-size="10">$${min.toLocaleString("en-US")}</text>
+        </svg>`;
+    }
+
+    async function verHistorial(cardId, contenedorId) {
+      const contenedor = document.getElementById(contenedorId);
+      contenedor.innerHTML = '<p class="estado">Consultando historial en JustTCG...</p>';
+      try {
+        const res = await fetch(`/api/tcgcsv?fuente=justtcg&cardId=${encodeURIComponent(cardId)}`);
+        const envoltura = await res.json();
+        $("crudo").textContent = JSON.stringify(envoltura, null, 2);
+        if (envoltura.error || envoltura.statusJustTcg >= 400) {
+          contenedor.innerHTML = `<p class="estado">No se pudo traer el detalle (${envoltura.error || "status " + envoltura.statusJustTcg}). Revisa "Ver respuesta cruda" -- puede que el endpoint de detalle no sea /v1/cards/{id} en su API real.</p>`;
+          return;
+        }
+        const historial = extraerHistorial(envoltura);
+        if (!historial) {
+          contenedor.innerHTML = '<p class="estado">JustTCG respondió, pero no encontramos ningún campo de historial en la respuesta (revisa "Ver respuesta cruda" -- puede que el historial venga con otro nombre de campo, o que no esté incluido en tu plan).</p>';
+          return;
+        }
+        const puntos = normalizarPuntos(historial);
+        if (puntos.length < 2) {
+          contenedor.innerHTML = '<p class="estado">Encontramos un campo de historial, pero no traía suficientes puntos con fecha+precio para graficar.</p>';
+          return;
+        }
+        contenedor.innerHTML = dibujarGraficaSVG(puntos);
+      } catch (e) {
+        contenedor.innerHTML = `<p class="estado">Error: ${e.message}</p>`;
+      }
+    }
+    window.verHistorial = verHistorial;
+
+    async function comparar() {
+      btnComparar.disabled = true;
+      estadoComparar.textContent = "Cargando publicaciones...";
+      listaComparar.innerHTML = "";
+      let filas;
+      try {
+        filas = await cargarPublicacionesReales();
+      } catch (e) {
+        estadoComparar.textContent = "No se pudo leer la base de datos: " + e.message;
+        btnComparar.disabled = false;
+        return;
+      }
+      if (filas.length === 0) {
+        estadoComparar.textContent = "No hay publicaciones activas todavía.";
+        btnComparar.disabled = false;
+        return;
+      }
+      estadoComparar.textContent = `${filas.length} publicación(es) cargada(s). Buscando cada una en JustTCG (una por una, para no saturar tu cuota)...`;
+
+      listaComparar.innerHTML = filas.map((f, i) => `
+        <div class="fila-comparar" id="fila-${i}">
+          ${f.imagen_url ? `<img src="${f.imagen_url}" alt="" onerror="this.style.display='none'" />` : ""}
+          <div class="info">
+            <span class="origen">${f.origen}</span>
+            <div><b>${f.carta}</b></div>
+            <div class="estado">Nuestro precio: $${Number(f.precio).toLocaleString("es-MX")} MXN${f.precio_ref_mxn ? ` · ref. guardada: ~$${Number(f.precio_ref_mxn).toLocaleString("es-MX")} MXN` : ""}</div>
+          </div>
+          <div class="comparacion" id="comp-${i}">Esperando turno...</div>
+          <div class="grafica-wrap" id="graf-${i}"></div>
+        </div>
+      `).join("");
+
+      for (let i = 0; i < filas.length; i++) {
+        const f = filas[i];
+        const compEl = document.getElementById(`comp-${i}`);
+        compEl.textContent = "Buscando en JustTCG...";
+        try {
+          const juego = JUEGO_JUSTTCG[f.tcg] || "pokemon";
+          const envoltura = await buscarEnJustTcg(juego, f.carta);
+          if (envoltura.error || envoltura.statusJustTcg >= 400) {
+            compEl.innerHTML = `<span class="no">JustTCG: error (${envoltura.error || envoltura.statusJustTcg})</span>`;
+          } else {
+            const lista = extraerLista(envoltura.data);
+            if (lista.length === 0) {
+              compEl.innerHTML = '<span class="no">JustTCG: no la encontró</span>';
+            } else {
+              const primera = lista[0];
+              const precioJustTcg = extraerPrecio(primera);
+              const cardId = primera.id || primera.cardId || primera.tcgplayerId || "";
+              compEl.innerHTML = `
+                <span class="ok">JustTCG: ${precioJustTcg != null ? "$" + precioJustTcg.toLocaleString("en-US") + " USD" : "sin precio"}</span><br/>
+                <span style="color:#8291B5; font-size:12px;">${primera.name || ""}${primera.set ? " · " + primera.set : ""}</span><br/>
+                ${cardId ? `<button class="secundario" style="margin-top:6px;" onclick="verHistorial('${cardId}', 'graf-${i}')">Ver historial de precio</button>` : ""}
+              `;
+            }
+          }
+        } catch (e) {
+          compEl.innerHTML = `<span class="no">Error: ${e.message}</span>`;
+        }
+        await new Promise((r) => setTimeout(r, 350)); // no saturar la cuota de JustTCG
+      }
+      estadoComparar.textContent = "Listo.";
+      btnComparar.disabled = false;
+    }
+    btnComparar.addEventListener("click", comparar);
   </script>
 </body>
 </html>
