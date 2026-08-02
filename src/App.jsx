@@ -1300,6 +1300,7 @@ function CardPicker({ tcg = "pokemon", onSelect }) {
       card_api_id: c.id,
       imagen_url: c.image || "",
       precio_ref_mxn: c.precioRefMxn,
+      precio_ref_fuente: c.precioRefFuente,
     });
     setQ(""); setResults([]); setOpen(false);
   };
@@ -1579,6 +1580,7 @@ function TCGplayerPicker({ tcg = "pokemon", soloSellado = true, onSelect }) {
     onSelect({
       name: p.name, producto: p.name, set_nombre: grupoSeleccionado?.name || "",
       imagen_url: p.imageUrl, card_api_id: `tcgcsv-${p.productId}`, precio_ref_mxn: precioRefMxn,
+      precio_ref_fuente: precioRefMxn ? "TCGplayer" : null,
     });
     setOpen(false); setBusqueda("");
   };
@@ -1715,7 +1717,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   }, []);
 
   const vacio = {
-    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
+    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, foto_real_url: "", foto_real_reverso_url: "",
     gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "", buzon_tienda_id: "",
     descripcion: "", etiquetas: "",
   };
@@ -1789,6 +1791,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nueva.card_api_id || null,
         imagen_url: nueva.imagen_url || null,
         precio_ref_mxn: nueva.precio_ref_mxn || null,
+        precio_ref_fuente: nueva.precio_ref_mxn ? nueva.precio_ref_fuente || null : null,
         // Las fotos reales (frente/reverso) ya NO son obligatorias para
         // publicar -- si el vendedor las subió antes de dar clic, se mandan
         // de una vez; si no, quedan en null y se pueden agregar después
@@ -1914,14 +1917,14 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         ) : tipo === "carta" ? (
           <>
             <div>
-              <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+              <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_ref_fuente: c.precio_ref_fuente, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
               {nueva.card_api_id && (
                 <div className="flex items-center gap-3 mt-2">
                   {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                   <div>
                     <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
-                    {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-                    <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                    {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia{nueva.precio_ref_fuente ? ` (${nueva.precio_ref_fuente})` : ""}: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                    <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                   </div>
                 </div>
               )}
@@ -1948,7 +1951,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
           </>
         ) : (
           <>
-            <CardPickerUniversal tcg={nueva.tcg} soloSellado onSelect={(p) => setNueva({ ...nueva, carta: p.producto, set_nombre: p.set_nombre, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
+            <CardPickerUniversal tcg={nueva.tcg} soloSellado onSelect={(p) => setNueva({ ...nueva, carta: p.producto, set_nombre: p.set_nombre, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio_ref_fuente: p.precio_ref_fuente, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
             <div className="flex items-center gap-2 flex-wrap">
               <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
               {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
@@ -1964,8 +1967,8 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
             <div>
               <Badge color={COLORS.azulClaro}>{nueva.carta}</Badge>
-              {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-              <button type="button" onClick={() => setNueva({ ...nueva, carta: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+              {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia{nueva.precio_ref_fuente ? ` (${nueva.precio_ref_fuente})` : ""}: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+              <button type="button" onClick={() => setNueva({ ...nueva, carta: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
             </div>
           </div>
         )}
@@ -3902,7 +3905,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   // ---- Modo manual: agregar cartas del catálogo directo a una carpeta, sin
   // foto ni IA -- usa la imagen oficial del catálogo, igual que ya hace el
   // Importador Masivo, en vez de exigir una foto real por carta. ----
-  const vacioManual = { tcg: "pokemon", carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio: "", cantidad: "1", condicion: "NM", idioma: "EN" };
+  const vacioManual = { tcg: "pokemon", carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, precio: "", cantidad: "1", condicion: "NM", idioma: "EN" };
   const [manualPara, setManualPara] = useState(null); // id de la carpeta en modo manual, o null
   const [manualNuevo, setManualNuevo] = useState(vacioManual);
   const [agregandoManual, setAgregandoManual] = useState(false);
@@ -3969,6 +3972,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
         card_api_id: manualNuevo.card_api_id || null,
         imagen_url: manualNuevo.imagen_url || null,
         precio_ref_mxn: manualNuevo.precio_ref_mxn || null,
+        precio_ref_fuente: manualNuevo.precio_ref_mxn ? manualNuevo.precio_ref_fuente || null : null,
         carpeta_id: carpetaId,
         en_venta: carpetaDestino?.tipo !== "exhibicion",
         ...(contexto === "tienda"
@@ -4195,7 +4199,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
                 {okManual && <p style={{ color: COLORS.gold }} className="text-xs">Agregada. Sigue eligiendo más, o cierra cuando termines.</p>}
                 <div className="mb-1"><CardPickerUniversal tcg={manualNuevo.tcg} onSelect={(sel) => setManualNuevo((n) => ({
                   ...n, carta: sel.name, set_nombre: sel.set_nombre, card_api_id: sel.card_api_id, imagen_url: sel.imagen_url,
-                  precio_ref_mxn: sel.precio_ref_mxn, precio: n.precio || (sel.precio_ref_mxn ? String(sel.precio_ref_mxn) : ""),
+                  precio_ref_mxn: sel.precio_ref_mxn, precio_ref_fuente: sel.precio_ref_fuente, precio: n.precio || (sel.precio_ref_mxn ? String(sel.precio_ref_mxn) : ""),
                 }))} /></div>
                 {manualNuevo.imagen_url && (
                   <div className="flex items-center gap-2">
@@ -4465,13 +4469,13 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
   const [error, setError] = useState(null);
 
   const [nuevaCarta, setNuevaCarta] = useState({
-    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
+    tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, foto_real_url: "", foto_real_reverso_url: "",
     gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
   });
   // Ver el comentario equivalente en MyMarketPanel: las fotos ya no son
   // obligatorias, esto solo evita perder una subida en curso al publicar.
   const [subiendoFotoCarta, setSubiendoFotoCarta] = useState({ frente: false, atras: false });
-  const [nuevoSellado, setNuevoSellado] = useState({ tcg: "pokemon", producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+  const [nuevoSellado, setNuevoSellado] = useState({ tcg: "pokemon", producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null });
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
@@ -4562,7 +4566,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
         await sbWrite("POST", "inventario_tienda", sinReverso, session);
       }
       setNuevaCarta({
-        tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "", foto_real_reverso_url: "",
+        tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, foto_real_url: "", foto_real_reverso_url: "",
         gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
       });
       cargar();
@@ -4595,7 +4599,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
         imagen_url: nuevoSellado.imagen_url || null,
         precio_ref_mxn: nuevoSellado.precio_ref_mxn || null,
       }, session);
-      setNuevoSellado({ tcg: nuevoSellado.tcg, producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null });
+      setNuevoSellado({ tcg: nuevoSellado.tcg, producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingSellado(false); }
   };
@@ -4737,6 +4741,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
             card_api_id: c.card_api_id,
             imagen_url: c.imagen_url,
             precio_ref_mxn: c.precio_ref_mxn,
+            precio_ref_fuente: c.precio_ref_fuente,
             precio: nuevaCarta.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : ""),
           })} />
           {nuevaCarta.card_api_id && (
@@ -4746,10 +4751,10 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
                 <Badge color={COLORS.azulPalido}>{nuevaCarta.carta}</Badge>
                 {nuevaCarta.precio_ref_mxn && (
                   <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">
-                    Precio de referencia en mercado: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
+                    Precio de referencia{nuevaCarta.precio_ref_fuente ? ` (${nuevaCarta.precio_ref_fuente})` : ""}: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
                   </p>
                 )}
-                <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
               </div>
             </div>
           )}
@@ -4822,7 +4827,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
 
       <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2">
-        <select value={nuevoSellado.tcg} onChange={(e) => setNuevoSellado({ ...nuevoSellado, tcg: e.target.value, producto: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+        <select value={nuevoSellado.tcg} onChange={(e) => setNuevoSellado({ ...nuevoSellado, tcg: e.target.value, producto: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
           {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
         </select>
         {!selladoManual ? (
@@ -4833,6 +4838,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
               imagen_url: p.imagen_url,
               card_api_id: p.card_api_id,
               precio_ref_mxn: p.precio_ref_mxn,
+              precio_ref_fuente: p.precio_ref_fuente,
               precio: nuevoSellado.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : ""),
             })} />
             {nuevoSellado.card_api_id && (
@@ -4841,9 +4847,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
                 <div>
                   <Badge color={COLORS.azulClaro}>{nuevoSellado.producto}</Badge>
                   {nuevoSellado.precio_ref_mxn && (
-                    <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia: ~${nuevoSellado.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>
+                    <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia{nuevoSellado.precio_ref_fuente ? ` (${nuevoSellado.precio_ref_fuente})` : ""}: ~${nuevoSellado.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>
                   )}
-                  <button type="button" onClick={() => setNuevoSellado({ ...nuevoSellado, producto: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                  <button type="button" onClick={() => setNuevoSellado({ ...nuevoSellado, producto: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                 </div>
               </div>
             )}
@@ -6837,7 +6843,7 @@ async function cargarDetalleListing(tabla, id) {
       gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.zona,
       imagen: miniaturaListing(r), fotoRealFrente: r.foto_real_url || null, fotoRealReverso: r.foto_real_reverso_url || null,
-      cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
+      cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, precioRefFuenteGuardado: r.precio_ref_fuente, tcg: r.tcg,
       buzonTienda: r.buzon_tienda || null, descripcion: r.descripcion || null, etiquetas: r.etiquetas || [],
       enVenta: r.en_venta !== false,
       vendedor: { perfilId: r.perfil_id, nombre: r.perfiles?.nombre || "Usuario", avatarUrl: r.perfiles?.avatar_url, whatsapp: r.perfiles?.whatsapp, facebook: r.perfiles?.facebook, perfil: r.perfiles, esTienda: false },
@@ -6854,7 +6860,7 @@ async function cargarDetalleListing(tabla, id) {
       gradeada: r.gradeada, gradoEmpresa: r.grado_empresa, gradoEmpresaOtro: r.grado_empresa_otro, gradoCalificacion: r.grado_calificacion,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
       imagen: miniaturaListing(r), fotoRealFrente: r.foto_real_url || null, fotoRealReverso: r.foto_real_reverso_url || null,
-      cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg,
+      cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, precioRefFuenteGuardado: r.precio_ref_fuente, tcg: r.tcg,
       enVenta: r.en_venta !== false,
       vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""} en ${r.tiendas?.nombre}`,
@@ -6868,7 +6874,7 @@ async function cargarDetalleListing(tabla, id) {
       tabla,
       nombre: r.producto, setNombre: null, tipo: "sellado", condicion: null, idioma: null,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
-      imagen: r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, tcg: r.tcg || "pokemon",
+      imagen: r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, precioRefFuenteGuardado: r.precio_ref_fuente, tcg: r.tcg || "pokemon",
       vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
       contexto: `${r.producto} en ${r.tiendas?.nombre}`,
     };
@@ -6876,7 +6882,7 @@ async function cargarDetalleListing(tabla, id) {
   return null;
 }
 
-const CARTA_OFRECIDA_VACIA = { carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, foto_real_url: "" };
+const CARTA_OFRECIDA_VACIA = { carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, foto_real_url: "" };
 
 // Una fila de "Comentarios y ofertas": un comentario simple, una oferta en
 // efectivo (tipo "precio", o filas viejas de antes de la migración 050 que
@@ -7048,7 +7054,7 @@ function OfertasPanel({ session, listingTabla, listingId, tcg = "pokemon", esMio
               <div className="grid gap-3">
                 {cartasOfrecidas.map((c, idx) => (
                   <div key={idx} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 grid gap-2">
-                    <CardPickerUniversal tcg={tcg} onSelect={(sel) => actualizarCartaOfrecida(idx, { carta: sel.name, set_nombre: sel.set_nombre, card_api_id: sel.card_api_id, imagen_url: sel.imagen_url, precio_ref_mxn: sel.precio_ref_mxn })} />
+                    <CardPickerUniversal tcg={tcg} onSelect={(sel) => actualizarCartaOfrecida(idx, { carta: sel.name, set_nombre: sel.set_nombre, card_api_id: sel.card_api_id, imagen_url: sel.imagen_url, precio_ref_mxn: sel.precio_ref_mxn, precio_ref_fuente: sel.precio_ref_fuente })} />
                     {c.carta && (
                       <div className="flex items-center gap-3">
                         {c.imagen_url && <img src={c.imagen_url} alt={c.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
@@ -7327,9 +7333,15 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
                 {cargandoPrecio ? (
                   <p style={{ color: COLORS.muted }} className="text-xs">Consultando TCGplayer / Cardmarket...</p>
                 ) : precioVivo?.precioRefMxn ? (
-                  <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-lg font-bold">~${precioVivo.precioRefMxn.toLocaleString("es-MX")} MXN</p>
+                  <p style={{ fontFamily: "'Space Mono', monospace", color: COLORS.gold }} className="text-lg font-bold">
+                    ~${precioVivo.precioRefMxn.toLocaleString("es-MX")} MXN
+                    {precioVivo.precioRefFuente && <span style={{ color: COLORS.muted }} className="text-xs font-normal"> ({precioVivo.precioRefFuente})</span>}
+                  </p>
                 ) : item.precioRefGuardado ? (
-                  <p style={{ color: COLORS.muted }} className="text-sm">~${Number(item.precioRefGuardado).toLocaleString("es-MX")} MXN <span className="text-xs">(guardado al publicar)</span></p>
+                  <p style={{ color: COLORS.muted }} className="text-sm">
+                    ~${Number(item.precioRefGuardado).toLocaleString("es-MX")} MXN
+                    {item.precioRefFuenteGuardado ? ` (${item.precioRefFuenteGuardado})` : ""} <span className="text-xs">(guardado al publicar)</span>
+                  </p>
                 ) : (
                   <p style={{ color: COLORS.muted }} className="text-xs">Sin precio de referencia disponible para esta carta.</p>
                 )}
@@ -8959,7 +8971,7 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
   const [activandoPush, setActivandoPush] = useState(false);
   const [pushOk, setPushOk] = useState(false);
   const [tipo, setTipo] = useState("carta"); // carta | sellado
-  const vacio = { tcg: "pokemon", carta: "", precio_max: "", zona: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null };
+  const vacio = { tcg: "pokemon", carta: "", precio_max: "", zona: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null };
   const [nueva, setNueva] = useState(vacio);
 
   // "Mi Wishlist" (tabla wishlist, cartas marcadas "quiero" desde el Catálogo)
@@ -9007,6 +9019,7 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
         card_api_id: nueva.card_api_id || null,
         imagen_url: nueva.imagen_url || null,
         precio_ref_mxn: nueva.precio_ref_mxn || null,
+        precio_ref_fuente: nueva.precio_ref_mxn ? nueva.precio_ref_fuente || null : null,
       }, session);
       setNueva(vacio);
       cargar();
@@ -9084,14 +9097,14 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
           {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
         </select>
         <div>
-          <CardPickerUniversal tcg={nueva.tcg} soloSellado={tipo === "sellado"} onSelect={(c) => setNueva({ ...nueva, carta: c.name, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_max: nueva.precio_max || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+          <CardPickerUniversal tcg={nueva.tcg} soloSellado={tipo === "sellado"} onSelect={(c) => setNueva({ ...nueva, carta: c.name, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_ref_fuente: c.precio_ref_fuente, precio_max: nueva.precio_max || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
           {nueva.card_api_id && (
             <div className="flex items-center gap-3 mt-2">
               {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
               <div>
                 <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
-                {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-                <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia{nueva.precio_ref_fuente ? ` (${nueva.precio_ref_fuente})` : ""}: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                <button type="button" onClick={() => setNueva({ ...nueva, carta: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
               </div>
             </div>
           )}
@@ -10806,6 +10819,12 @@ export default function EncuentraCartas() {
 
   const [market, setMarket] = useState([]);
   const [loadingMarket, setLoadingMarket] = useState(false);
+  // Cartas sueltas publicadas por tiendas (inventario_tienda) -- se mezclan
+  // con "market" (mercado_listings, vendedores individuales) para que
+  // "Mercado entre usuarios" también muestre lo que sube una tienda, igual
+  // que ya hacían "Buscar" y la vitrina de inicio (ver conMarketNormalizado).
+  const [marketTiendas, setMarketTiendas] = useState([]);
+  const [loadingMarketTiendas, setLoadingMarketTiendas] = useState(false);
   const [tipoMercadoTab, setTipoMercadoTab] = useState("todos"); // todos | carta | sellado | accesorio
 
   // Filtros de precio/idioma/estado/zona -- se usan tanto en "Mercado entre
@@ -10832,6 +10851,26 @@ export default function EncuentraCartas() {
     if (f.zona && zonaDe(item) !== f.zona) return false;
     return true;
   };
+  // Mezcla mercado_listings (vendedores individuales) con inventario_tienda
+  // (cartas sueltas de una tienda) en una sola lista para "Mercado entre
+  // usuarios" -- inventario_tienda no trae los mismos campos "planos" que
+  // mercado_listings (el nombre/avatar del vendedor vive anidado bajo
+  // "tiendas", no hay "tipo" porque siempre es carta, etc.), así que se
+  // normaliza aquí una sola vez en vez de repetir el branching en cada
+  // lugar del JSX que muestra al vendedor.
+  const marketNormalizado = (rowsIndividuales, rowsTiendas) => [
+    ...rowsIndividuales.map((r) => ({
+      ...r, _esTienda: false, _tabla: "mercado_listings",
+      _vendedorId: r.perfil_id, _vendedorNombre: r.perfiles?.nombre || "Usuario",
+      _vendedorAvatar: r.perfiles?.avatar_url, _vendedorWhatsapp: r.perfiles?.whatsapp, _vendedorFacebook: r.perfiles?.facebook,
+    })),
+    ...rowsTiendas.map((r) => ({
+      ...r, tipo: r.tipo || "carta", _esTienda: true, _tabla: "inventario_tienda",
+      _vendedorId: r.tiendas?.perfil_id, _vendedorNombre: r.tiendas?.nombre || "Tienda",
+      _vendedorAvatar: r.tiendas?.perfiles?.avatar_url, _vendedorWhatsapp: null, _vendedorFacebook: null,
+      perfiles: r.tiendas?.perfiles, // para que PlanBadge siga funcionando igual que con mercado_listings
+    })),
+  ];
   // Orden de precio: aparte de los filtros de arriba (esos ocultan resultados,
   // esto solo cambia el orden en el que se muestran) -- por default se respeta
   // el orden con los boosts primero (conBoostPrimero).
@@ -10888,6 +10927,12 @@ export default function EncuentraCartas() {
     if ((view === "market" || necesitaVitrina) && market.length === 0) {
       setLoadingMarket(true);
       sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&en_venta=eq.true&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
+    }
+    if (view === "market" && marketTiendas.length === 0) {
+      setLoadingMarketTiendas(true);
+      sb("inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&en_venta=eq.true&order=created_at.desc")
+        .then((rows) => setMarketTiendas(conBoostPrimero(rows)))
+        .finally(() => setLoadingMarketTiendas(false));
     }
     if ((view === "news" || necesitaVitrina) && news.length === 0) {
       setLoadingNews(true);
@@ -11530,7 +11575,7 @@ export default function EncuentraCartas() {
                   </div>
                   <div className="text-right">
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
-                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. {r.precio_ref_fuente || "mercado"}: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <div className="flex gap-1 mt-2 justify-end">
                       <button
                         onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.carta} (${r.set_nombre}) en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
@@ -11571,7 +11616,7 @@ export default function EncuentraCartas() {
                   </div>
                   <div className="text-right">
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
-                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. {r.precio_ref_fuente || "mercado"}: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <div className="flex gap-1 mt-2 justify-end">
                       <button
                         onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
@@ -11605,7 +11650,7 @@ export default function EncuentraCartas() {
                   </div>
                   <div className="text-right">
                     <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} />
-                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. {r.precio_ref_fuente || "mercado"}: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                     <div className="flex gap-1 mt-2 justify-end">
                       <button
                         onClick={(e) => { e.stopPropagation(); abrirChat(r.tiendas?.perfil_id, r.tiendas?.nombre, `${r.producto} en ${r.tiendas?.nombre}`, null, null, r.tiendas?.perfiles?.avatar_url); }}
@@ -11766,19 +11811,25 @@ export default function EncuentraCartas() {
                 )}
               </div>
             )}
-            {loadingMarket && <Loading label="Cargando publicaciones..." />}
-            {!loadingMarket && ordenarPorPrecio(market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltros)).length === 0 && (
-              <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
-                {market.length === 0
-                  ? "Todavía no hay publicaciones de usuarios en el mercado. En cuanto alguien se registre como cuenta individual y publique una carta, aparecerá aquí automáticamente."
-                  : filtrosActivos
-                    ? "Nadie tiene algo así con esos filtros. Prueba quitando alguno."
-                    : "Nadie ha publicado nada así todavía en el Mercado."}
-              </p>
-            )}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {ordenarPorPrecio(market.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltros)).map((r) => (
-                <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
+            {(() => {
+              const loadingMercado = loadingMarket || loadingMarketTiendas;
+              const mercadoCompleto = marketNormalizado(market, marketTiendas);
+              const mercadoVisible = ordenarPorPrecio(mercadoCompleto.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltros));
+              return (
+                <>
+                  {loadingMercado && <Loading label="Cargando publicaciones..." />}
+                  {!loadingMercado && mercadoVisible.length === 0 && (
+                    <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
+                      {mercadoCompleto.length === 0
+                        ? "Todavía no hay publicaciones en el mercado. En cuanto alguien se registre como cuenta individual (o una tienda) publique una carta, aparecerá aquí automáticamente."
+                        : filtrosActivos
+                          ? "Nadie tiene algo así con esos filtros. Prueba quitando alguno."
+                          : "Nadie ha publicado nada así todavía en el Mercado."}
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {mercadoVisible.map((r) => (
+                <div key={`${r._esTienda ? "t" : "m"}-${r.id}`} onClick={() => abrirDetalle(r.id, r._tabla)} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                   <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
                     {miniaturaListing(r) ? (
                       <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
@@ -11788,12 +11839,13 @@ export default function EncuentraCartas() {
                   </div>
                   <div className="p-3 flex flex-col flex-1 gap-1">
                     <div className="flex items-center gap-1 flex-wrap">
+                      <Badge color={r._esTienda ? COLORS.azulPalido : COLORS.azulClaro}>{r._esTienda ? "Tienda" : "Mercado"}</Badge>
                       {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
                       {r.tipo === "accesorio" && <Badge color={COLORS.gold}>Accesorio</Badge>}
                       {r.tipo === "carta" && <IdiomaBadge idioma={r.idioma} />}
                       {r.tipo === "carta" && <EstadoCartaBadge condicion={r.condicion} />}
                       {r.tipo === "carta" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
-                      <BuzonBadge tienda={r.buzon_tienda} />
+                      {!r._esTienda && <BuzonBadge tienda={r.buzon_tienda} />}
                       <PlanBadge perfil={r.perfiles} />
                       <BoostBadge item={r} />
                     </div>
@@ -11801,36 +11853,47 @@ export default function EncuentraCartas() {
                     {r.tipo === "accesorio" ? (
                       <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.descripcion || r.zona}</p>
                     ) : (
-                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.set_nombre}{r.set_nombre && r.zona ? " · " : ""}{r.zona}</p>
+                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.set_nombre}{r.set_nombre && zonaDe(r) ? " · " : ""}{zonaDe(r)}</p>
                     )}
                     <div className="mt-1">
                       <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="md" />
                     </div>
-                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs -mt-1">ref. mercado: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                    <button onClick={(e) => { e.stopPropagation(); verPerfil(r.perfil_id); }} className="flex items-center gap-2 mt-auto pt-2 hover:brightness-125">
-                      <AvatarImg url={r.perfiles?.avatar_url} size={20} />
-                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.perfiles?.nombre || "Usuario"}</p>
-                    </button>
+                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs -mt-1">ref. {r.precio_ref_fuente || "mercado"}: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                    {r._esTienda ? (
+                      <div className="flex items-center gap-2 mt-auto pt-2">
+                        <AvatarImg url={r._vendedorAvatar} size={20} />
+                        <p style={{ color: COLORS.muted }} className="text-xs truncate">{r._vendedorNombre}</p>
+                      </div>
+                    ) : (
+                      <button onClick={(e) => { e.stopPropagation(); verPerfil(r._vendedorId); }} className="flex items-center gap-2 mt-auto pt-2 hover:brightness-125">
+                        <AvatarImg url={r._vendedorAvatar} size={20} />
+                        <p style={{ color: COLORS.muted }} className="text-xs truncate">{r._vendedorNombre}</p>
+                      </button>
+                    )}
                     <div className="flex gap-1 mt-2">
                       <button
-                        onClick={(e) => { e.stopPropagation(); abrirChat(r.perfil_id, r.perfiles?.nombre, `${r.carta} (${r.set_nombre})`, r.perfiles?.whatsapp, r.perfiles?.facebook, r.perfiles?.avatar_url); }}
-                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+                        onClick={(e) => { e.stopPropagation(); abrirChat(r._vendedorId, r._vendedorNombre, `${r.carta} (${r.set_nombre})${r._esTienda ? ` en ${r._vendedorNombre}` : ""}`, r._vendedorWhatsapp, r._vendedorFacebook, r._vendedorAvatar); }}
+                        disabled={!r._vendedorId}
+                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r._vendedorId ? 1 : 0.4 }}
                         className="text-xs px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 flex-1"
                       >
                         <MessageCircle size={12} /> Contactar
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: "mercado_listings", id: r.id, nombre: r.carta, precio: r.precio, imagen_url: miniaturaListing(r), contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r.perfil_id, vendedorNombre: r.perfiles?.nombre, vendedorAvatar: r.perfiles?.avatar_url, vendedorWhatsapp: r.perfiles?.whatsapp, vendedorFacebook: r.perfiles?.facebook }); }}
-                        disabled={!r.perfil_id || r.perfil_id === session?.user?.id || enElCarrito("mercado_listings", r.id)}
-                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: (!r.perfil_id || r.perfil_id === session?.user?.id) ? 0.3 : 1 }}
+                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: r._tabla, id: r.id, nombre: r.carta, precio: r.precio, imagen_url: miniaturaListing(r), contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r._vendedorId, vendedorNombre: r._vendedorNombre, vendedorAvatar: r._vendedorAvatar, vendedorWhatsapp: r._vendedorWhatsapp, vendedorFacebook: r._vendedorFacebook }); }}
+                        disabled={!r._vendedorId || r._vendedorId === session?.user?.id || enElCarrito(r._tabla, r.id)}
+                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: (!r._vendedorId || r._vendedorId === session?.user?.id) ? 0.3 : 1 }}
                         className="text-xs px-2 py-1.5 rounded-lg flex items-center justify-center">
-                        {enElCarrito("mercado_listings", r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                        {enElCarrito(r._tabla, r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
                       </button>
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -12193,7 +12256,7 @@ export default function EncuentraCartas() {
                       </div>
                       <div className="text-right">
                         <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
-                        {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                        {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. {item.precio_ref_fuente || "mercado"}: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                         <div className="flex gap-1 mt-1 justify-end">
                           <button
                             onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.carta} (${item.set_nombre}) en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
@@ -12228,7 +12291,7 @@ export default function EncuentraCartas() {
                       </div>
                       <div className="text-right">
                         <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
-                        {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. mercado: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                        {item.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs">ref. {item.precio_ref_fuente || "mercado"}: ~${Number(item.precio_ref_mxn).toLocaleString("es-MX")}</p>}
                         <div className="flex gap-1 mt-1 justify-end">
                           <button
                             onClick={(e) => { e.stopPropagation(); abrirChat(selectedStore.perfil_id, selectedStore.nombre, `${item.producto} en ${selectedStore.nombre}`, null, null, selectedStore.perfiles?.avatar_url); }}
