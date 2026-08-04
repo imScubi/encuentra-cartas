@@ -50,6 +50,15 @@ const RUIDO_CONOCIDO = [
   /^Failed to fetch$/i,
   // Firefox: la misma redacción del navegador para el mismo caso.
   /^NetworkError when attempting to fetch resource\.?$/i,
+  // Firefox para Android inyecta su propio puente interno
+  // ("window.__firefox__", usado por su modo lectura y su control de
+  // calidad de YouTube) en cada página que visitas -- revienta solo,
+  // sin relación con nuestro código.
+  /window\.__firefox__/i,
+  // Extensiones de billetera cripto (MetaMask y similares) inyectan
+  // "window.ethereum" en cada página; cuando hay más de una instalada se
+  // pelean por esa propiedad y truena solo, sin relación con nuestro código.
+  /window\.ethereum/i,
 ];
 function esRuidoConocido(texto) {
   return RUIDO_CONOCIDO.some((patron) => patron.test(String(texto || "")));
