@@ -3211,6 +3211,24 @@ convenció como reemplazo -- se cancela y se regresa todo a la normalidad.
 No requiere ninguna migración (la columna `precio_ref_fuente` de la
 sección 102 no tiene relación con este experimento y se queda igual).
 
+## 107. Filtrar más ruido conocido en la captura de errores
+
+Llegaron tres avisos de error (sección 35) que no eran bugs reales:
+`window.__firefox__.refresh_youtube_quality_...`,
+`window.__firefox__.reader` y `window.ethereum.selectedAddress`.
+
+- Los primeros dos son el puente interno de Firefox para Android (su
+  modo lectura y su control de calidad de YouTube), que se inyecta en
+  cada página que visitas -- nada que ver con nuestro código.
+- El tercero es de una extensión de billetera cripto (tipo MetaMask)
+  instalada en el navegador de quien visita.
+- Se agregaron `/window\.__firefox__/i` y `/window\.ethereum/i` a la
+  lista `RUIDO_CONOCIDO` de `src/lib/errorReporting.jsx` (mismo patrón
+  que el resto de la lista: cada entrada es un caso real que ya llegó
+  por correo), para que dejen de mandar aviso.
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
