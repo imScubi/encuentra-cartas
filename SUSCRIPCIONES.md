@@ -3245,6 +3245,76 @@ cartas" y lleve directo a la función de vender.
 
 No requiere ninguna migración.
 
+## 109. Correcciones de una revisión externa (frontend)
+
+Petición: un programador externo revisó la web y mandó una lista de
+hallazgos; se atendieron los que eran arreglos de código concretos y
+seguros de hacer sin rediseñar media app.
+
+- **Fix real: el logo no regresaba a Home.** El logo del header no tenía
+  `onClick` -- ahora lleva a la vista "Buscar" (Home), sin necesidad de
+  refrescar la página como tenía que hacer antes quien lo probó.
+- **Fix real: no había forma de iniciar sesión sin abrir el menú.**
+  Junto a la campana/carrito/hamburguesa ahora siempre hay un ícono de
+  persona: si hay sesión es tu foto de perfil (como ya era), y si no hay
+  sesión es un ícono que abre "Mi cuenta" directo, sin tener que entrar
+  al Drawer primero.
+- **Fix real: el Catálogo mostraba información redundante ya avanzado
+  el flujo.** El texto "Paso 1/2/3..." y los botones para elegir el
+  juego se quedaban visibles incluso viendo ya las cartas de un set
+  elegido (Paso 3), saturando la pantalla sin aportar nada en ese
+  momento -- ahora se ocultan una vez que ya se eligió un set (para
+  cambiar de juego, se usa el breadcrumb de "volver" que ya existía).
+- **Scrollbar a juego con el diseño**: se agregó un estilo de scrollbar
+  delgado y con los colores de la app (antes era el gris genérico del
+  navegador, que desentonaba con el fondo oscuro) -- `theme.js`,
+  aplica a toda la web.
+- **Aclaración, no bug: el dominio de vercel.app aparece tras iniciar
+  sesión.** El código que arma el link de login social (`urlLoginSocial`
+  en `supabase.js`) ya construye el redirect dinámicamente con el
+  dominio desde el que se entró (`window.location.origin`), no con uno
+  fijo -- así que si después del login aparece `encuentra-cartas-nmcc-
+  seven.vercel.app` en vez de `encuentracartasmx.com`, es porque el
+  dominio propio no está en la lista de "Redirect URLs" permitidas de
+  Supabase (Authentication → URL Configuration), no un bug de la app.
+  Esto probablemente también explica el otro hallazgo de "se pierde la
+  sesión al volver a home" -- si el login llega a dejarte en el dominio
+  de vercel, la sesión se guarda en el localStorage de ESE dominio, y al
+  volver a `encuentracartasmx.com` (otro origen) no la ve. Revisar y
+  agregar `https://encuentracartasmx.com` a esa lista en el dashboard de
+  Supabase debería resolver ambos hallazgos a la vez.
+- **Aclaración, no bug: `?tienda=slug` "expone endpoints".** Ese query
+  param es el deep-link público de la sección 139 (perfil de tienda por
+  slug) -- no es una ruta de backend, es como el nombre de usuario en la
+  URL de cualquier red social. El directorio de tiendas ya lista
+  públicamente todas las tiendas, así que el slug no es información
+  sensible que "se pueda sacar" jugando con la URL.
+- **Aclaración, no bug: sugerencia de `CREATE VIEW` para que el
+  catálogo cargue más rápido.** El catálogo (Pokémon/Magic/Yu-Gi-Oh/
+  Lorcana/One Piece) no sale de tablas propias -- sale de APIs externas
+  (pokemontcg.io, Scryfall, YGOPRODeck, TCGCSV) en el momento de la
+  consulta, así que una vista de SQL no aplica aquí (no hay tabla propia
+  que "ver"). La lentitud es el tiempo de red de esas APIs; ya existen
+  reintentos (sección 178) para que al menos no parezca "sin resultados"
+  cuando en realidad es una de esas APIs tardando.
+- **Ya existía, no hacía falta tocar**: el carrusel "Cartas que están
+  buscando" ya se muestra en Home (`BusquedasCarrusel`, justo debajo del
+  buscador) -- puede que no lo haya visto quien revisó si en ese momento
+  no había búsquedas publicadas para mostrar.
+- **Pendiente de decisión, no se tocó**: rediseñar "Editar perfil" de
+  modal a una pantalla completa con pestañas (datos personales / ventas
+  / historial de compras) es un cambio de arquitectura más grande, y
+  parte de lo pedido (ventas e historial) ya existe como una vista
+  separada ("Mis compras y ventas") -- puede que solo haga falta hacerla
+  más fácil de encontrar en vez de reconstruir todo el flujo de perfil.
+  No se tocó en esta pasada para no arriesgar una reescritura grande sin
+  antes platicarlo.
+- **Pendiente de decisión, no se tocó**: el isotipo/logo "se pierde en
+  el fondo" es un tema del archivo de imagen (`/branding/logo.png`) en
+  sí, no de código -- necesitaría un archivo de logo nuevo.
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

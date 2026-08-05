@@ -10342,21 +10342,29 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
   return (
     <div>
       <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">📚 Catálogo</h2>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
-        Paso 1: elige el juego. Paso 2: elige una era y un set. Paso 3: marca cada carta con ✅ Tengo o ⭐ Quiero.
-      </p>
+      {/* Una vez que ya se eligió un set y se están viendo/marcando cartas
+          (Paso 3), esta explicación de los 3 pasos y el selector de juego de
+          arriba ya no aportan nada -- solo saturan la pantalla con
+          información que ya no se usa. Se ocultan en ese momento; para
+          cambiar de juego basta con volver atrás por el breadcrumb de abajo. */}
+      {!setSel && (
+        <>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+            Paso 1: elige el juego. Paso 2: elige una era y un set. Paso 3: marca cada carta con ✅ Tengo o ⭐ Quiero.
+          </p>
+          <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 1 · Elige el juego</p>
+          <div className="flex gap-2 flex-wrap mb-6">
+            {TCG_OPCIONES.map((o) => (
+              <button key={o.key} onClick={() => setTcgSel(o.key)}
+                style={{ background: tcgSel === o.key ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${tcgSel === o.key ? COLORS.azulPalido : COLORS.surface2}`, color: tcgSel === o.key ? COLORS.azulPalido : COLORS.muted }}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
-
-      <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 1 · Elige el juego</p>
-      <div className="flex gap-2 flex-wrap mb-6">
-        {TCG_OPCIONES.map((o) => (
-          <button key={o.key} onClick={() => setTcgSel(o.key)}
-            style={{ background: tcgSel === o.key ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${tcgSel === o.key ? COLORS.azulPalido : COLORS.surface2}`, color: tcgSel === o.key ? COLORS.azulPalido : COLORS.muted }}
-            className="rounded-lg px-3 py-1.5 text-xs font-semibold">
-            {o.label}
-          </button>
-        ))}
-      </div>
 
       {!info.wishlistPremium && (
         <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
@@ -11251,7 +11259,7 @@ export default function EncuentraCartas() {
       <header style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: `1px solid ${COLORS.azulClaro}2e`, background: conAlpha(COLORS.bg, 0.66), backdropFilter: "blur(14px)" }}
         className="px-4 sm:px-8 py-6">
         <div className="max-w-5xl mx-auto flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-2">
+          <button onClick={() => setView("search")} className="flex items-center gap-2">
             {!logoError ? (
               <img src="/branding/logo.png" alt="Encuentra Cartas" onError={() => setLogoError(true)} style={{ height: 40, width: "auto" }} />
             ) : (
@@ -11262,7 +11270,7 @@ export default function EncuentraCartas() {
                 </h1>
               </>
             )}
-          </div>
+          </button>
           <nav className="relative flex flex-wrap gap-2 items-center">
             {navEsenciales.map(navButton)}
 
@@ -11281,9 +11289,13 @@ export default function EncuentraCartas() {
             {/* Foto de perfil: acceso directo a "Editar perfil" (o a crear cuenta si
                 no hay sesión) — separado del menú de tres líneas, que abre el resto
                 (Torneos, Wishlist, Planes, Mis pagos, Ayuda, Admin, Cerrar sesión). */}
-            {session && (
+            {session ? (
               <button onClick={() => setShowEditarPerfil(true)} style={{ color: COLORS.muted }} className="p-1 rounded-lg flex items-center">
                 <AvatarImg url={perfil?.avatar_url} size={32} />
+              </button>
+            ) : (
+              <button onClick={() => setShowAccountModal(true)} title="Iniciar sesión o crear cuenta" style={{ color: COLORS.muted }} className="p-2 rounded-lg flex items-center">
+                <User size={20} />
               </button>
             )}
             <button onClick={() => setShowDrawer(true)} style={{ color: COLORS.muted }} className="p-1 rounded-lg flex items-center">

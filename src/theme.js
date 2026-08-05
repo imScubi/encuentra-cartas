@@ -18,6 +18,13 @@ export const FONTS = `
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
 }
+/* Scrollbar a juego con el resto del diseño (por default el navegador pone
+   la barra gris genérica, que desentona con el fondo oscuro) */
+* { scrollbar-width: thin; scrollbar-color: #4F7FD1 #0A1330; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0A1330; }
+::-webkit-scrollbar-thumb { background: #4F7FD1; border-radius: 9999px; border: 2px solid #0A1330; }
+::-webkit-scrollbar-thumb:hover { background: #9EC0EE; }
 `;
 
 // Tipos de cambio aproximados, solo para calcular un precio de referencia (no es una tasa en tiempo real)
