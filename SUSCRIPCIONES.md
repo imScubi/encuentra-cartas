@@ -3315,6 +3315,32 @@ seguros de hacer sin rediseñar media app.
 
 No requiere ninguna migración.
 
+## 110. Logo día/noche + "Mi cuenta" como pantalla completa (retomando la sección 109)
+
+Petición: de los dos pendientes que se dejaron marcados como "decisión
+tuya" en la sección 109, el usuario pidió hacer ambos.
+
+- **Logo según el modo**: se agregó `public/branding/logo-noche.png`
+  (el archivo que mandó el usuario -- mismo isotipo pero con las letras
+  "ENCUENTRA CARTAS" en blanco, hecho para fondo oscuro). El header
+  ahora elige el logo según `localStorage.getItem(TEMA_MODO_KEY)`: modo
+  día sigue usando el `logo.png` de siempre (letras azul marino, pensado
+  para fondo claro), modo noche (el predeterminado) usa el nuevo. Así
+  ninguno de los dos se pierde contra su propio fondo.
+- **"Mi cuenta" de modal a pantalla completa**: `EditarPerfilModal` se
+  convirtió en `MiCuentaView`, una vista más (como "Mercado" o
+  "Catálogo") en vez de un modal que tapaba la pantalla. Tiene dos
+  pestañas: "Datos personales" (todo lo que ya traía el modal: foto,
+  WhatsApp/redes, Pokémon favoritos, qué se ve en el perfil público,
+  bio, color de acento, orden de secciones) y "Compras y ventas" (que
+  reutiliza `ComprasVentasView` tal cual -- ya traía sus propias
+  sub-pestañas Compras/Ventas, así que no hizo falta duplicar esa
+  lógica). El ícono de perfil del header y la opción "Editar perfil"
+  del Drawer ahora navegan a esta vista (`setView("miCuenta")`) en vez
+  de abrir el modal.
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
