@@ -3229,6 +3229,22 @@ Llegaron tres avisos de error (sección 35) que no eran bugs reales:
 
 No requiere ninguna migración.
 
+## 108. Botón grande "Vende tus cartas" en la pantalla de inicio
+
+Petición: un botón grande en la primera pantalla que diga "Vende tus
+cartas" y lleve directo a la función de vender.
+
+- Se agregó en la vista "Buscar" (pantalla de inicio), justo debajo del
+  buscador y los filtros de TCG -- dorado, con ícono, para que resalte
+  del resto de botones (violeta/azul).
+- Sin sesión: abre "Mi cuenta" (crear cuenta o iniciar sesión), igual
+  que el resto de accesos que requieren sesión.
+- Con sesión: manda directo a "Mi tienda" si el perfil es de tienda, o a
+  "Vender en el Mercado" si es cuenta individual -- mismo criterio que
+  ya usa el menú "Vender" del Drawer.
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

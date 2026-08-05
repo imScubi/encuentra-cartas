@@ -11408,6 +11408,17 @@ export default function EncuentraCartas() {
                   </button>
                 ))}
               </div>
+
+              <button type="button"
+                onClick={() => {
+                  if (!session) return setShowAccountModal(true);
+                  setView(perfil?.tipo === "tienda" ? "myStore" : "myMarket");
+                }}
+                style={{ background: `linear-gradient(90deg, ${COLORS.gold}, #FFB84D)`, color: COLORS.textoOscuro }}
+                className="w-full max-w-xl mx-auto mt-5 rounded-2xl px-6 py-4 flex items-center justify-center gap-2 font-bold text-base sm:text-lg shadow-lg hover:brightness-105 active:scale-[0.99] transition">
+                <Tag size={22} />
+                Vende tus cartas
+              </button>
             </div>
 
             {searching && <Loading label="Buscando en tiendas y mercado..." />}
