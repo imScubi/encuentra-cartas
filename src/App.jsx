@@ -9313,7 +9313,14 @@ const SECCIONES_PERFIL_LABEL = {
 };
 const SECCIONES_PERFIL_ORDEN_DEFAULT = ["publicaciones", "wishlist", "carpetas"];
 
-function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil }) {
+// ---- Mi cuenta: antes era un modal ("Editar perfil") que tapaba la pantalla
+// y solo dejaba editar datos -- ahora es una pantalla completa con pestañas,
+// para que también se pueda llegar a "Compras y ventas" desde el mismo lugar
+// (ver sección 110 de SUSCRIPCIONES.md). La pestaña de compras/ventas
+// reutiliza ComprasVentasView tal cual (con sus propias sub-pestañas
+// Compras/Ventas) en vez de duplicar esa lógica.
+function MiCuentaView({ session, perfil, onGuardado, onVerMiPerfil }) {
+  const [tab, setTab] = useState("datos");
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const info = planDe(perfil);
   const [nombre, setNombre] = useState(perfil?.nombre || "");
@@ -9400,7 +9407,6 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil
         visibilidad: vis,
       }, session);
       onGuardado();
-      onClose();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -9409,15 +9415,23 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil
   };
 
   return (
-    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 40px ${COLORS.azulMedio}33` }}
-        className="w-full max-w-md rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto"
-      >
-        <button onClick={onClose} style={{ color: COLORS.muted }} className="absolute top-4 right-4"><X size={20} /></button>
-        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-4">Editar perfil</h2>
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Mi cuenta</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">Tus datos personales, y tus compras y ventas, en un mismo lugar.</p>
 
+      <div className="flex gap-2 mb-6">
+        <button onClick={() => setTab("datos")}
+          style={{ background: tab === "datos" ? COLORS.surface2 : "transparent", border: `1px solid ${tab === "datos" ? COLORS.azulPalido : COLORS.surface2}`, color: tab === "datos" ? COLORS.azulPalido : COLORS.muted }}
+          className="px-3 py-1.5 rounded-full text-sm font-semibold">Datos personales</button>
+        <button onClick={() => setTab("comprasVentas")}
+          style={{ background: tab === "comprasVentas" ? COLORS.surface2 : "transparent", border: `1px solid ${tab === "comprasVentas" ? COLORS.azulPalido : COLORS.surface2}`, color: tab === "comprasVentas" ? COLORS.azulPalido : COLORS.muted }}
+          className="px-3 py-1.5 rounded-full text-sm font-semibold">Compras y ventas</button>
+      </div>
+
+      {tab === "comprasVentas" && <ComprasVentasView session={session} />}
+
+      {tab === "datos" && (
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="w-full max-w-md rounded-2xl p-6">
         <div className="flex items-center gap-3 mb-3">
           <img
             src={avatarPreview || "/branding/logo-icon.png"}
@@ -9552,6 +9566,7 @@ function EditarPerfilModal({ session, perfil, onClose, onGuardado, onVerMiPerfil
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -10579,7 +10594,6 @@ export default function EncuentraCartas() {
   // de completar registro de más.
   const [perfilChecked, setPerfilChecked] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const [showEditarPerfil, setShowEditarPerfil] = useState(false);
   const [logoError, setLogoError] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -11261,7 +11275,9 @@ export default function EncuentraCartas() {
         <div className="max-w-5xl mx-auto flex items-center justify-between flex-wrap gap-4">
           <button onClick={() => setView("search")} className="flex items-center gap-2">
             {!logoError ? (
-              <img src="/branding/logo.png" alt="Encuentra Cartas" onError={() => setLogoError(true)} style={{ height: 40, width: "auto" }} />
+              <img
+                src={(localStorage.getItem(TEMA_MODO_KEY) || "noche") === "dia" ? "/branding/logo.png" : "/branding/logo-noche.png"}
+                alt="Encuentra Cartas" onError={() => setLogoError(true)} style={{ height: 40, width: "auto" }} />
             ) : (
               <>
                 <Sparkles size={22} color={COLORS.azulPalido} />
@@ -11286,11 +11302,11 @@ export default function EncuentraCartas() {
               )}
             </button>
 
-            {/* Foto de perfil: acceso directo a "Editar perfil" (o a crear cuenta si
+            {/* Foto de perfil: acceso directo a "Mi cuenta" (o a crear cuenta si
                 no hay sesión) — separado del menú de tres líneas, que abre el resto
                 (Torneos, Wishlist, Planes, Mis pagos, Ayuda, Admin, Cerrar sesión). */}
             {session ? (
-              <button onClick={() => setShowEditarPerfil(true)} style={{ color: COLORS.muted }} className="p-1 rounded-lg flex items-center">
+              <button onClick={() => setView("miCuenta")} style={{ color: COLORS.muted }} className="p-1 rounded-lg flex items-center">
                 <AvatarImg url={perfil?.avatar_url} size={32} />
               </button>
             ) : (
@@ -11320,7 +11336,7 @@ export default function EncuentraCartas() {
           grupos={navGrupos}
           view={view}
           onNavigate={(id) => { setView(id); setShowDrawer(false); }}
-          onEditarPerfil={() => { setShowEditarPerfil(true); setShowDrawer(false); }}
+          onEditarPerfil={() => { setView("miCuenta"); setShowDrawer(false); }}
           onVerTutorial={() => { setShowOnboarding(true); setShowDrawer(false); }}
           onLogout={() => { handleLogout(); setShowDrawer(false); }}
           onLogin={() => { setShowAccountModal(true); setShowDrawer(false); }}
@@ -11333,15 +11349,6 @@ export default function EncuentraCartas() {
       {showAccountModal && <AccountModal onClose={() => setShowAccountModal(false)} onAuthed={handleAuthed} />}
       {session && perfilChecked && !perfil && (
         <CompletarPerfilOAuthModal session={session} onCreado={(p) => setPerfil(p)} onCancelar={handleLogout} />
-      )}
-      {showEditarPerfil && session && (
-        <EditarPerfilModal
-          session={session}
-          perfil={perfil}
-          onClose={() => setShowEditarPerfil(false)}
-          onGuardado={() => cargarOCrearPerfil(session)}
-          onVerMiPerfil={() => { setShowEditarPerfil(false); verPerfil(session.user.id); }}
-        />
       )}
       {chatContext && session && (
         <ChatModal
@@ -12379,6 +12386,9 @@ export default function EncuentraCartas() {
         )}
         {view === "siguiendo" && session && <SiguiendoView session={session} onVerPerfil={verPerfil} onVerTienda={verTiendaDesdePerfil} />}
         {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
+        {view === "miCuenta" && session && (
+          <MiCuentaView session={session} perfil={perfil} onGuardado={() => cargarOCrearPerfil(session)} onVerMiPerfil={() => verPerfil(session.user.id)} />
+        )}
         {view === "recompensas" && session && <RecompensasView session={session} perfil={perfil} />}
         {view === "apariencia" && session && (
           <AparienciaView perfil={perfil} onCambio={() => setTemaVersion((v) => v + 1)} onIrAPlanes={() => setView("planes")} />
