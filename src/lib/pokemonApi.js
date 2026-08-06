@@ -112,6 +112,86 @@ export async function buscarImagenRespaldo(nombre, numero, setNombre) {
   }
 }
 
+// Mismo "Buscar foto" que buscarImagenRespaldo, pero para Magic (Scryfall)
+// -- antes el botón "🔄 Buscar foto" llamaba SIEMPRE a buscarImagenRespaldo
+// (Pokémon/pokemontcg.io) sin importar el TCG real de la carta, así que
+// para Magic, Yu-Gi-Oh y Lorcana nunca podía encontrar nada -- "No se
+// encontró la versión exacta" en el 100% de los casos, ni siquiera lo
+// intentaba con la API correcta. Ver buscarImagenRespaldoPorTcg más abajo,
+// el despachador que ahora usa ReintentarImagen en App.jsx.
+// `!"nombre"` en la sintaxis de Scryfall es coincidencia EXACTA de nombre
+// (no difusa), a propósito: mismo criterio que la versión de Pokémon, mejor
+// no traer nada que traer la imagen de una carta distinta con nombre parecido.
+async function buscarImagenRespaldoMagic(nombre, numero, setNombre) {
+  if (!nombre) return null;
+  try {
+    const res = await fetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(`!"${nombre}"`)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    let cartas = data?.data || [];
+    if (!cartas.length) return null;
+    if (numero) {
+      const exactas = cartas.filter((c) => String(c.collector_number).toLowerCase() === String(numero).toLowerCase());
+      if (exactas.length) cartas = exactas;
+    }
+    if (setNombre && cartas.length > 1) {
+      const porSet = cartas.filter((c) => (c.set_name || "").toLowerCase() === setNombre.toLowerCase());
+      if (porSet.length) cartas = porSet;
+    }
+    return imagenDeCartaScryfall(cartas[0]) || null;
+  } catch {
+    return null;
+  }
+}
+
+// Mismo criterio para Yu-Gi-Oh (YGOPRODeck) -- "fname" ya es fuzzy por
+// nombre; se filtra por set_code/set_name después para no arriesgar la
+// imagen de una versión distinta si hay varias impresiones con ese nombre.
+async function buscarImagenRespaldoYugioh(nombre, numero, setNombre) {
+  if (!nombre) return null;
+  try {
+    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(nombre)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const cartas = data?.data || [];
+    if (!cartas.length) return null;
+    const exacta = cartas.find((c) => (c.name || "").toLowerCase() === nombre.toLowerCase())
+      || cartas.find((c) => (c.card_sets || []).some((s) => s.set_code === numero || s.set_name === setNombre))
+      || cartas[0];
+    return exacta.card_images?.[0]?.image_url || null;
+  } catch {
+    return null;
+  }
+}
+
+// Mismo criterio para Lorcana -- ya trae todas las cartas cacheadas
+// (obtenerTodasLasCartasLorcana), así que aquí solo se filtra en memoria.
+async function buscarImagenRespaldoLorcana(nombre, numero, setNombre) {
+  if (!nombre) return null;
+  try {
+    const todas = await obtenerTodasLasCartasLorcana();
+    const candidatas = todas.filter((c) => (c.Name || c.name || "").toLowerCase() === nombre.toLowerCase());
+    if (!candidatas.length) return null;
+    const exacta = candidatas.find((c) => String(c.Card_Num || c.card_num || c.number || "") === String(numero || ""))
+      || candidatas.find((c) => (c.Set_Name || c.set_name || c.set || "") === setNombre)
+      || candidatas[0];
+    return exacta.Image || exacta.image || exacta.Image_URL || null;
+  } catch {
+    return null;
+  }
+}
+
+// Despachador único de "Buscar foto" (ReintentarImagen en App.jsx) según el
+// TCG real de la publicación -- One Piece no tiene todavía una fuente
+// gratis de texto libre (ver TCG_CON_CATALOGO en theme.js), así que no
+// intenta nada y regresa null directo, igual que si no encontrara nada.
+export async function buscarImagenRespaldoPorTcg(tcg, nombre, numero, setNombre) {
+  if (tcg === "magic") return buscarImagenRespaldoMagic(nombre, numero, setNombre);
+  if (tcg === "yugioh") return buscarImagenRespaldoYugioh(nombre, numero, setNombre);
+  if (tcg === "lorcana") return buscarImagenRespaldoLorcana(nombre, numero, setNombre);
+  return buscarImagenRespaldo(nombre, numero, setNombre);
+}
+
 // Busca una carta por nombre (y opcionalmente número) en TCGdex, con el
 // mismo respaldo de imagen que usa CardPicker. Se usa para prellenar las
 // cartas que la IA detectó en una foto de carpeta.
