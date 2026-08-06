@@ -3341,6 +3341,45 @@ tuya" en la sección 109, el usuario pidió hacer ambos.
 
 No requiere ninguna migración.
 
+## 111. Cartas promo/premio/liga/staff en español de Pokémon (ej. Leafeon ex PRE ES)
+
+Petición: agregar todas las cartas promo/premio/de liga/de staff, en
+español, etc. de Pokémon -- ejemplo real: "Leafeon ex" (PRE ES 006/131,
+una promo de liga en español de Prismatic Evolutions) no salía en el
+buscador al publicar.
+
+- **Por qué no salía**: el buscador de cartas de Pokémon (al publicar,
+  en Mercado/Mi tienda/Subastas) solo consulta pokemontcg.io, que
+  cataloga el mercado de EE.UU./inglés -- no tiene promos regionales en
+  español, de liga, de staff, ni casi nada que no sea un set de venta
+  normal en inglés. Esto no es un bug: pokemontcg.io simplemente no
+  tiene esos datos, sin importar qué tan real sea la carta.
+- **Fix 1, mejora automática de la búsqueda**: se agregó un respaldo en
+  TCGdex (`api.tcgdex.net/v2/es/...`), que sí tiene soporte de español y
+  mejor cobertura de promocionales -- se intenta automáticamente
+  cuando pokemontcg.io conectó bien pero de plano no encontró nada.
+  Aviso honesto: no hay garantía de que TCGdex tenga TODAS las promos
+  regionales jamás impresas (nadie tiene un catálogo 100% completo de
+  eso) -- amplía bastante las probabilidades, pero no es un "ahora sí
+  sale cualquier carta". Las cartas que se encuentren así no traen
+  precio de referencia (TCGdex no da precio de mercado), se deja en
+  blanco en vez de inventar uno.
+- **Fix 2, la solución de verdad -- "escribirla manualmente"**: en
+  Mercado (`MyMarketPanel`), Mi tienda (`MyStorePanel`) y Subastas
+  (`CrearSubastaForm`), publicar una carta suelta dependía por completo
+  de encontrarla en el catálogo -- no había manera de continuar si el
+  buscador no la encontraba (a diferencia del producto sellado y la
+  búsqueda de Wishlist, que sí ya tenían esta opción). Ahora las tres
+  tienen el mismo "¿No la encuentras? Escribirla manualmente": se
+  escribe el nombre (y opcionalmente el set/edición) a mano, sin precio
+  de referencia automático, y se sube una foto real de la carta como
+  siempre. Esto es lo que de verdad garantiza que CUALQUIER carta se
+  pueda publicar -- promo, premio, de liga, de staff, en japonés, en
+  coreano, de un torneo local, lo que sea -- sin depender de que algún
+  catálogo externo la tenga.
+
+No requiere ninguna migración.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

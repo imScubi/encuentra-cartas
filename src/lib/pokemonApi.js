@@ -255,6 +255,51 @@ function mapearYOrdenarCartasPokemonTCG(cartas, numero) {
   });
 }
 
+// ---- Respaldo en TCGdex (español) para cuando pokemontcg.io no encuentra
+// nada -- pokemontcg.io solo cataloga el mercado de EE.UU./inglés, así que
+// promos/premios de liga/staff en español (o cualquier variante regional)
+// casi nunca están ahí aunque sean cartas oficiales reales. TCGdex sí tiene
+// soporte de idioma español (`/v2/es/`) y mejor cobertura de promocionales
+// -- no hay garantía de que tenga TODAS (nadie tiene un catálogo 100%
+// completo de cada promo regional jamás impresa), pero amplía bastante las
+// probabilidades sin arriesgar nada: solo se intenta si pokemontcg.io ya
+// conectó bien y de verdad no trajo nada, nunca reemplaza esa búsqueda.
+// No da precio de referencia (TCGdex no trae precio de mercado) -- se dice
+// "sin precio" en vez de inventar uno.
+async function buscarCartasVisualTCGdexES(texto, numero, limite, signal) {
+  try {
+    const res = await fetch(`https://api.tcgdex.net/v2/es/cards?name=${encodeURIComponent(texto)}&pagination:itemsPerPage=${limite}`, { signal });
+    if (!res.ok) return [];
+    const lista = await res.json();
+    if (!Array.isArray(lista) || !lista.length) return [];
+    const numeroLimpio = numero ? String(numero).split("/")[0].trim().toLowerCase() : null;
+    const ordenada = numeroLimpio
+      ? [...lista].sort((a, b) => (b.localId?.toLowerCase() === numeroLimpio) - (a.localId?.toLowerCase() === numeroLimpio))
+      : lista;
+    const detalles = await Promise.all(
+      ordenada.slice(0, limite).map((c) =>
+        fetch(`https://api.tcgdex.net/v2/es/cards/${c.id}`, { signal }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      )
+    );
+    return detalles.filter(Boolean).map((full) => {
+      const total = full.set?.cardCount?.official || full.set?.cardCount?.total || "";
+      return {
+        id: full.id,
+        name: full.name,
+        localId: full.localId,
+        setName: full.set?.name || "",
+        setTotal: total,
+        image: full.image ? `${full.image}/high.webp` : null,
+        precioRefMxn: null,
+        precioRefFuente: null,
+      };
+    });
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return [];
+  }
+}
+
 export async function buscarCartasVisual(texto, itemsPorCombo = 8, signal) {
   const q = (texto || "").trim();
   if (q.length < 3) return [];
@@ -294,10 +339,14 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8, signal) {
   }
   // Solo es un error real (que se le avisa a quien busca) si NINGUNA
   // combinación logró siquiera conectarse -- si alguna sí conectó pero
-  // ninguna trajo resultados, de verdad no existe esa carta.
+  // ninguna trajo resultados, de verdad no existe esa carta EN pokemontcg.io
+  // (ver buscarCartasVisualTCGdexES: puede que sí exista como promo/premio/
+  // liga/staff en español, catalogada solo en TCGdex).
   if (!algunaConectoBien) {
     throw ultimoError instanceof Error ? ultimoError : new Error("No se pudo conectar con el catálogo de Pokémon.");
   }
+  const deTCGdex = await buscarCartasVisualTCGdexES(restante || q, numero, itemsPorCombo, signal);
+  if (deTCGdex.length > 0) return deTCGdex;
   return [];
 }
 

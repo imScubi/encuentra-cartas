@@ -1706,6 +1706,11 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [tipo, setTipo] = useState("carta"); // carta | sellado
+  // Promos/premios/liga/staff en español (y en general cualquier carta rara)
+  // casi nunca están en el catálogo de pokemontcg.io (es de EE.UU./inglés) --
+  // sin esto no había forma de publicarlas nunca, sin importar qué tan real
+  // sea la carta que tienes en la mano.
+  const [cartaManual, setCartaManual] = useState(false);
 
   // ---- Entrega en buzón de tienda afiliada (opcional) ----
   const [tiendasAfiliadas, setTiendasAfiliadas] = useState([]);
@@ -1917,16 +1922,32 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         ) : tipo === "carta" ? (
           <>
             <div>
-              <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_ref_fuente: c.precio_ref_fuente, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
-              {nueva.card_api_id && (
-                <div className="flex items-center gap-3 mt-2">
-                  {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
-                  <div>
-                    <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
-                    {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia{nueva.precio_ref_fuente ? ` (${nueva.precio_ref_fuente})` : ""}: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-                    <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
-                  </div>
-                </div>
+              {!cartaManual ? (
+                <>
+                  <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_ref_fuente: c.precio_ref_fuente, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+                  {nueva.card_api_id && (
+                    <div className="flex items-center gap-3 mt-2">
+                      {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                      <div>
+                        <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
+                        {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia{nueva.precio_ref_fuente ? ` (${nueva.precio_ref_fuente})` : ""}: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
+                        <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                      </div>
+                    </div>
+                  )}
+                  <button type="button" onClick={() => setCartaManual(true)} style={{ color: COLORS.muted }} className="text-xs mt-1">
+                    ¿No la encuentras? Escribirla manualmente (promos, premios, liga, staff, en español, etc.)
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input placeholder="Nombre de la carta" value={nueva.carta} onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full" />
+                  <input placeholder="Set / edición (opcional, ej. Prismatic Evolutions ES 006/131)" value={nueva.set_nombre} onChange={(e) => setNueva({ ...nueva, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-2" />
+                  <p style={{ color: COLORS.muted }} className="text-xs mt-1">No hay precio de referencia automático para cartas escritas a mano -- pon tú el precio. Sube una foto real más abajo para que se vea bien clara.</p>
+                  <button type="button" onClick={() => { setCartaManual(false); setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null }); }} style={{ color: COLORS.muted }} className="text-xs mt-2">
+                    ← Volver a buscar en el catálogo
+                  </button>
+                </>
               )}
             </div>
             <div>
@@ -4475,6 +4496,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
   // Ver el comentario equivalente en MyMarketPanel: las fotos ya no son
   // obligatorias, esto solo evita perder una subida en curso al publicar.
   const [subiendoFotoCarta, setSubiendoFotoCarta] = useState({ frente: false, atras: false });
+  // Mismo criterio que selladoManual (más abajo): promos/premios/liga/staff
+  // en español casi nunca están en el catálogo de pokemontcg.io.
+  const [cartaManual, setCartaManual] = useState(false);
   const [nuevoSellado, setNuevoSellado] = useState({ tcg: "pokemon", producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null });
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
@@ -4734,29 +4758,44 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
         </select>
 
         <div className="sm:col-span-2">
-          <CardPickerUniversal tcg={nuevaCarta.tcg} onSelect={(c) => setNuevaCarta({
-            ...nuevaCarta,
-            carta: c.name,
-            set_nombre: c.set_nombre,
-            card_api_id: c.card_api_id,
-            imagen_url: c.imagen_url,
-            precio_ref_mxn: c.precio_ref_mxn,
-            precio_ref_fuente: c.precio_ref_fuente,
-            precio: nuevaCarta.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : ""),
-          })} />
-          {nuevaCarta.card_api_id && (
-            <div className="flex items-center gap-3 mt-2">
-              {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
-              <div>
-                <Badge color={COLORS.azulPalido}>{nuevaCarta.carta}</Badge>
-                {nuevaCarta.precio_ref_mxn && (
-                  <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">
-                    Precio de referencia{nuevaCarta.precio_ref_fuente ? ` (${nuevaCarta.precio_ref_fuente})` : ""}: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
-                  </p>
-                )}
-                <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
-              </div>
-            </div>
+          {!cartaManual ? (
+            <>
+              <CardPickerUniversal tcg={nuevaCarta.tcg} onSelect={(c) => setNuevaCarta({
+                ...nuevaCarta,
+                carta: c.name,
+                set_nombre: c.set_nombre,
+                card_api_id: c.card_api_id,
+                imagen_url: c.imagen_url,
+                precio_ref_mxn: c.precio_ref_mxn,
+                precio_ref_fuente: c.precio_ref_fuente,
+                precio: nuevaCarta.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : ""),
+              })} />
+              {nuevaCarta.card_api_id && (
+                <div className="flex items-center gap-3 mt-2">
+                  {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
+                  <div>
+                    <Badge color={COLORS.azulPalido}>{nuevaCarta.carta}</Badge>
+                    {nuevaCarta.precio_ref_mxn && (
+                      <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">
+                        Precio de referencia{nuevaCarta.precio_ref_fuente ? ` (${nuevaCarta.precio_ref_fuente})` : ""}: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
+                      </p>
+                    )}
+                    <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                  </div>
+                </div>
+              )}
+              <button type="button" onClick={() => setCartaManual(true)} style={{ color: COLORS.muted }} className="text-xs mt-1">
+                ¿No la encuentras? Escribirla manualmente
+              </button>
+            </>
+          ) : (
+            <>
+              <input placeholder="Nombre de la carta" value={nuevaCarta.carta} onChange={(e) => setNuevaCarta({ ...nuevaCarta, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-full" />
+              <input placeholder="Set / edición (opcional)" value={nuevaCarta.set_nombre} onChange={(e) => setNuevaCarta({ ...nuevaCarta, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-full mt-2" />
+              <button type="button" onClick={() => { setCartaManual(false); setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null }); }} style={{ color: COLORS.muted }} className="text-xs mt-2">
+                ← Volver a buscar en el catálogo
+              </button>
+            </>
           )}
         </div>
 
@@ -8638,6 +8677,9 @@ function CrearSubastaForm({ session, onCreado }) {
   const [nueva, setNueva] = useState(vacio);
   const [creando, setCreando] = useState(false);
   const [error, setError] = useState(null);
+  // Mismo criterio que selladoManual en MyStorePanel: promos/premios/liga/
+  // staff en español casi nunca están en el catálogo de pokemontcg.io.
+  const [productoManual, setProductoManual] = useState(false);
 
   const faltantes = [];
   if (!nueva.producto) faltantes.push(nueva.tipo === "accesorio" ? "el nombre del producto" : "elegir la carta/producto");
@@ -8695,7 +8737,7 @@ function CrearSubastaForm({ session, onCreado }) {
       </select>
       {nueva.tipo === "accesorio" ? (
         <input placeholder="Nombre del accesorio (ej. Playmat Charizard)" value={nueva.producto} onChange={(e) => setNueva({ ...nueva, producto: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-      ) : (
+      ) : !productoManual ? (
         <div>
           <CardPickerUniversal tcg={nueva.tcg} soloSellado={nueva.tipo === "sellado"}
             onSelect={(c) => setNueva((n) => ({ ...n, producto: c.name || c.producto, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn }))} />
@@ -8705,6 +8747,19 @@ function CrearSubastaForm({ session, onCreado }) {
               <Badge color={COLORS.azulPalido}>{nueva.producto}</Badge>
             </div>
           )}
+          {nueva.tipo === "carta" && (
+            <button type="button" onClick={() => setProductoManual(true)} style={{ color: COLORS.muted }} className="text-xs mt-1">
+              ¿No la encuentras? Escribirla manualmente
+            </button>
+          )}
+        </div>
+      ) : (
+        <div>
+          <input placeholder="Nombre de la carta" value={nueva.producto} onChange={(e) => setNueva({ ...nueva, producto: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full" />
+          <input placeholder="Set / edición (opcional)" value={nueva.set_nombre} onChange={(e) => setNueva({ ...nueva, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-2" />
+          <button type="button" onClick={() => { setProductoManual(false); setNueva({ ...nueva, producto: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null }); }} style={{ color: COLORS.muted }} className="text-xs mt-2">
+            ← Volver a buscar en el catálogo
+          </button>
         </div>
       )}
       {nueva.tipo === "carta" && (
