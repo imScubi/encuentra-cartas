@@ -19,7 +19,7 @@ import { moderarFotoReal } from "./lib/moderacion.js";
 import { comprimirImagen } from "./lib/imagen.js";
 import {
   pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
-  parseNumeroYSet, buscarImagenRespaldo, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
+  parseNumeroYSet, buscarImagenRespaldoPorTcg, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
   buscarCartasCatalogo, obtenerPrecioRefActualPorTcg, categoriaIdTCGplayer,
   obtenerErasYSetsCatalogo, obtenerCartasDeSetCatalogo,
 } from "./lib/pokemonApi.js";
@@ -1229,14 +1229,18 @@ function SubirFotoManual({ session, onSubido, label, onEstadoCambia }) {
   );
 }
 
-function ReintentarImagen({ nombre, setNombre, onEncontrada }) {
+function ReintentarImagen({ tcg, nombre, setNombre, onEncontrada }) {
   const [buscando, setBuscando] = useState(false);
   const [sinSuerte, setSinSuerte] = useState(false);
 
   const intentar = async () => {
     setBuscando(true); setSinSuerte(false);
     const { set, numero } = parseNumeroYSet(setNombre);
-    const url = await buscarImagenRespaldo(nombre, numero, set);
+    // Antes esto llamaba siempre a la versión de Pokémon (pokemontcg.io) sin
+    // importar el TCG real de la carta -- para Magic/Yu-Gi-Oh/Lorcana nunca
+    // podía encontrar nada, "No se encontró la versión exacta" siempre, ni
+    // siquiera intentaba con la API correcta (ver sección 112).
+    const url = await buscarImagenRespaldoPorTcg(tcg || "pokemon", nombre, numero, set);
     setBuscando(false);
     if (url) onEncontrada(url); else setSinSuerte(true);
   };
@@ -2059,7 +2063,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio" />
             <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
             <input type="number" min="1" defaultValue={item.cantidad} onBlur={(e) => actualizar(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad disponible" />
-            {item.tipo !== "accesorio" && !item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
+            {item.tipo !== "accesorio" && !item.imagen_url && <ReintentarImagen tcg={item.tcg} nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
             {item.tipo !== "accesorio" && (
               <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
             )}
@@ -3814,6 +3818,12 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
   const [resultado, setResultado] = useState(null);
   const [error, setError] = useState(null);
   const [idiomaLote, setIdiomaLote] = useState(""); // idioma de todas las cartas de este lote
+  // Antes esto se guardaba SIEMPRE como "pokemon" sin importar el TCG real
+  // del lote (ej. una carga masiva de Magic escaneada con ManaBox quedaba
+  // guardada como si fueran cartas de Pokémon) -- eso rompía después el
+  // buscador de foto/precio de referencia para esas cartas, porque
+  // consultaban la API equivocada sin que se notara por qué (ver sección 112).
+  const [tcgLote, setTcgLote] = useState("pokemon");
 
   const filasDeTexto = () =>
     texto.split("\n").map((l) => l.trim()).filter(Boolean).map((linea) => {
@@ -3844,7 +3854,7 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
     try {
       await sbWrite("POST", "inventario_tienda", validas.map((f) => ({
         tienda_id: tiendaId,
-        tcg: "pokemon",
+        tcg: tcgLote,
         carta: f.carta,
         set_nombre: f.set_nombre,
         condicion: f.condicion,
@@ -3880,6 +3890,12 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
         value={texto} onChange={(e) => setTexto(e.target.value)} rows={4}
         style={inputStyle} className="rounded-lg px-3 py-2 text-sm font-mono"
       />
+      <div>
+        <p style={{ color: COLORS.muted }} className="text-xs mb-1">TCG de estas cartas (se aplica a todo este lote)</p>
+        <select value={tcgLote} onChange={(e) => setTcgLote(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+      </div>
       <div>
         <p style={{ color: COLORS.muted }} className="text-xs mb-1">Idioma de estas cartas (obligatorio — se aplica a todo este lote)</p>
         <IdiomaSelector value={idiomaLote} onChange={setIdiomaLote} />
@@ -4853,7 +4869,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
               style={inputStyle} className="rounded px-2 py-1 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
             <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarCarta(item.id, "cantidad", e.target.value)}
               style={inputStyle} className="rounded px-2 py-1 text-sm w-16" title="Cantidad" />
-            {!item.imagen_url && <ReintentarImagen nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />}
+            {!item.imagen_url && <ReintentarImagen tcg={item.tcg} nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />}
             <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />
             <SubirFotoManual session={session} label={item.foto_real_url ? "Cambiar foto real (frente)" : "📷 Foto real (frente)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_url", url); cargar(); }} />
             <SubirFotoManual session={session} label={item.foto_real_reverso_url ? "Cambiar foto real (atrás)" : "📷 Foto real (atrás)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_reverso_url", url); cargar(); }} />

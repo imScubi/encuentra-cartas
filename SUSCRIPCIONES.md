@@ -3380,6 +3380,50 @@ buscador al publicar.
 
 No requiere ninguna migración.
 
+## 112. Fix: "Buscar foto" nunca encontraba nada en Magic/Yu-Gi-Oh/Lorcana + Importador masivo guardaba todo como Pokémon
+
+Petición (reporte real de una tienda): tras una carga masiva de cartas de
+Magic (escaneadas con ManaBox, exportadas a CSV y subidas con el
+Importador masivo), el botón "🔄 Buscar foto" de cada carta contestaba
+"No se encontró la versión exacta" absolutamente siempre.
+
+Dos bugs distintos, uno escondía al otro:
+
+- **Bug 1 -- "Buscar foto" ignoraba el TCG real**: `ReintentarImagen`
+  (el componente detrás del botón) llamaba SIEMPRE a la búsqueda de
+  imagen de Pokémon (pokemontcg.io), sin importar el TCG real de la
+  carta -- para Magic, Yu-Gi-Oh o Lorcana nunca podía encontrar nada
+  porque ni siquiera intentaba con la API correcta. Se agregó
+  `buscarImagenRespaldoPorTcg` en `pokemonApi.js` (despacha a Scryfall
+  para Magic, YGOPRODeck para Yu-Gi-Oh, o al caché de lorcana-api para
+  Lorcana) y `ReintentarImagen` ahora recibe el `tcg` de la publicación
+  y usa ese despachador.
+- **Bug 2, el más importante -- el Importador masivo guardaba TODO como
+  "pokemon"**: `ImportadorMasivo` (el importador de texto/CSV/Excel,
+  "Ente Ball") tenía `tcg: "pokemon"` fijo en el código al insertar,
+  sin importar qué TCG fuera el lote real. Así que aunque el Bug 1 se
+  arregle, esas cartas de Magic ya importadas seguían mal etiquetadas
+  en la base de datos como si fueran de Pokémon -- el buscador de foto
+  (y también el de precio de referencia) seguía consultando la API
+  equivocada para ellas. Se agregó un selector de TCG al importador
+  (arriba del idioma, aplica a todo el lote) y ya no asume Pokémon.
+- **Las cartas que ya se importaron mal siguen mal** -- este fix solo
+  corrige las cargas masivas nuevas. Las filas de esa carga de Magic ya
+  quedaron guardadas con `tcg = 'pokemon'` y hay que corregirlas a mano
+  una sola vez desde Supabase → SQL Editor (ajustando el filtro a la
+  fecha/hora real de esa carga, para no tocar otro inventario):
+  ```sql
+  update inventario_tienda
+  set tcg = 'magic'
+  where tienda_id = '<id de tu tienda>'
+    and tcg = 'pokemon'
+    and created_at between '2026-08-XX 00:00' and '2026-08-XX 23:59';
+  ```
+
+No requiere ninguna migración de esquema (sí requiere que cada tienda
+afectada corrija a mano, una sola vez, sus filas ya importadas mal --
+ver el `update` de arriba).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
