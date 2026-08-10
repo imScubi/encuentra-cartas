@@ -15,6 +15,7 @@ export const FONTS = `
 @keyframes badgePop { 0% { transform: scale(0); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
 @keyframes gemPop { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: scale(1); } }
 @keyframes marqueeScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes pulseSkeleton { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
 }

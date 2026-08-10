@@ -996,6 +996,26 @@ function Loading({ label }) {
   );
 }
 
+// Skeleton (placeholder pulsante) para grids de tarjetas de carta/producto
+// (Mercado, Buscar, Catálogo) -- se ve más fluido que un spinner genérico
+// porque ya insinúa la forma del contenido que está por llegar, en vez de
+// dejar una pantalla en blanco con un ícono girando en medio.
+function SkeletonGrid({ n = 10 }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+      {Array.from({ length: n }).map((_, i) => (
+        <div key={i} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${COLORS.azulClaro}18` }} className="rounded-2xl overflow-hidden flex flex-col">
+          <div style={{ background: COLORS.surface2, animation: "pulseSkeleton 1.4s ease-in-out infinite" }} className="aspect-[4/5]" />
+          <div className="p-2 grid gap-1.5">
+            <div style={{ background: COLORS.surface2, height: 10, width: "70%", borderRadius: 4, animation: "pulseSkeleton 1.4s ease-in-out infinite" }} />
+            <div style={{ background: COLORS.surface2, height: 10, width: "45%", borderRadius: 4, animation: "pulseSkeleton 1.4s ease-in-out infinite" }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ErrorBox({ message }) {
   return (
     <div style={{ color: COLORS.text, border: `1px solid ${COLORS.azulPalido}88`, background: `${COLORS.azul}22` }}
@@ -10791,7 +10811,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
             )
           )}
 
-          {loadingCartas && <Loading label="Cargando cartas..." />}
+          {loadingCartas && <SkeletonGrid n={12} />}
           {!loadingCartas && !error && cartas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Sin cartas para este set.</p>}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {cartas.map((c) => {
@@ -11754,7 +11774,7 @@ export default function EncuentraCartas() {
                 )}
 
                 {(loadingMarket || loadingInicio) && market.length === 0 && inicioTienda.length === 0 && (
-                  <Loading label="Cargando lo más reciente..." />
+                  <SkeletonGrid />
                 )}
 
                 {(market.filter(pasaFiltroTcg).length > 0 || inicioTienda.filter(pasaFiltroTcg).length > 0) && (
@@ -12123,7 +12143,7 @@ export default function EncuentraCartas() {
               const mercadoVisible = ordenarPorPrecio(mercadoCompleto.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltros));
               return (
                 <>
-                  {loadingMercado && <Loading label="Cargando publicaciones..." />}
+                  {loadingMercado && <SkeletonGrid />}
                   {!loadingMercado && mercadoVisible.length === 0 && (
                     <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
                       {mercadoCompleto.length === 0
