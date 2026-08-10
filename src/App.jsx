@@ -2745,6 +2745,98 @@ function VerificacionesTiendaAdmin({ session }) {
   );
 }
 
+// Completa en bloque las fotos de cartas de tienda que se quedaron sin
+// imagen (típicamente de una carga masiva vieja, ver sección 112 del
+// historial: el importador guardaba tcg="pokemon" para todo antes del
+// fix, y aparte pokemontcg.io nunca tiene cartas de Magic/Yu-Gi-Oh/
+// Lorcana). Corre la búsqueda EN EL NAVEGADOR del admin (no en el
+// servidor) porque necesita salida real a internet hacia la API de cada
+// catálogo -- por eso el admin lo dispara con un clic en vez de que se
+// haga solo. Usa el mismo despachador por tcg que ya usa el botón
+// "🔄 Buscar foto" de cada fila individual (ReintentarImagen), solo que
+// en lote y con una pausa chica entre cada carta para no saturar la API
+// externa. Requiere la migración 065 (permiso de admin para actualizar
+// inventario de cualquier tienda).
+function FotosFaltantesAdmin({ session }) {
+  const [grupos, setGrupos] = useState(null); // null = cargando
+  const [error, setError] = useState(null);
+  const [procesando, setProcesando] = useState(null); // "tiendaId|tcg" en curso
+  const [progreso, setProgreso] = useState({});
+
+  const cargar = () => {
+    setError(null);
+    sb(`inventario_tienda?select=id,carta,set_nombre,tcg,tienda_id,tiendas(nombre)&imagen_url=is.null&order=tienda_id.asc`, session)
+      .then((rows) => {
+        const mapa = new Map();
+        for (const r of rows) {
+          const key = `${r.tienda_id}|${r.tcg}`;
+          if (!mapa.has(key)) mapa.set(key, { key, tiendaId: r.tienda_id, tiendaNombre: r.tiendas?.nombre || "Tienda", tcg: r.tcg, items: [] });
+          mapa.get(key).items.push(r);
+        }
+        setGrupos([...mapa.values()].sort((a, b) => b.items.length - a.items.length));
+      })
+      .catch((e) => setError(e.message));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const completarGrupo = async (grupo) => {
+    setProcesando(grupo.key);
+    let encontradas = 0;
+    for (let i = 0; i < grupo.items.length; i++) {
+      const item = grupo.items[i];
+      setProgreso((p) => ({ ...p, [grupo.key]: { hechos: i, total: grupo.items.length, encontradas } }));
+      try {
+        const { set, numero } = parseNumeroYSet(item.set_nombre);
+        const url = await buscarImagenRespaldoPorTcg(grupo.tcg, item.carta, numero, set);
+        if (url) {
+          await sbWrite("PATCH", `inventario_tienda?id=eq.${item.id}`, { imagen_url: url }, session);
+          encontradas++;
+        }
+      } catch {
+        // una carta que falla no debe tumbar el lote completo -- sigue con la siguiente
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    setProgreso((p) => ({ ...p, [grupo.key]: { hechos: grupo.items.length, total: grupo.items.length, encontradas } }));
+    setProcesando(null);
+    cargar();
+  };
+
+  if (error) return <div className="mb-6"><ErrorBox message={error} /></div>;
+  if (grupos === null) return <Loading label="Revisando publicaciones sin foto..." />;
+  if (grupos.length === 0) return null;
+
+  return (
+    <div className="mb-8">
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-1 text-sm uppercase">🖼️ Publicaciones sin foto</h3>
+      <p style={{ color: COLORS.muted }} className="text-xs mb-3">
+        Se completan buscando el nombre exacto en el catálogo del TCG correspondiente. Corre en tu navegador (necesita internet real hacia cada catálogo), así que puede tardar según cuántas cartas tenga el lote -- no cierres esta pantalla mientras dice "Buscando...".
+      </p>
+      <div className="grid gap-2">
+        {grupos.map((g) => {
+          const prog = progreso[g.key];
+          return (
+            <div key={g.key} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <p className="font-semibold text-sm">{g.tiendaNombre} · {TCG_LABEL[g.tcg] || g.tcg}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">
+                  {prog ? `${prog.hechos}/${prog.total} revisadas · ${prog.encontradas} encontradas` : `${g.items.length} sin foto`}
+                </p>
+              </div>
+              <button onClick={() => completarGrupo(g)} disabled={procesando === g.key}
+                style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: procesando === g.key ? 0.6 : 1 }}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                {procesando === g.key ? "Buscando..." : "Completar fotos automáticamente"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [tabAdmin, setTabAdmin] = useState("estadisticas");
@@ -3283,6 +3375,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
       {tabAdmin === "tiendas" && (
         <div>
           <VerificacionesTiendaAdmin session={session} />
+          <FotosFaltantesAdmin session={session} />
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Crear tienda</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-4">
             Da de alta una tienda nueva en el directorio con su nombre y dirección (la dirección se muestra sola en el mapa del perfil de la tienda, no requiere nada más). Opcionalmente puedes vincularla de una vez con una cuenta de tipo tienda.
