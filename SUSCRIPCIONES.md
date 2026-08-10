@@ -3618,6 +3618,54 @@ distintos entre ManaBox y Scryfall). Lo que no encuentre se puede seguir
 completando con el botón individual de esa fila, o subiendo la foto a
 mano.
 
+Además, esa herramienta salió con un mensaje de "🔍 Probar conexión" por
+grupo (una consulta cruda a una sola carta, mostrando el HTTP status y
+la respuesta real) porque la primera corrida real dio "0 encontradas" y
+había que ver la verdad en vez de adivinar por qué -- ver sección 118.
+
+## 118. Fix: boletín semanal llevaba 2 semanas sin mandarse (sin que nadie se enterara)
+
+Se reportó que no había boletín de precios hacía dos semanas. Revisando
+`api/cron/recordatorios.js` se encontraron **dos agujeros de
+observabilidad** que ya venían de antes (no algo que se rompió con un
+cambio reciente), cualquiera de los dos explica el silencio:
+
+1. El cron hace varias cosas en la misma corrida diaria (recordatorios
+   de plan, boosts, torneos, destellos mensuales, boletín, resumen
+   semanal), pero solo el boletín y el resumen semanal tenían su propio
+   manejo de errores. Si algo tronaba en una sección de ANTES (planes,
+   boosts o torneos -- ej. una fila con un dato inesperado), se caía
+   todo el `try/catch` del handler completo y las secciones de abajo
+   (incluido el boletín) simplemente nunca llegaban a correr ESE día --
+   sin ningún aviso más allá del log interno de Vercel.
+2. Adentro del boletín mismo, si generar el boletín de un TCG fallaba
+   (o si la fuente de precios devolvía cero resultados, algo que por
+   diseño no se trata como error para no molestar por un hipo pasajero
+   de una API externa), el `catch` solo hacía `console.error` -- otro
+   callejón sin salida donde nadie se entera.
+
+Se corrigió ambas cosas:
+
+- Cada sección del cron (planes, boosts, torneos, destellos) ahora
+  corre en su propio `try/catch` independiente -- una falla puntual en
+  una ya no le quita su turno a las demás.
+- Se agregó `avisarFalloCron()`, que reutiliza el mismo sistema de
+  avisos que ya existía para errores del navegador (sección 35): guarda
+  el error en `errores_app` (visible en AdminPanel → Errores) y notifica
+  a todos los admins por bandeja + correo -- con el mismo criterio de
+  "no repetir el aviso si ya se avisó de este mismo error en la última
+  hora" que ya usaba ese sistema.
+- Si se intenta generar boletín para algún TCG hoy y NINGUNO produce
+  resultado (algo que antes se tragaba en silencio, tratándolo como "tal
+  vez la fuente está caída hoy"), ahora también avisa -- porque si pasa
+  día de boletín tras día de boletín, ya no es un hipo pasajero.
+
+No se pudo confirmar la causa EXACTA de estas dos semanas en concreto
+(la conexión directa a Supabase/Vercel de esta sesión se cayó a media
+conversación, así que no hay forma de leer el log real de esos días) --
+pero con este cambio, la próxima vez que algo le impida mandarse al
+boletín, vas a recibir un aviso real en vez de silencio.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

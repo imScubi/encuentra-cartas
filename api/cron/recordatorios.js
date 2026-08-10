@@ -248,17 +248,39 @@ async function generarYEnviarBoletines(ahora, supabaseUrl, headers) {
   const ya = new Set((await yaRes.json().catch(() => [])).map((b) => b.tcg));
 
   const generados = [];
+  let intentados = 0;
   for (const tcg of TCGS_CON_BOLETIN) {
     if (ya.has(tcg)) continue;
+    intentados++;
     try {
       const b = await generarBoletinTcg(tcg, semanaActual, semanaPasada, supabaseUrl, headers);
       if (b) generados.push(b);
     } catch (e) {
-      console.error(`Error generando el boletín de ${tcg}:`, e);
+      // Antes esto solo se registraba en el log de Vercel -- si fallaba
+      // los 3 TCG todos los días (ej. la fuente de precios cambió de
+      // formato), el boletín podía dejar de mandarse semanas seguidas sin
+      // que nadie se enterara. Ahora si falla, avisa de verdad.
+      await avisarFalloCron(`boletín de ${tcg}`, e, supabaseUrl, headers);
     }
   }
+  // generarBoletinTcg también puede devolver null SIN lanzar error (por
+  // diseño: universoGlobalPorTcg/lib/precios.js trata una fuente externa
+  // caída como "no hay boletín hoy", no como una falla que hay que avisar
+  // -- así una API flaky un día no manda una alerta por gusto). Pero si de
+  // verdad se intentó generar algo hoy y NINGÚN TCG produjo resultado, ya
+  // no es un hipo pasajero -- probablemente una fuente de precios cambió
+  // de formato o dejó de responder como se espera, y vale la pena que el
+  // admin se entere en vez de que quede en blanco semana tras semana.
+  if (intentados > 0 && generados.length === 0) {
+    await avisarFalloCron(
+      "boletín de precios",
+      new Error(`Se intentó generar boletín para ${intentados} TCG hoy y ninguno produjo resultados -- revisa si pokemontcg.io/Scryfall/YGOPRODeck cambiaron su formato o dejaron de responder.`),
+      supabaseUrl,
+      headers
+    );
+  }
   if (generados.length) {
-    await enviarBoletinesPorCorreo(generados, supabaseUrl, headers).catch((e) => console.error("Error mandando boletines por correo:", e));
+    await enviarBoletinesPorCorreo(generados, supabaseUrl, headers).catch((e) => avisarFalloCron("envío de boletines por correo", e, supabaseUrl, headers));
   }
   return generados.length;
 }
@@ -326,6 +348,49 @@ async function generarYEnviarResumenSemanal(ahora, supabaseUrl, headers) {
   return enviados;
 }
 
+// Antes, un error sin capturar en CUALQUIER sección (planes, boosts,
+// torneos...) tumbaba el try/catch de todo el handler entero -- las
+// secciones de más abajo (incluido el boletín) simplemente nunca
+// llegaban a correr ese día, sin que nadie se enterara (el error solo
+// quedaba en el log de Vercel). Aparte de avisar de verdad (ver
+// avisarFalloCron), cada sección ahora corre en su propio try/catch para
+// que una falla puntual no le quite su turno a las demás.
+async function avisarFalloCron(origen, error, supabaseUrl, headers) {
+  console.error(`Error en sección "${origen}" del cron de recordatorios:`, error);
+  try {
+    const mensaje = `[cron recordatorios · ${origen}] ${String(error?.message || error).slice(0, 400)}`;
+    const haceUnaHora = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const previoRes = await fetch(
+      `${supabaseUrl}/rest/v1/errores_app?select=id&mensaje=eq.${encodeURIComponent(mensaje)}&notificado=eq.true&created_at=gte.${haceUnaHora}&limit=1`,
+      { headers }
+    );
+    const previos = await previoRes.json().catch(() => []);
+    const yaNotificado = (previos || []).length > 0;
+
+    await fetch(`${supabaseUrl}/rest/v1/errores_app`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ mensaje, notificado: !yaNotificado }),
+    });
+    if (yaNotificado) return; // ya se avisó de este mismo error en la última hora, no repetir
+
+    const adminsRes = await fetch(`${supabaseUrl}/rest/v1/perfiles?select=id,email&es_admin=eq.true`, { headers });
+    const admins = await adminsRes.json().catch(() => []);
+    if (!admins?.length) return;
+
+    await fetch(`${supabaseUrl}/rest/v1/notificaciones`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(admins.map((a) => ({ perfil_id: a.id, tipo: "error", titulo: "⚠️ Falló una parte del cron diario", mensaje, url: "/" }))),
+    });
+    await Promise.allSettled(
+      admins.filter((a) => a.email).map((a) => enviarCorreo({ to: a.email, subject: "⚠️ Falló una parte del cron diario", html: `<p>${mensaje}</p>` }))
+    );
+  } catch (e) {
+    console.error("Error avisando de una falla del cron:", e);
+  }
+}
+
 export default async function handler(req, res) {
   if (process.env.CRON_SECRET && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: "No autorizado" });
@@ -347,8 +412,8 @@ export default async function handler(req, res) {
 
   let avisos = 0;
 
+  // ---- Planes por vencer ----
   try {
-    // ---- Planes por vencer ----
     const perfilesRes = await fetch(
       `${supabaseUrl}/rest/v1/perfiles?select=id,nombre,plan,plan_vence,mp_preapproval_id,email&plan=neq.pokeball&plan_vence=gte.${ahora.toISOString()}&plan_vence=lte.${en3dias.toISOString()}`,
       { headers }
@@ -364,8 +429,12 @@ export default async function handler(req, res) {
       const enviados = await notificar(p.id, "plan", "Tu plan está por vencer", mensaje, supabaseUrl, headers, p.email);
       avisos += enviados;
     }
+  } catch (e) {
+    await avisarFalloCron("planes por vencer", e, supabaseUrl, headers);
+  }
 
-    // ---- Boosts por vencer ----
+  // ---- Boosts por vencer ----
+  try {
     for (const tabla of TABLAS) {
       const select = tabla === "mercado_listings" ? "*,perfiles(id,email)" : "*,tiendas(perfil_id,perfiles(email))";
       const r = await fetch(
@@ -390,8 +459,12 @@ export default async function handler(req, res) {
         avisos += enviados;
       }
     }
+  } catch (e) {
+    await avisarFalloCron("boosts por vencer", e, supabaseUrl, headers);
+  }
 
-    // ---- Torneos por venir (recordatorio a quien marcó "Me interesa") ----
+  // ---- Torneos por venir (recordatorio a quien marcó "Me interesa") ----
+  try {
     const torneosRes = await fetch(
       `${supabaseUrl}/rest/v1/torneos?select=*,tiendas(nombre)&fecha=gte.${ahora.toISOString()}&fecha=lte.${en3dias.toISOString()}`,
       { headers }
@@ -416,27 +489,31 @@ export default async function handler(req, res) {
         });
       }
     }
-
-    // ---- Regalo mensual de Destellos por plan (solo el día 1) ----
-    const destellosOtorgados = await otorgarDestellosMensuales(ahora, supabaseUrl, headers);
-
-    // ---- Boletín de precios (cada 3 días) ----
-    const boletinesGenerados = await generarYEnviarBoletines(ahora, supabaseUrl, headers).catch((e) => {
-      console.error("Error generando el boletín:", e);
-      return 0;
-    });
-
-    // ---- Resumen semanal por tienda (cada lunes) ----
-    const resumenesEnviados = await generarYEnviarResumenSemanal(ahora, supabaseUrl, headers).catch((e) => {
-      console.error("Error mandando resúmenes semanales:", e);
-      return 0;
-    });
-
-    res.status(200).json({ ok: true, avisos, destellosOtorgados, boletinesGenerados, resumenesEnviados });
   } catch (e) {
-    console.error("Error en cron de recordatorios:", e);
-    res.status(200).json({ ok: true, error: e.message });
+    await avisarFalloCron("torneos por venir", e, supabaseUrl, headers);
   }
+
+  // ---- Regalo mensual de Destellos por plan (solo el día 1) ----
+  let destellosOtorgados = 0;
+  try {
+    destellosOtorgados = await otorgarDestellosMensuales(ahora, supabaseUrl, headers);
+  } catch (e) {
+    await avisarFalloCron("destellos mensuales", e, supabaseUrl, headers);
+  }
+
+  // ---- Boletín de precios (cada 3 días) ----
+  const boletinesGenerados = await generarYEnviarBoletines(ahora, supabaseUrl, headers).catch((e) => {
+    avisarFalloCron("boletín de precios", e, supabaseUrl, headers);
+    return 0;
+  });
+
+  // ---- Resumen semanal por tienda (cada lunes) ----
+  const resumenesEnviados = await generarYEnviarResumenSemanal(ahora, supabaseUrl, headers).catch((e) => {
+    avisarFalloCron("resumen semanal de tiendas", e, supabaseUrl, headers);
+    return 0;
+  });
+
+  res.status(200).json({ ok: true, avisos, destellosOtorgados, boletinesGenerados, resumenesEnviados });
 }
 
 async function notificar(perfilId, tipo, title, body, supabaseUrl, headers, email) {
