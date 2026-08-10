@@ -3572,6 +3572,52 @@ por separado. No se intentó aquí para no mezclar un refactor de esa
 escala con esta tanda de mejoras de UX, sin el tiempo dedicado que
 merece para probarlo bien.
 
+## 117. Fix urgente: migración 064 nunca corrida + herramienta para completar fotos faltantes en bloque
+
+Justo después de desplegar la sección 115 (tiempo de respuesta del
+vendedor), el sitio se veía roto: no salían tiendas y las publicaciones
+al abrirlas se veían "como borradas". La causa exacta, confirmada
+directo en los logs de Supabase: el código ya pedía las 2 columnas
+nuevas (`tiempo_respuesta_promedio_minutos`, `tiempo_respuesta_conteo`)
+en varias consultas, pero la migración 064 que las crea nunca se había
+corrido en la base de datos real -- cualquier consulta que las pidiera
+fallaba entera con error 400 (`column ... does not exist`), y como la
+app trata "no pude cargar esto" igual que "ya no existe", tiendas y
+publicaciones se veían como borradas sin que se hubiera tocado ningún
+dato real. Se aplicó la migración 064 directo (agrega las columnas +
+backfill del historial, nada destructivo) y todo volvió a la normalidad
+de inmediato -- **si clonas este repo de cero, asegúrate de correr
+TODAS las migraciones pendientes en orden antes de desplegar código que
+ya las dé por hechas.**
+
+Aparte, se reportó que muchas cartas de Magic en el inventario de una
+tienda (534 cartas, 465 sin foto) se habían quedado sin imagen -- son
+justo las que se subieron con el importador masivo (ManaBox) antes del
+fix de la sección 112. El botón "🔄 Buscar foto" de cada fila ya
+funciona bien, pero dar clic uno por uno en 465 filas no es razonable.
+Se agregó una herramienta nueva en **AdminPanel → Tiendas → "🖼️
+Publicaciones sin foto"** que:
+
+- Detecta automáticamente, agrupado por tienda y TCG, cuántas
+  publicaciones de cualquier tienda no tienen imagen.
+- Con un clic, busca la foto de cada una en el catálogo correspondiente
+  (mismo despachador por TCG que ya usa el botón individual) y la
+  guarda, con una pausa chica entre carta y carta para no saturar la
+  API externa, mostrando progreso en vivo.
+- Corre en el navegador del propio admin (no en un cron ni en el
+  servidor) porque necesita salida real a internet hacia cada catálogo
+  -- por eso lo dispara un clic en vez de que se arregle solo.
+- Migración 065: agrega el permiso que le faltaba al admin para
+  actualizar (no solo borrar) el inventario de cualquier tienda, ya
+  que antes solo el dueño de la tienda podía editar sus propias filas.
+
+No se puede prometer que encuentre el 100% -- depende de qué tan bien
+coincida el nombre/set guardado con el catálogo real (algunas tierras
+básicas y reimpresiones comunes pueden tener nombres de set ligeramente
+distintos entre ManaBox y Scryfall). Lo que no encuentre se puede seguir
+completando con el botón individual de esa fila, o subiendo la foto a
+mano.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
