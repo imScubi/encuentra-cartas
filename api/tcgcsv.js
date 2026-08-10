@@ -23,6 +23,41 @@ function origenValido(origin) {
   }
 }
 
+// Experimento aislado (ver public/experimento-wikidex.html): probar si Wikidex
+// sirve como fuente de datos extra para cartas Pokémon (ataques, habilidades,
+// ilustrador) usando la API de MediaWiki (la misma que usa cualquier wiki de
+// Fandom/Wikipedia), NO scraping de HTML. No podemos verificar desde este
+// entorno si la URL base es exactamente esta ni si los nombres de plantilla
+// que espera `titulo=` coinciden con los que usa Wikidex de verdad, así que
+// este proxy no interpreta nada: devuelve la respuesta cruda de MediaWiki tal
+// cual, con su status real, para que se pueda evaluar en producción antes de
+// construir cualquier lógica que dependa de su formato.
+async function wikidexProxy(req, res) {
+  const { q, titulo } = req.query;
+  const base = "https://www.wikidex.net/api.php";
+  try {
+    if (titulo) {
+      const upstream = await fetch(
+        `${base}?action=parse&page=${encodeURIComponent(String(titulo))}&prop=wikitext&format=json&formatversion=2`,
+        { headers: { "User-Agent": "EncuentraCartas/1.0 (experimento, app de tiendas de TCG Monterrey)" } }
+      );
+      const texto = await upstream.text();
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+      return res.status(200).json({ upstreamStatus: upstream.status, cruda: texto });
+    }
+    if (!q) return res.status(400).json({ error: "Falta 'q' (búsqueda) o 'titulo' (página exacta)." });
+    const upstream = await fetch(
+      `${base}?action=query&list=search&srsearch=${encodeURIComponent(String(q))}&format=json&formatversion=2`,
+      { headers: { "User-Agent": "EncuentraCartas/1.0 (experimento, app de tiendas de TCG Monterrey)" } }
+    );
+    const texto = await upstream.text();
+    res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    res.status(200).json({ upstreamStatus: upstream.status, cruda: texto });
+  } catch (e) {
+    res.status(200).json({ error: "No se pudo conectar con Wikidex.", detalle: String(e) });
+  }
+}
+
 async function importarShopify(req, res) {
   const { origin, coleccion, page } = req.query;
   const origenLimpio = origenValido(origin || "");
@@ -58,6 +93,9 @@ async function importarShopify(req, res) {
 export default async function handler(req, res) {
   if (req.query.fuente === "shopify") {
     return importarShopify(req, res);
+  }
+  if (req.query.fuente === "wikidex") {
+    return wikidexProxy(req, res);
   }
 
   const { path } = req.query;

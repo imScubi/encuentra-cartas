@@ -3424,6 +3424,52 @@ No requiere ninguna migración de esquema (sí requiere que cada tienda
 afectada corrija a mano, una sola vez, sus filas ya importadas mal --
 ver el `update` de arriba).
 
+## 113. Experimento aislado: Wikidex como fuente extra de datos de cartas
+
+Se preguntó si es viable usar Wikidex (wikidex.net) para enriquecer las
+cartas del catálogo con datos que hoy no tenemos completos en español:
+ataques, habilidades, ilustrador. Que un sitio permita ser indexado por
+buscadores (`robots.txt`) no tiene nada que ver con tener una API para
+consultarlo en vivo desde la app -- son cosas distintas. Wikidex, al ser
+un wiki basado en MediaWiki, sí expone la API estándar de MediaWiki
+(`action=query`, `action=parse`), que es la forma correcta de
+consultarlo (no scraping de HTML).
+
+No se puede verificar desde este entorno de desarrollo si la URL base
+exacta (`https://www.wikidex.net/api.php`) es la correcta ni si los
+nombres de los parámetros de la plantilla de carta que usa Wikidex
+(`ilustrador`, `habilidad`, etc.) coinciden con los que se están
+probando -- ese entorno no tiene salida de red hacia sitios externos.
+Por eso, igual que se hizo antes con el experimento de JustTCG, se armó
+un experimento **aislado** para probar en el sitio real ya desplegado,
+sin tocar nada del catálogo ni del flujo de publicación:
+
+- **`api/tcgcsv.js`**: se agregó un modo `fuente=wikidex` (reutilizando
+  el mismo archivo, no uno nuevo, porque el plan Hobby de Vercel ya está
+  al tope de 12 funciones serverless). Este proxy NO interpreta la
+  respuesta de Wikidex -- la devuelve tal cual (el JSON crudo de
+  MediaWiki y el código de estado real), justamente porque no se puede
+  confirmar su formato exacto desde aquí.
+- **`public/experimento-wikidex.html`**: página aislada (no aparece en
+  ningún menú, tiene `noindex`) con: (1) una caja de búsqueda por nombre
+  de carta, que usa `action=query&list=search` de MediaWiki, y (2) una
+  caja para ver una página exacta por título, que usa
+  `action=parse&prop=wikitext`. Intenta extraer ilustrador/habilidad/
+  ataque con una expresión regular sobre varios nombres de parámetro
+  probables, pero si ninguno aparece lo marca explícitamente como "no
+  se pudo determinar" -- nunca inventa un dato. Siempre muestra también
+  la respuesta cruda completa en un desplegable, para poder juzgar la
+  calidad real de la información con tus propios ojos.
+
+**Siguiente paso (para ti, no para mí):** entra a
+`/experimento-wikidex.html` en el sitio ya desplegado y prueba buscar
+cartas reales (por ejemplo la Leafeon ex de la sección 111). Si los
+datos que trae son consistentes y confiables, se puede construir la
+integración de verdad (guardar esos campos en la base de datos y
+mostrarlos en el detalle de la carta); si el formato es muy irregular
+entre páginas o la cobertura es baja, mejor no invertir tiempo en
+automatizarlo.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

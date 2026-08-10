@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Experimento: Wikidex como fuente de datos (no público)</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 16px; background: #0f0f14; color: #e6e6ea; }
+  h1 { font-size: 20px; }
+  p.aviso { background: #2a1f0f; border: 1px solid #6b5220; padding: 10px 14px; border-radius: 8px; font-size: 14px; }
+  input, button, select { font-size: 15px; padding: 8px 10px; border-radius: 6px; border: 1px solid #3a3a44; background: #1a1a22; color: #e6e6ea; }
+  button { cursor: pointer; background: #2d5fff; border-color: #2d5fff; color: #fff; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .fila { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+  .fila input { flex: 1; min-width: 200px; }
+  .caja { background: #1a1a22; border: 1px solid #2a2a34; border-radius: 8px; padding: 14px; margin-bottom: 16px; }
+  .campo { margin: 6px 0; }
+  .campo b { color: #9fb8ff; }
+  .no-encontrado { color: #ff9a9a; font-style: italic; }
+  pre { white-space: pre-wrap; word-break: break-word; background: #050508; padding: 10px; border-radius: 6px; max-height: 400px; overflow: auto; font-size: 12px; }
+  details summary { cursor: pointer; color: #9fb8ff; margin-top: 8px; }
+  .estado { font-size: 13px; color: #999; }
+</style>
+</head>
+<body>
+  <h1>Experimento aislado: Wikidex como fuente de datos extra</h1>
+  <p class="aviso">
+    Esta página NO forma parte de la app pública (no está enlazada desde ningún menú y lleva
+    <code>noindex</code>). Sirve solo para probar, en el entorno real desplegado, qué tan buena y
+    consistente es la información que trae Wikidex (ataques, habilidades, ilustrador) antes de decidir
+    si vale la pena integrarlo de verdad al catálogo. No inventa ni completa datos: si algo no se
+    pudo determinar del formato de la página, lo dice explícitamente.
+  </p>
+
+  <div class="caja">
+    <h3>1. Buscar una carta en Wikidex</h3>
+    <div class="fila">
+      <input id="q" placeholder="ej. Leafeon ex, Pikachu, Charizard..." />
+      <button id="btnBuscar">Buscar</button>
+    </div>
+    <div id="estadoBuscar" class="estado"></div>
+    <div id="resultadosBusqueda"></div>
+  </div>
+
+  <div class="caja">
+    <h3>2. Ver una página exacta (por título)</h3>
+    <div class="fila">
+      <input id="titulo" placeholder="ej. Leafeon ex (PRE 6)" />
+      <button id="btnVer">Ver página</button>
+    </div>
+    <div id="estadoVer" class="estado"></div>
+    <div id="detalleCarta"></div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    async function llamarProxy(params) {
+      const res = await fetch("/api/tcgcsv?fuente=wikidex&" + params);
+      const data = await res.json().catch(() => null);
+      return { httpStatus: res.status, data };
+    }
+
+    $("btnBuscar").addEventListener("click", async () => {
+      const q = $("q").value.trim();
+      if (!q) return;
+      $("btnBuscar").disabled = true;
+      $("estadoBuscar").textContent = "Buscando...";
+      $("resultadosBusqueda").innerHTML = "";
+      try {
+        const { httpStatus, data } = await llamarProxy("q=" + encodeURIComponent(q));
+        $("estadoBuscar").textContent = `Proxy respondió HTTP ${httpStatus}, upstream (Wikidex) HTTP ${data?.upstreamStatus ?? "?"}`;
+        let lista = [];
+        try {
+          const cruda = JSON.parse(data.cruda);
+          lista = cruda?.query?.search || [];
+        } catch {
+          $("resultadosBusqueda").innerHTML = '<p class="no-encontrado">No se pudo interpretar la respuesta como JSON de MediaWiki (puede que la URL base de la API no sea la correcta). Revisa la respuesta cruda abajo.</p>';
+        }
+        if (lista.length) {
+          $("resultadosBusqueda").innerHTML =
+            "<p>Páginas encontradas (haz clic para copiar el título a la sección 2):</p><ul>" +
+            lista.map((r) => `<li><a href="#" data-titulo="${r.title.replace(/"/g, "&quot;")}" class="link-titulo">${r.title}</a></li>`).join("") +
+            "</ul>";
+          document.querySelectorAll(".link-titulo").forEach((a) => {
+            a.addEventListener("click", (e) => {
+              e.preventDefault();
+              $("titulo").value = a.dataset.titulo;
+              $("btnVer").click();
+            });
+          });
+        } else if (data?.upstreamStatus === 200) {
+          $("resultadosBusqueda").innerHTML = '<p class="no-encontrado">Wikidex no devolvió resultados para esa búsqueda.</p>';
+        }
+        agregarCruda("resultadosBusqueda", data);
+      } catch (e) {
+        $("estadoBuscar").textContent = "Error de red: " + e.message;
+      } finally {
+        $("btnBuscar").disabled = false;
+      }
+    });
+
+    $("btnVer").addEventListener("click", async () => {
+      const titulo = $("titulo").value.trim();
+      if (!titulo) return;
+      $("btnVer").disabled = true;
+      $("estadoVer").textContent = "Cargando...";
+      $("detalleCarta").innerHTML = "";
+      try {
+        const { httpStatus, data } = await llamarProxy("titulo=" + encodeURIComponent(titulo));
+        $("estadoVer").textContent = `Proxy respondió HTTP ${httpStatus}, upstream (Wikidex) HTTP ${data?.upstreamStatus ?? "?"}`;
+        let wikitext = null;
+        try {
+          const cruda = JSON.parse(data.cruda);
+          wikitext = cruda?.parse?.wikitext ?? null;
+          if (cruda?.error) {
+            $("detalleCarta").innerHTML = `<p class="no-encontrado">Wikidex devolvió un error: ${cruda.error.info || cruda.error.code}</p>`;
+          }
+        } catch {
+          $("detalleCarta").innerHTML = '<p class="no-encontrado">No se pudo interpretar la respuesta como JSON de MediaWiki.</p>';
+        }
+        if (wikitext) {
+          $("detalleCarta").innerHTML = extraerCampos(wikitext);
+        }
+        agregarCruda("detalleCarta", data);
+      } catch (e) {
+        $("estadoVer").textContent = "Error de red: " + e.message;
+      } finally {
+        $("btnVer").disabled = false;
+      }
+    });
+
+    function campoWikitext(wikitext, nombreCampo) {
+      const re = new RegExp("\\|\\s*" + nombreCampo + "\\s*=\\s*([^\\n|]+)", "i");
+      const m = wikitext.match(re);
+      return m ? m[1].trim() : null;
+    }
+
+    function extraerCampos(wikitext) {
+      // Intento de extracción best-effort. No conocemos los nombres exactos de
+      // parámetro que usa la plantilla de carta de Wikidex desde este entorno,
+      // así que se prueban varios alias razonables; si ninguno aparece, se
+      // marca explícitamente como "no se pudo determinar" en vez de adivinar.
+      const ilustrador = campoWikitext(wikitext, "ilustrador") || campoWikitext(wikitext, "artista") || campoWikitext(wikitext, "illus");
+      const habilidad = campoWikitext(wikitext, "habilidad") || campoWikitext(wikitext, "ability");
+      const ataque1 = campoWikitext(wikitext, "ataque1") || campoWikitext(wikitext, "ataque1nombre");
+      const html = `
+        <div class="campo"><b>Ilustrador:</b> ${ilustrador || '<span class="no-encontrado">no se pudo determinar</span>'}</div>
+        <div class="campo"><b>Habilidad:</b> ${habilidad || '<span class="no-encontrado">no se pudo determinar</span>'}</div>
+        <div class="campo"><b>Ataque 1:</b> ${ataque1 || '<span class="no-encontrado">no se pudo determinar</span>'}</div>
+      `;
+      return html;
+    }
+
+    function agregarCruda(contenedorId, data) {
+      const det = document.createElement("details");
+      det.innerHTML = `<summary>Ver respuesta cruda del proxy</summary><pre>${JSON.stringify(data, null, 2).replace(/</g, "&lt;")}</pre>`;
+      $(contenedorId).appendChild(det);
+    }
+  </script>
+</body>
+</html>
