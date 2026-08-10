@@ -737,6 +737,71 @@ function Badge({ children, color }) {
   );
 }
 
+// Checklist visual de campos requeridos para publicar, con barra de
+// progreso -- reemplaza el texto plano "falta: X, Y" (que había que leer
+// completo para entender qué faltaba) por algo que se lee de un vistazo,
+// campo por campo, mientras la persona va llenando el formulario.
+function ChecklistPublicacion({ campos, className = "" }) {
+  const completos = campos.filter((c) => c.ok).length;
+  const pct = campos.length ? Math.round((completos / campos.length) * 100) : 0;
+  const listo = completos === campos.length;
+  return (
+    <div style={{ background: `${COLORS.surface2}66`, border: `1px solid ${COLORS.surface2}` }} className={`rounded-xl p-3 ${className}`}>
+      <div className="flex items-center justify-between mb-2">
+        <p style={{ color: COLORS.muted }} className="text-xs font-semibold">Para publicar</p>
+        <p style={{ color: listo ? COLORS.gold : COLORS.muted }} className="text-xs font-semibold">{completos}/{campos.length}</p>
+      </div>
+      <div style={{ background: COLORS.surface, height: 5 }} className="rounded-full overflow-hidden mb-2.5">
+        <div style={{ width: `${pct}%`, background: listo ? COLORS.gold : COLORS.azulClaro, height: "100%", transition: "width .3s ease" }} />
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {campos.map((c) => (
+          <span key={c.label} style={{ color: c.ok ? COLORS.muted : COLORS.text }} className="flex items-center gap-1.5 text-xs">
+            {c.ok
+              ? <Check size={12} color={COLORS.gold} className="shrink-0" />
+              : <span style={{ width: 10, height: 10, border: `1.5px solid ${COLORS.muted}`, borderRadius: "50%" }} className="inline-block shrink-0" />}
+            {c.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Mini tarjeta de "así se va a ver" mientras se llena el formulario de
+// publicar -- misma pinta que una tarjeta real del Mercado/Buscar (ver
+// "Recién publicado" en Inicio), para que la persona confirme de un
+// vistazo que la foto y los datos se ven bien ANTES de publicar, en vez
+// de descubrirlo después ya publicado.
+function PreviewPublicacion({ nombre, imagen, precio, precioAntes, idioma, condicion, tipoEtiqueta, gradeada, grado_empresa, grado_empresa_otro, grado_calificacion }) {
+  if (!nombre && !imagen && !precio) return null;
+  return (
+    <div className="sm:col-span-6">
+      <p style={{ color: COLORS.muted }} className="text-xs font-semibold mb-1.5">Así se verá tu publicación</p>
+      <div style={{ background: `${COLORS.surface2}99`, border: `1px solid ${COLORS.azulClaro}29`, maxWidth: 200 }}
+        className="rounded-2xl overflow-hidden flex flex-col">
+        <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
+          {imagen ? (
+            <img src={imagen} alt={nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+          ) : (
+            <Package size={28} color={COLORS.muted} />
+          )}
+        </div>
+        <div className="p-2">
+          <div className="flex items-center gap-1 flex-wrap mb-1">
+            {tipoEtiqueta && <Badge color={COLORS.azulPalido}>{tipoEtiqueta}</Badge>}
+            {idioma && <IdiomaBadge idioma={idioma} />}
+            {condicion && <EstadoCartaBadge condicion={condicion} />}
+            {gradeada && <GradeoBadge gradeada={gradeada} grado_empresa={grado_empresa} grado_empresa_otro={grado_empresa_otro} grado_calificacion={grado_calificacion} />}
+          </div>
+          <p className="text-xs font-semibold line-clamp-2">{nombre || "Sin nombre todavía"}</p>
+          {precio ? <PrecioConOferta precio={precio} precioAntes={precioAntes} size="sm" /> : <p style={{ color: COLORS.muted }} className="text-xs">Sin precio todavía</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- Selector de idioma de la carta: obligatorio al publicar, para que
 // el comprador sepa en qué idioma está sin tener que preguntar ----
 // Botón para copiar el link propio (?u=slug para perfiles, ?tienda=slug para
@@ -1762,20 +1827,25 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
 
   const alLimite = limiteAlcanzado(perfil, publicaciones.length);
 
-  // Lista legible de lo que falta para poder publicar -- antes el botón
+  // Checklist de lo que falta para poder publicar -- antes el botón
   // simplemente se quedaba deshabilitado sin decir por qué, así que ahora se
-  // le muestra a la persona exactamente qué le falta en vez de dejarla
-  // adivinando por qué "no pasa nada" al hacer clic. Las fotos reales ya NO
-  // son obligatorias para publicar (ver comentario en `agregar`) -- si se
-  // están subiendo justo ahora sí bloqueamos el botón un momento, nada más
-  // para no perder esa subida.
-  const faltantes = [];
-  if (!nueva.carta) faltantes.push(tipo === "accesorio" ? "el nombre del accesorio" : "elegir la carta/producto");
-  if (!nueva.precio) faltantes.push("el precio");
-  if (!nueva.zona) faltantes.push("la zona");
-  if (tipo === "carta" && !nueva.condicion) faltantes.push("el estado de la carta");
-  if (tipo === "carta" && !nueva.idioma) faltantes.push("el idioma de la carta");
-  if (subiendoFoto.frente || subiendoFoto.atras) faltantes.push("espera a que termine de subir la foto");
+  // le muestra a la persona exactamente qué le falta (ver ChecklistPublicacion)
+  // en vez de dejarla adivinando por qué "no pasa nada" al hacer clic. Las
+  // fotos reales ya NO son obligatorias para publicar (ver comentario en
+  // `agregar`) -- si se están subiendo justo ahora sí bloqueamos el botón un
+  // momento, nada más para no perder esa subida (por eso no aparece en el
+  // checklist como campo, solo bloquea aparte).
+  const campos = [
+    { label: tipo === "accesorio" ? "Nombre del accesorio" : "Carta/producto elegido", ok: !!nueva.carta },
+    { label: "Precio", ok: !!nueva.precio },
+    { label: "Zona", ok: !!nueva.zona },
+    ...(tipo === "carta" ? [
+      { label: "Estado de la carta", ok: !!nueva.condicion },
+      { label: "Idioma", ok: !!nueva.idioma },
+    ] : []),
+  ];
+  const subiendoAlgunaFoto = subiendoFoto.frente || subiendoFoto.atras;
+  const faltantes = campos.filter((c) => !c.ok).map((c) => c.label.toLowerCase()).concat(subiendoAlgunaFoto ? ["espera a que termine de subir la foto"] : []);
 
   const agregar = async () => {
     if (faltantes.length > 0) return;
@@ -1841,6 +1911,40 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
       const numerico = ["precio", "cantidad"].includes(campo) ? Number(valor) : campo === "precio_antes" ? (valor ? Number(valor) : null) : valor;
       await sbWrite("PATCH", `mercado_listings?id=eq.${id}`, { [campo]: numerico }, session);
     } catch (e) { setError(e.message); }
+  };
+
+  // Plantilla rápida: precarga el formulario de arriba con los datos de una
+  // publicación ya existente (útil para vender otra copia del mismo producto
+  // sin volver a capturar todo). En modo manual porque el card_api_id de la
+  // publicación original ya no está garantizado a coincidir con el picker del
+  // catálogo si esa carta se buscó hace tiempo -- así el nombre/foto quedan
+  // tal cual y la persona solo ajusta lo que cambió (normalmente el precio).
+  const duplicar = (item) => {
+    setTipo(item.tipo);
+    setCartaManual(true);
+    setNueva({
+      ...vacio,
+      tcg: item.tcg || "pokemon",
+      carta: item.carta,
+      set_nombre: item.set_nombre || "",
+      condicion: item.condicion || "",
+      idioma: item.idioma || "",
+      precio: String(item.precio ?? ""),
+      precio_antes: item.precio_antes ? String(item.precio_antes) : "",
+      cantidad: "1",
+      zona: item.zona || "",
+      card_api_id: item.card_api_id || "",
+      imagen_url: item.imagen_url || "",
+      precio_ref_mxn: item.precio_ref_mxn || null,
+      precio_ref_fuente: item.precio_ref_fuente || null,
+      foto_real_url: item.foto_real_url || "",
+      foto_real_reverso_url: item.foto_real_reverso_url || "",
+      gradeada: item.gradeada || false, grado_empresa: item.grado_empresa || "", grado_empresa_otro: item.grado_empresa_otro || "", grado_calificacion: item.grado_calificacion || "",
+      buzon_tienda_id: item.buzon_tienda_id || "",
+      descripcion: item.descripcion || "",
+      etiquetas: item.etiquetas ? item.etiquetas.join(", ") : "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   if (loading) return <Loading label="Cargando tus publicaciones..." />;
@@ -2029,11 +2133,11 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
         {tipo === "carta" && Number(nueva.cantidad) > 1 && (
           <p style={{ color: COLORS.muted }} className="text-xs -mt-1">Se publicará como una sola carta con {nueva.cantidad} copias disponibles (útil para cartas competitivas que la gente compra en playset).</p>
         )}
-        {!alLimite && faltantes.length > 0 && (
-          <p style={{ color: COLORS.azulPalido }} className="text-xs">
-            Para publicar, falta: {faltantes.join(", ")}.
-          </p>
-        )}
+        <PreviewPublicacion nombre={nueva.carta} imagen={nueva.foto_real_url || nueva.imagen_url} precio={nueva.precio} precioAntes={nueva.precio_antes}
+          idioma={tipo === "carta" ? nueva.idioma : null} condicion={tipo === "carta" ? nueva.condicion : null}
+          tipoEtiqueta={tipo === "accesorio" ? "Accesorio" : tipo === "sellado" ? "Sellado" : "Mercado"}
+          gradeada={nueva.gradeada} grado_empresa={nueva.grado_empresa} grado_empresa_otro={nueva.grado_empresa_otro} grado_calificacion={nueva.grado_calificacion} />
+        {!alLimite && <ChecklistPublicacion campos={campos} />}
       </div>
 
       <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Tus publicaciones</h3>
@@ -2071,6 +2175,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             <SubirFotoManual session={session} label={item.foto_real_reverso_url ? (item.tipo === "accesorio" ? "Cambiar atrás" : "Cambiar foto real (atrás)") : (item.tipo === "accesorio" ? "📷 Foto de atrás" : "📷 Foto real (atrás)")} onSubido={async (url) => { await actualizar(item.id, "foto_real_reverso_url", url); cargar(); }} />
             <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
             <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} tipoItem={item.tipo} onVendida={cargar} />
+            <button onClick={() => duplicar(item)} title="Precarga el formulario de arriba con estos datos, para publicar otra copia rápido" style={{ color: COLORS.muted }} className="text-xs px-2">Duplicar</button>
             <button onClick={() => borrar(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
@@ -4562,13 +4667,15 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
   const alLimite = limiteAlcanzado(perfil, totalActivos);
 
   // Ver el comentario equivalente en MyMarketPanel: antes el botón solo se
-  // quedaba deshabilitado sin decir por qué.
-  const faltantesCarta = [];
-  if (!nuevaCarta.carta) faltantesCarta.push("elegir la carta");
-  if (!nuevaCarta.precio) faltantesCarta.push("el precio");
-  if (!nuevaCarta.idioma) faltantesCarta.push("el idioma de la carta");
-  if (!nuevaCarta.condicion) faltantesCarta.push("el estado de la carta");
-  if (subiendoFotoCarta.frente || subiendoFotoCarta.atras) faltantesCarta.push("espera a que termine de subir la foto");
+  // quedaba deshabilitado sin decir por qué (ver ChecklistPublicacion).
+  const camposCarta = [
+    { label: "Carta elegida", ok: !!nuevaCarta.carta },
+    { label: "Precio", ok: !!nuevaCarta.precio },
+    { label: "Idioma", ok: !!nuevaCarta.idioma },
+    { label: "Estado de la carta", ok: !!nuevaCarta.condicion },
+  ];
+  const subiendoAlgunaFotoCarta = subiendoFotoCarta.frente || subiendoFotoCarta.atras;
+  const faltantesCarta = camposCarta.filter((c) => !c.ok).map((c) => c.label.toLowerCase()).concat(subiendoAlgunaFotoCarta ? ["espera a que termine de subir la foto"] : []);
 
   const agregarCarta = async () => {
     if (faltantesCarta.length > 0) return;
@@ -4622,6 +4729,21 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
       const numerico = ["precio", "cantidad"].includes(campo) ? Number(valor) : campo === "precio_antes" ? (valor ? Number(valor) : null) : valor;
       await sbWrite("PATCH", `inventario_tienda?id=eq.${id}`, { [campo]: numerico }, session);
     } catch (e) { setError(e.message); }
+  };
+
+  // Ver el comentario equivalente en MyMarketPanel.duplicar().
+  const duplicarCarta = (item) => {
+    setCartaManual(true);
+    setNuevaCarta({
+      tcg: item.tcg || "pokemon", carta: item.carta, set_nombre: item.set_nombre || "",
+      condicion: item.condicion || "", idioma: item.idioma || "",
+      precio: String(item.precio ?? ""), precio_antes: item.precio_antes ? String(item.precio_antes) : "", cantidad: "1",
+      card_api_id: item.card_api_id || "", imagen_url: item.imagen_url || "",
+      precio_ref_mxn: item.precio_ref_mxn || null, precio_ref_fuente: item.precio_ref_fuente || null,
+      foto_real_url: item.foto_real_url || "", foto_real_reverso_url: item.foto_real_reverso_url || "",
+      gradeada: item.gradeada || false, grado_empresa: item.grado_empresa || "", grado_empresa_otro: item.grado_empresa_otro || "", grado_calificacion: item.grado_calificacion || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const agregarSellado = async () => {
@@ -4839,14 +4961,13 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
             onChange={(patch) => setNuevaCarta({ ...nuevaCarta, ...patch })}
           />
         </div>
+        <PreviewPublicacion nombre={nuevaCarta.carta} imagen={nuevaCarta.foto_real_url || nuevaCarta.imagen_url} precio={nuevaCarta.precio} precioAntes={nuevaCarta.precio_antes}
+          idioma={nuevaCarta.idioma} condicion={nuevaCarta.condicion} tipoEtiqueta="Tienda"
+          gradeada={nuevaCarta.gradeada} grado_empresa={nuevaCarta.grado_empresa} grado_empresa_otro={nuevaCarta.grado_empresa_otro} grado_calificacion={nuevaCarta.grado_calificacion} />
+        {!alLimite && <ChecklistPublicacion campos={camposCarta} className="sm:col-span-6" />}
         <button onClick={agregarCarta} disabled={savingCarta || alLimite || faltantesCarta.length > 0} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: alLimite ? 0.5 : 1 }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-6">
           {alLimite ? "Límite alcanzado" : savingCarta ? "Guardando..." : "+ Agregar carta"}
         </button>
-        {!alLimite && faltantesCarta.length > 0 && (
-          <p style={{ color: COLORS.azulPalido }} className="text-xs sm:col-span-6">
-            Para agregar la carta, falta: {faltantesCarta.join(", ")}.
-          </p>
-        )}
       </div>
       <div className="grid gap-2 mb-8">
         {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
@@ -4875,6 +4996,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
             <SubirFotoManual session={session} label={item.foto_real_reverso_url ? "Cambiar foto real (atrás)" : "📷 Foto real (atrás)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_reverso_url", url); cargar(); }} />
             <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
             <MarcarVendidaBoton session={session} tabla="inventario_tienda" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} onVendida={cargar} />
+            <button onClick={() => duplicarCarta(item)} title="Precarga el formulario de arriba con estos datos, para agregar otra copia rápido" style={{ color: COLORS.muted }} className="text-xs px-2">Duplicar</button>
             <button onClick={() => borrarCarta(item.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
           </div>
         ))}
@@ -7585,6 +7707,50 @@ function BoletinView({ session }) {
   );
 }
 
+// Guía corta de 3 pasos para quien recién llega (ver esVisitanteNuevo):
+// reemplaza momentáneamente los banners promocionales (sorteo, boletín,
+// "buscas una carta", búsquedas de la comunidad) para que la primera
+// impresión sea "así funciona esto" y no una pila de anuncios.
+function ComoFuncionaGuia() {
+  const pasos = [
+    { icon: Search, titulo: "1. Busca o explora", texto: "Escribe una carta o mira el Mercado y las tiendas cerca de ti." },
+    { icon: MessageCircle, titulo: "2. Contacta al vendedor", texto: "Escríbele por chat, WhatsApp o Facebook directo desde la publicación." },
+    { icon: Tag, titulo: "3. Acuerden la entrega", texto: "Pago y entrega se coordinan entre ustedes; nosotros solo los conectamos." },
+  ];
+  return (
+    <div style={{ background: `${COLORS.surface2}99`, border: `1px solid ${COLORS.azulClaro}29` }} className="rounded-2xl p-4 mb-8 grid sm:grid-cols-3 gap-3">
+      {pasos.map((p) => (
+        <div key={p.titulo} className="flex items-start gap-2.5">
+          <div style={{ background: `${COLORS.azulClaro}22`, color: COLORS.azulClaro }} className="p-2 rounded-lg shrink-0">
+            <p.icon size={16} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold">{p.titulo}</p>
+            <p style={{ color: COLORS.muted }} className="text-xs mt-0.5">{p.texto}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Envuelve los banners promocionales de Inicio en un solo renglón plegado
+// para quien recién llega (esVisitanteNuevo) -- siguen ahí, solo no se
+// apilan uno tras otro antes de que la persona entienda qué es la página.
+// Alguien que ya vio el tutorial (visitante recurrente) los sigue viendo
+// desplegados como siempre, sin ningún cambio de comportamiento.
+function NovedadesCondensadas({ children }) {
+  const [abierto, setAbierto] = useState(false);
+  if (abierto) return <div>{children}<button onClick={() => setAbierto(false)} style={{ color: COLORS.muted }} className="text-xs mb-6 -mt-2">Ocultar novedades ▲</button></div>;
+  return (
+    <button onClick={() => setAbierto(true)}
+      style={{ background: `${COLORS.violeta}14`, border: `1px solid ${COLORS.violeta}44`, color: COLORS.violeta }}
+      className="w-full rounded-xl p-3 mb-6 flex items-center justify-center gap-2 text-xs font-semibold">
+      <Gift size={14} /> Ver sorteos, boletín de precios y otras novedades
+    </button>
+  );
+}
+
 // Banner chico en Inicio (Buscar, cuando no hay texto escrito): teaser
 // del boletín más reciente entre los TCG soportados, para que quien
 // entre a la página lo note sin tener que ir a buscarlo.
@@ -8697,15 +8863,19 @@ function CrearSubastaForm({ session, onCreado }) {
   // staff en español casi nunca están en el catálogo de pokemontcg.io.
   const [productoManual, setProductoManual] = useState(false);
 
-  const faltantes = [];
-  if (!nueva.producto) faltantes.push(nueva.tipo === "accesorio" ? "el nombre del producto" : "elegir la carta/producto");
-  if (!nueva.precio_inicial) faltantes.push("el precio inicial");
-  if (!nueva.fecha_fin) faltantes.push("la fecha en que termina");
-  if (!nueva.zona) faltantes.push("la zona");
-  if (nueva.tipo === "carta" && !nueva.condicion) faltantes.push("el estado de la carta");
-  if (nueva.tipo === "carta" && !nueva.idioma) faltantes.push("el idioma de la carta");
-  if (!nueva.foto_real_url) faltantes.push("la foto de frente");
-  if (nueva.tipo === "carta" && !nueva.foto_real_reverso_url) faltantes.push("la foto de atrás");
+  const campos = [
+    { label: nueva.tipo === "accesorio" ? "Nombre del producto" : "Carta/producto elegido", ok: !!nueva.producto },
+    { label: "Precio inicial", ok: !!nueva.precio_inicial },
+    { label: "Fecha en que termina", ok: !!nueva.fecha_fin },
+    { label: "Zona", ok: !!nueva.zona },
+    ...(nueva.tipo === "carta" ? [
+      { label: "Estado de la carta", ok: !!nueva.condicion },
+      { label: "Idioma", ok: !!nueva.idioma },
+    ] : []),
+    { label: "Foto de frente", ok: !!nueva.foto_real_url },
+    ...(nueva.tipo === "carta" ? [{ label: "Foto de atrás", ok: !!nueva.foto_real_reverso_url }] : []),
+  ];
+  const faltantes = campos.filter((c) => !c.ok).map((c) => c.label.toLowerCase());
 
   const crear = async () => {
     if (faltantes.length > 0) return;
@@ -8810,10 +8980,10 @@ function CrearSubastaForm({ session, onCreado }) {
         <p style={{ color: COLORS.muted }} className="text-xs mb-1">Termina el</p>
         <input type="datetime-local" value={nueva.fecha_fin} onChange={(e) => setNueva({ ...nueva, fecha_fin: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit" />
       </div>
+      <ChecklistPublicacion campos={campos} />
       <button onClick={crear} disabled={creando || faltantes.length > 0} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold w-fit px-4">
         {creando ? "Publicando..." : "Publicar subasta"}
       </button>
-      {faltantes.length > 0 && <p style={{ color: COLORS.azulPalido }} className="text-xs">Para publicar, falta: {faltantes.join(", ")}.</p>}
     </div>
   );
 }
@@ -10668,6 +10838,14 @@ export default function EncuentraCartas() {
   const [logoError, setLogoError] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  // Para no saturar a alguien que apenas llega: mientras no haya visto el
+  // tutorial (mismo criterio que showOnboarding), la pantalla de inicio
+  // condensa los banners promocionales y prioriza una guía corta de 3 pasos.
+  // Se calcula una sola vez al montar para que no "salte" el layout a media
+  // sesión si abre el tutorial manualmente después.
+  const [esVisitanteNuevo] = useState(() => {
+    try { return !localStorage.getItem(ONBOARDING_SEEN_KEY); } catch { return false; }
+  });
   const [, setTemaVersion] = useState(0);
   const [chatContext, setChatContext] = useState(null);
   const [mostrarBuscarCarta, setMostrarBuscarCarta] = useState(false);
@@ -11446,21 +11624,26 @@ export default function EncuentraCartas() {
         {/* SEARCH */}
         {view === "search" && (
           <div>
-            {!query.trim() && <SorteoDestacadoBanner onAbrirSorteo={abrirSorteo} />}
-            {!query.trim() && <BoletinBanner onAbrir={() => setView("boletin")} />}
-            {!query.trim() && (
-              <button onClick={() => (session ? setMostrarBuscarCarta(true) : setShowAccountModal(true))}
-                style={{ background: `${COLORS.violeta}1a`, border: `1px solid ${COLORS.violeta}55` }}
-                className="w-full rounded-xl p-3 mb-3 flex items-center gap-3 text-left hover:brightness-110 transition">
-                <Search size={20} color={COLORS.violeta} className="shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold">🔍 ¿Buscas alguna carta?</p>
-                  <p style={{ color: COLORS.muted }} className="text-xs truncate">Publícala y que alguien que la tenga te contacte directo</p>
-                </div>
-                <span style={{ color: COLORS.violeta }} className="text-xs font-semibold whitespace-nowrap">Publicar →</span>
-              </button>
-            )}
-            {!query.trim() && <BusquedasCarrusel key={busquedasVersion} onAbrir={() => setView("busquedas")} />}
+            {!query.trim() && (() => {
+              const banners = (
+                <>
+                  <SorteoDestacadoBanner onAbrirSorteo={abrirSorteo} />
+                  <BoletinBanner onAbrir={() => setView("boletin")} />
+                  <button onClick={() => (session ? setMostrarBuscarCarta(true) : setShowAccountModal(true))}
+                    style={{ background: `${COLORS.violeta}1a`, border: `1px solid ${COLORS.violeta}55` }}
+                    className="w-full rounded-xl p-3 mb-3 flex items-center gap-3 text-left hover:brightness-110 transition">
+                    <Search size={20} color={COLORS.violeta} className="shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold">🔍 ¿Buscas alguna carta?</p>
+                      <p style={{ color: COLORS.muted }} className="text-xs truncate">Publícala y que alguien que la tenga te contacte directo</p>
+                    </div>
+                    <span style={{ color: COLORS.violeta }} className="text-xs font-semibold whitespace-nowrap">Publicar →</span>
+                  </button>
+                  <BusquedasCarrusel key={busquedasVersion} onAbrir={() => setView("busquedas")} />
+                </>
+              );
+              return esVisitanteNuevo ? <NovedadesCondensadas>{banners}</NovedadesCondensadas> : banners;
+            })()}
             <div className="text-center mb-10" style={{ animation: "fadeUp .5s ease both" }}>
               <div style={{ background: `${COLORS.violeta}1f`, border: `1px solid ${COLORS.violeta}59`, color: "#C9B6FF" }}
                 className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide mb-5">
@@ -11510,6 +11693,8 @@ export default function EncuentraCartas() {
                 Vende tus cartas
               </button>
             </div>
+
+            {esVisitanteNuevo && !query.trim() && <ComoFuncionaGuia />}
 
             {searching && <Loading label="Buscando en tiendas y mercado..." />}
             {searchError && <ErrorBox message={searchError} />}

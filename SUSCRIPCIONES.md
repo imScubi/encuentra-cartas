@@ -3470,6 +3470,52 @@ mostrarlos en el detalle de la carta); si el formato es muy irregular
 entre páginas o la cobertura es baja, mejor no invertir tiempo en
 automatizarlo.
 
+El experimento no dio resultado en la prueba real (no se llegó a
+diagnosticar la causa exacta -- pudo ser la URL base del API, el nombre
+de los parámetros esperados, o algo del lado de Wikidex), así que por
+ahora queda archivado sin usarse. El código se deja tal cual en vez de
+borrarlo, por si más adelante se quiere retomar con más detalle de qué
+devolvió exactamente la respuesta cruda.
+
+## 114. Mejoras de experiencia: estado inicial, checklist de publicar y vista previa
+
+Primer bloque de una tanda de mejoras de UX pedidas explícitamente para que la
+página se sienta más fluida y fácil de entender, cuidando que no se sienta
+sofocante para quien recién llega:
+
+- **Inicio menos saturado para quien recién llega**: antes, entrar a la
+  página por primera vez mostraba de entrada 4 banners promocionales
+  apilados (sorteo destacado, boletín de precios, "¿buscas una carta?",
+  búsquedas de la comunidad) ANTES de siquiera llegar al buscador -- eso es
+  justo lo que se pidió evitar. Ahora, mientras la persona no haya visto el
+  tutorial de bienvenida (mismo criterio que ya existía para mostrarlo,
+  sección 113/114 del historial de tutorial), esos 4 banners se colapsan en
+  un solo botón "Ver sorteos, boletín de precios y otras novedades" y, en su
+  lugar, aparece una guía corta de 3 pasos ("1. Busca o explora · 2. Contacta
+  al vendedor · 3. Acuerden la entrega") justo debajo del buscador principal.
+  Alguien que ya vio el tutorial (visitante recurrente) sigue viendo todo
+  desplegado como antes -- cero cambio de comportamiento para quien ya
+  conoce la página.
+- **Checklist visual al publicar** (`ChecklistPublicacion`): reemplaza el
+  texto plano "Para publicar, falta: el precio, la zona..." (había que leer
+  la oración completa) por una lista con checkmarks y una barra de progreso
+  que se llena en vivo mientras se completa el formulario -- en el
+  formulario de Mercado (`MyMarketPanel`), el de cartas sueltas de tienda
+  (`MyStorePanel`) y el de Subastas (`CrearSubastaForm`).
+- **Vista previa en vivo** (`PreviewPublicacion`): mientras se llena el
+  formulario de una carta/producto en `MyMarketPanel` y `MyStorePanel`,
+  aparece una mini tarjeta con la misma pinta que tendría en el Mercado real
+  (foto, badges de idioma/estado/gradeo, precio) -- para confirmar de un
+  vistazo que se ve bien antes de publicar, en vez de descubrirlo después.
+- **Plantillas rápidas ("Duplicar")**: botón nuevo en cada fila de
+  `MyMarketPanel` y en las cartas sueltas de `MyStorePanel` que precarga el
+  formulario de arriba con los datos de esa publicación (nombre, set, tcg,
+  idioma, condición, fotos, precio) para publicar otra copia sin volver a
+  capturar todo -- solo hay que ajustar lo que cambió (normalmente el
+  precio o la cantidad) y publicar. Queda en modo "escribir manualmente"
+  porque el `card_api_id` original ya no está garantizado a coincidir con
+  el picker del catálogo si esa carta se buscó hace tiempo.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
