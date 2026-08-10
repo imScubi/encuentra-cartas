@@ -3549,6 +3549,29 @@ Supabase → SQL Editor -- esa misma migración incluye un backfill de una
 sola vez que recalcula el promedio con el historial de mensajes que ya
 existía, así que el indicador no arranca en blanco para todos.
 
+## 116. Skeletons de carga (cierre de la tanda de mejoras de UX)
+
+Último punto de la tanda de mejoras de UX (secciones 114-116): se
+reemplazó el spinner genérico ("Cargando...") por un `SkeletonGrid` --
+tarjetas placeholder con un pulso suave que ya insinúan la forma del
+contenido que está por llegar -- en los tres lugares donde antes había
+solo un ícono girando en el centro de la pantalla: la vitrina de Inicio
+("Recién publicado"), el Mercado entre usuarios, y las cartas de un set
+en el Catálogo.
+
+**Sobre la otra mitad del punto, "code-splitting" (dividir el bundle
+grande en pedazos más chicos):** ya estaba parcialmente hecho -- la
+librería `xlsx` (429 kB) que usa el Importador masivo ya se carga por
+separado con `import()` dinámico, solo cuando alguien de verdad la usa.
+Lo que falta para bajar el bundle principal (655 kB) es dividir
+`src/App.jsx` en módulos separados por archivo (hoy son 12,000+ líneas
+en un solo archivo, así que React.lazy no tiene qué cargar por
+separado) -- eso es justo la sección 34/99 de este historial ("dividir
+src/App.jsx en módulos"), un trabajo grande y de por sí ya identificado
+por separado. No se intentó aquí para no mezclar un refactor de esa
+escala con esta tanda de mejoras de UX, sin el tiempo dedicado que
+merece para probarlo bien.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
