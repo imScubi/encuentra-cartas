@@ -3,9 +3,13 @@
 // (publicación destacada) está por dejar de estar destacado, o (c) un
 // torneo que marcaste con "Me interesa" es en los próximos 3 días. El día 1
 // de cada mes, de paso, otorga el regalo mensual de Destellos por plan (ver
-// otorgarDestellosMensuales más abajo) -- va aquí en vez de en su propio
-// archivo de cron para no sumar una función serverless más (Vercel Hobby
-// limita a 12 por despliegue, y ya estábamos justo en el límite).
+// otorgarDestellosMensuales más abajo), cada 3 días genera y manda el
+// boletín de precios (ver generarYEnviarBoletines), y cada lunes manda a
+// cada tienda un resumen semanal de mensajes/ventas/seguidores nuevos por
+// correo (ver generarYEnviarResumenSemanal) -- todo va en este mismo
+// archivo en vez de uno nuevo por tarea para no sumar funciones
+// serverless (Vercel Hobby limita a 12 por despliegue, y ya estábamos
+// justo en el límite).
 //
 // Requiere: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, VAPID_PUBLIC_KEY,
 // VAPID_PRIVATE_KEY, VAPID_SUBJECT, y CRON_SECRET (Vercel la manda sola
@@ -259,6 +263,69 @@ async function generarYEnviarBoletines(ahora, supabaseUrl, headers) {
   return generados.length;
 }
 
+// ============================================================
+// Resumen semanal por correo para cada tienda, cada lunes: cuántos
+// mensajes nuevos de compradores, ventas confirmadas y seguidores nuevos
+// tuvo en los últimos 7 días. Todo son datos que ya se calculan también
+// en vivo para "Mis estadísticas" (MisEstadisticasTienda en App.jsx,
+// Diamante+) -- este correo es la versión "te lo llevo yo" para que una
+// tienda que no entra seguido igual se entere de que algo pasó, sin
+// tener que ir a revisar. Si una tienda no tuvo NINGUNA novedad esa
+// semana no se le manda correo (evita un correo vacío que solo genera
+// ruido). No depende de un plan -- es un correo simple, no el dashboard
+// completo de gráficas.
+// ============================================================
+async function generarYEnviarResumenSemanal(ahora, supabaseUrl, headers) {
+  if (ahora.getUTCDay() !== 1) return 0; // cada lunes
+  const hace7dias = new Date(ahora.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const tiendasRes = await fetch(
+    `${supabaseUrl}/rest/v1/tiendas?select=id,nombre,perfil_id,perfiles!perfil_id(email)&perfil_id=not.is.null`,
+    { headers }
+  );
+  const tiendas = await tiendasRes.json().catch(() => []);
+
+  let enviados = 0;
+  for (const t of tiendas || []) {
+    const email = t.perfiles?.email;
+    if (!email) continue;
+
+    const [mensajesRes, ventasRes, seguidoresRes] = await Promise.all([
+      fetch(`${supabaseUrl}/rest/v1/mensajes?select=id&para_perfil_id=eq.${t.perfil_id}&created_at=gte.${hace7dias}`, { headers }),
+      fetch(`${supabaseUrl}/rest/v1/ventas?select=id,precio&vendedor_perfil_id=eq.${t.perfil_id}&estado=eq.confirmada&created_at=gte.${hace7dias}`, { headers }),
+      fetch(`${supabaseUrl}/rest/v1/seguidores?select=id&seguido_perfil_id=eq.${t.perfil_id}&created_at=gte.${hace7dias}`, { headers }),
+    ]);
+    const mensajes = await mensajesRes.json().catch(() => []);
+    const ventas = await ventasRes.json().catch(() => []);
+    const seguidores = await seguidoresRes.json().catch(() => []);
+
+    const numMensajes = (mensajes || []).length;
+    const numVentas = (ventas || []).length;
+    const montoVentas = (ventas || []).reduce((s, v) => s + (Number(v.precio) || 0), 0);
+    const numSeguidores = (seguidores || []).length;
+
+    if (numMensajes === 0 && numVentas === 0 && numSeguidores === 0) continue;
+
+    const html = `
+      <h2>📊 Tu semana en Encuentra Cartas</h2>
+      <p>Esto pasó en <strong>${t.nombre}</strong> en los últimos 7 días:</p>
+      <ul>
+        <li>💬 ${numMensajes} mensaje(s) nuevo(s) de compradores</li>
+        <li>💰 ${numVentas} venta(s) confirmada(s)${numVentas ? ` ($${montoVentas.toLocaleString("es-MX")} MXN)` : ""}</li>
+        <li>⭐ ${numSeguidores} seguidor(es) nuevo(s)</li>
+      </ul>
+      <p><a href="https://encuentracartasmx.com">Ver mi tienda en Encuentra Cartas</a></p>
+    `;
+    try {
+      await enviarCorreo({ to: email, subject: "📊 Tu resumen semanal de Encuentra Cartas", html });
+      enviados++;
+    } catch (e) {
+      console.error(`Error mandando resumen semanal a la tienda ${t.id}:`, e);
+    }
+  }
+  return enviados;
+}
+
 export default async function handler(req, res) {
   if (process.env.CRON_SECRET && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: "No autorizado" });
@@ -359,7 +426,13 @@ export default async function handler(req, res) {
       return 0;
     });
 
-    res.status(200).json({ ok: true, avisos, destellosOtorgados, boletinesGenerados });
+    // ---- Resumen semanal por tienda (cada lunes) ----
+    const resumenesEnviados = await generarYEnviarResumenSemanal(ahora, supabaseUrl, headers).catch((e) => {
+      console.error("Error mandando resúmenes semanales:", e);
+      return 0;
+    });
+
+    res.status(200).json({ ok: true, avisos, destellosOtorgados, boletinesGenerados, resumenesEnviados });
   } catch (e) {
     console.error("Error en cron de recordatorios:", e);
     res.status(200).json({ ok: true, error: e.message });
