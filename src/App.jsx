@@ -768,6 +768,24 @@ function ChecklistPublicacion({ campos, className = "" }) {
   );
 }
 
+// Traduce el promedio guardado en perfiles (ver migración 064) a una
+// etiqueta legible. Con menos de 3 respuestas registradas no se muestra
+// nada -- una sola respuesta rápida o lenta no dice mucho todavía, y
+// mostrarla igual daría una impresión equivocada.
+function tiempoRespuestaInfo(minutos, conteo) {
+  if (!conteo || conteo < 3 || minutos == null) return null;
+  if (minutos <= 30) return { texto: "Responde en minutos", color: COLORS.gold };
+  if (minutos <= 240) return { texto: "Responde en unas horas", color: COLORS.azulClaro };
+  if (minutos <= 1440) return { texto: "Responde en menos de un día", color: COLORS.azulPalido };
+  return { texto: "Responde en varios días", color: COLORS.muted };
+}
+
+function TiempoRespuestaBadge({ perfil }) {
+  const info = tiempoRespuestaInfo(perfil?.tiempo_respuesta_promedio_minutos, perfil?.tiempo_respuesta_conteo);
+  if (!info) return null;
+  return <Badge color={info.color}>⏱ {info.texto}</Badge>;
+}
+
 // Mini tarjeta de "así se va a ver" mientras se llena el formulario de
 // publicar -- misma pinta que una tarjeta real del Mercado/Buscar (ver
 // "Recién publicado" en Inicio), para que la persona confirme de un
@@ -6836,6 +6854,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
               <VerificadoBadge perfil={perfil} />
               <NivelBadge total={totalDestellos} />
               <VendedorBadge ventasCompletadas={ventasCompletadas} resenas={resenas} />
+              <TiempoRespuestaBadge perfil={perfil} />
               <CopiarLinkBoton param="u" slug={perfil.slug} />
             </div>
             {tienda?.zona && <p style={{ color: COLORS.muted }} className="text-sm">{tienda.zona}</p>}
@@ -7011,7 +7030,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
 // a una sola forma para que CartaDetalleView no tenga que saber de dónde vino.
 async function cargarDetalleListing(tabla, id) {
   if (tabla === "mercado_listings") {
-    const rows = await sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&id=eq.${id}`);
+    const rows = await sb(`mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url,tiempo_respuesta_promedio_minutos,tiempo_respuesta_conteo),buzon_tienda:buzon_tienda_id(nombre)&id=eq.${id}`);
     const r = rows[0];
     if (!r) return null;
     return {
@@ -7028,7 +7047,7 @@ async function cargarDetalleListing(tabla, id) {
     };
   }
   if (tabla === "inventario_tienda") {
-    const rows = await sb(`inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
+    const rows = await sb(`inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url,nombre,tiempo_respuesta_promedio_minutos,tiempo_respuesta_conteo))&id=eq.${id}`);
     const r = rows[0];
     if (!r) return null;
     return {
@@ -7044,7 +7063,7 @@ async function cargarDetalleListing(tabla, id) {
     };
   }
   if (tabla === "sellado_tienda") {
-    const rows = await sb(`sellado_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url,nombre))&id=eq.${id}`);
+    const rows = await sb(`sellado_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url,nombre,tiempo_respuesta_promedio_minutos,tiempo_respuesta_conteo))&id=eq.${id}`);
     const r = rows[0];
     if (!r) return null;
     return {
@@ -7540,6 +7559,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
               <p className="font-semibold text-sm truncate">{item.vendedor.nombre}</p>
               <div className="flex items-center gap-2 flex-wrap">
                 <PlanBadge perfil={item.vendedor.perfil} />
+                <TiempoRespuestaBadge perfil={item.vendedor.perfil} />
                 {item.zona && <p style={{ color: COLORS.muted }} className="text-xs">{item.zona}</p>}
               </div>
             </div>
@@ -11159,7 +11179,7 @@ export default function EncuentraCartas() {
   // Carga inicial: lista de tiendas reales
   useEffect(() => {
     setLoadingTiendas(true);
-    sb("tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&order=nombre.asc")
+    sb("tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at,tiempo_respuesta_promedio_minutos,tiempo_respuesta_conteo),verificaciones_tienda(estado)&order=nombre.asc")
       .then(setTiendas)
       .catch((e) => setErrorTiendas(e.message))
       .finally(() => setLoadingTiendas(false));
@@ -11416,7 +11436,7 @@ export default function EncuentraCartas() {
         .then((rows) => { if (rows[0]) verPerfil(rows[0].id); })
         .catch(() => {});
     } else if (tiendaSlug) {
-      sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
+      sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at,tiempo_respuesta_promedio_minutos,tiempo_respuesta_conteo),verificaciones_tienda(estado)&slug=eq.${encodeURIComponent(tiendaSlug)}`)
         .then((rows) => { if (rows[0]) openStore(rows[0]); })
         .catch(() => {});
     } else if (sorteoId) {
@@ -11429,7 +11449,7 @@ export default function EncuentraCartas() {
   }, []);
 
   const verTiendaDesdePerfil = (tiendaId) => {
-    sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at),verificaciones_tienda(estado)&id=eq.${tiendaId}`)
+    sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at,tiempo_respuesta_promedio_minutos,tiempo_respuesta_conteo),verificaciones_tienda(estado)&id=eq.${tiendaId}`)
       .then((rows) => { if (rows[0]) openStore(rows[0]); });
   };
 
@@ -12447,6 +12467,7 @@ export default function EncuentraCartas() {
                     <TiendaVerificadaBadge tienda={selectedStore} />
                     <NivelBadge total={storeDestellos} />
                     <VendedorBadge ventasCompletadas={storeVentasCompletadas} resenas={storeResenas} />
+                    <TiempoRespuestaBadge perfil={selectedStore.perfiles} />
                     <CopiarLinkBoton param="tienda" slug={selectedStore.slug} />
                   </div>
                   {session && session.user.id !== selectedStore.perfil_id && (

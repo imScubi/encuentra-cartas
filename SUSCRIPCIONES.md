@@ -3516,6 +3516,39 @@ sofocante para quien recién llega:
   porque el `card_api_id` original ya no está garantizado a coincidir con
   el picker del catálogo si esa carta se buscó hace tiempo.
 
+## 115. Tiempo de respuesta del vendedor + resumen semanal por correo
+
+Segundo bloque de la misma tanda de mejoras de UX (ver sección 114):
+
+- **Indicador "Responde en..." (migración 064)**: badge nuevo (⏱ Responde
+  en minutos / en unas horas / en menos de un día / en varios días) en el
+  detalle de una publicación, en el perfil público de tienda y en el
+  perfil público de una persona -- para que quien está por contactar sepa
+  qué tan probable es recibir respuesta pronto. Se calcula con un
+  **trigger en la base de datos** (`actualizar_tiempo_respuesta`, corre
+  después de cada mensaje nuevo) que mantiene un promedio corrido en dos
+  columnas nuevas de `perfiles` (`tiempo_respuesta_promedio_minutos`,
+  `tiempo_respuesta_conteo`) -- lo calcula el servidor, NO el navegador
+  leyendo mensajes ajenos (los mensajes son privados; solo agregados como
+  "cuántos minutos en promedio" son públicos, igual que el resto del
+  perfil). Con menos de 3 respuestas registradas no se muestra nada
+  todavía -- una sola respuesta no dice nada confiable de qué tan rápido
+  responde alguien en general.
+- **Resumen semanal por correo, cada lunes** (extiende
+  `api/cron/recordatorios.js`, mismo archivo por el límite de 12
+  funciones serverless): cada tienda con correo registrado recibe un
+  correo con cuántos mensajes nuevos, ventas confirmadas y seguidores
+  nuevos tuvo en los últimos 7 días -- para que una tienda que no entra
+  seguido igual se entere de que algo pasó, sin tener que revisar "Mis
+  estadísticas" (que además es exclusivo Diamante+; este correo es
+  gratis para cualquier tienda). Si no hubo NINGUNA novedad esa semana,
+  no se manda correo -- evita ruido de un resumen vacío.
+
+No requiere ninguna acción manual aparte de correr la migración 064 en
+Supabase → SQL Editor -- esa misma migración incluye un backfill de una
+sola vez que recalcula el promedio con el historial de mensajes que ya
+existía, así que el indicador no arranca en blanco para todos.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
