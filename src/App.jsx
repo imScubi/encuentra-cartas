@@ -2762,6 +2762,15 @@ function FotosFaltantesAdmin({ session }) {
   const [error, setError] = useState(null);
   const [procesando, setProcesando] = useState(null); // "tiendaId|tcg" en curso
   const [progreso, setProgreso] = useState({});
+  // Guarda, por grupo, la respuesta CRUDA de una sola carta de prueba (HTTP
+  // status + qué devolvió, o el error real si la conexión falló) -- ver
+  // "🔍 Probar conexión" más abajo. Es el mismo patrón "diagnóstico antes de
+  // adivinar" que ya se usó para el experimento de Wikidex: no se puede
+  // probar la conexión de un TCG externo desde el entorno de desarrollo, así
+  // que en vez de suponer por qué "0 encontradas" salió mal, se le pide al
+  // navegador (que sí tiene salida real a internet) que enseñe la verdad.
+  const [diagnostico, setDiagnostico] = useState({});
+  const [ultimoError, setUltimoError] = useState({});
 
   const cargar = () => {
     setError(null);
@@ -2780,8 +2789,38 @@ function FotosFaltantesAdmin({ session }) {
 
   useEffect(() => { cargar(); }, []);
 
+  const probarConexion = async (grupo) => {
+    const item = grupo.items[0];
+    if (!item) return;
+    setDiagnostico((d) => ({ ...d, [grupo.key]: "Probando..." }));
+    try {
+      let url = null;
+      if (grupo.tcg === "magic") url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`!"${item.carta}"`)}`;
+      else if (grupo.tcg === "yugioh") url = `https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(item.carta)}`;
+      else if (grupo.tcg === "pokemon") url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(`name:"${item.carta}"`)}`;
+      if (!url) {
+        setDiagnostico((d) => ({ ...d, [grupo.key]: `El TCG "${grupo.tcg}" no tiene una URL de prueba directa (ej. Lorcana usa un caché interno).` }));
+        return;
+      }
+      const res = await fetch(url);
+      const texto = await res.text();
+      let resumen;
+      try {
+        const json = JSON.parse(texto);
+        const n = Array.isArray(json?.data) ? json.data.length : (json?.total_cards ?? "?");
+        resumen = `HTTP ${res.status} -- ${n} resultado(s) para "${item.carta}"`;
+      } catch {
+        resumen = `HTTP ${res.status} -- la respuesta no es JSON: ${texto.slice(0, 200)}`;
+      }
+      setDiagnostico((d) => ({ ...d, [grupo.key]: resumen }));
+    } catch (e) {
+      setDiagnostico((d) => ({ ...d, [grupo.key]: `Error de conexión real: ${e.message} (esto normalmente significa que el navegador ni siquiera pudo contactar al catálogo -- CORS, bloqueo de red, o el catálogo está caído)` }));
+    }
+  };
+
   const completarGrupo = async (grupo) => {
     setProcesando(grupo.key);
+    setUltimoError((u) => ({ ...u, [grupo.key]: null }));
     let encontradas = 0;
     for (let i = 0; i < grupo.items.length; i++) {
       const item = grupo.items[i];
@@ -2793,8 +2832,11 @@ function FotosFaltantesAdmin({ session }) {
           await sbWrite("PATCH", `inventario_tienda?id=eq.${item.id}`, { imagen_url: url }, session);
           encontradas++;
         }
-      } catch {
-        // una carta que falla no debe tumbar el lote completo -- sigue con la siguiente
+      } catch (e) {
+        // Una carta que falla no debe tumbar el lote completo -- sigue con
+        // la siguiente, pero se guarda el primer error real para mostrarlo
+        // (antes se perdía en silencio y solo se veía "0 encontradas").
+        setUltimoError((u) => (u[grupo.key] ? u : { ...u, [grupo.key]: e.message }));
       }
       await new Promise((r) => setTimeout(r, 300));
     }
@@ -2811,24 +2853,39 @@ function FotosFaltantesAdmin({ session }) {
     <div className="mb-8">
       <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-1 text-sm uppercase">🖼️ Publicaciones sin foto</h3>
       <p style={{ color: COLORS.muted }} className="text-xs mb-3">
-        Se completan buscando el nombre exacto en el catálogo del TCG correspondiente. Corre en tu navegador (necesita internet real hacia cada catálogo), así que puede tardar según cuántas cartas tenga el lote -- no cierres esta pantalla mientras dice "Buscando...".
+        Se completan buscando el nombre exacto en el catálogo del TCG correspondiente. Corre en tu navegador (necesita internet real hacia cada catálogo), así que puede tardar según cuántas cartas tenga el lote -- no cierres esta pantalla mientras dice "Buscando...". Si sale "0 encontradas", usa "Probar conexión" primero para ver la respuesta cruda del catálogo antes de reintentar.
       </p>
       <div className="grid gap-2">
         {grupos.map((g) => {
           const prog = progreso[g.key];
           return (
-            <div key={g.key} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <p className="font-semibold text-sm">{g.tiendaNombre} · {TCG_LABEL[g.tcg] || g.tcg}</p>
-                <p style={{ color: COLORS.muted }} className="text-xs">
-                  {prog ? `${prog.hechos}/${prog.total} revisadas · ${prog.encontradas} encontradas` : `${g.items.length} sin foto`}
-                </p>
+            <div key={g.key} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 grid gap-2">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="font-semibold text-sm">{g.tiendaNombre} · {TCG_LABEL[g.tcg] || g.tcg}</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs">
+                    {prog ? `${prog.hechos}/${prog.total} revisadas · ${prog.encontradas} encontradas` : `${g.items.length} sin foto`}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => probarConexion(g)}
+                    style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }}
+                    className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                    🔍 Probar conexión
+                  </button>
+                  <button onClick={() => completarGrupo(g)} disabled={procesando === g.key}
+                    style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: procesando === g.key ? 0.6 : 1 }}
+                    className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                    {procesando === g.key ? "Buscando..." : "Completar fotos automáticamente"}
+                  </button>
+                </div>
               </div>
-              <button onClick={() => completarGrupo(g)} disabled={procesando === g.key}
-                style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: procesando === g.key ? 0.6 : 1 }}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
-                {procesando === g.key ? "Buscando..." : "Completar fotos automáticamente"}
-              </button>
+              {diagnostico[g.key] && (
+                <p style={{ color: COLORS.gold }} className="text-xs break-words">🔍 {diagnostico[g.key]}</p>
+              )}
+              {ultimoError[g.key] && (
+                <p style={{ color: COLORS.azulPalido }} className="text-xs break-words">⚠️ Ejemplo de error durante la búsqueda: {ultimoError[g.key]}</p>
+              )}
             </div>
           );
         })}
