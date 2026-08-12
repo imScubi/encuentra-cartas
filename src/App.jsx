@@ -870,11 +870,11 @@ function IdiomaSelector({ value, onChange }) {
 // ---- Selector de zona: uno de los 51 municipios de Nuevo León, en vez de
 // texto libre -- así el filtro de zona siempre hace match exacto (antes
 // "San Pedro" y "San pedro garza garcia" eran zonas distintas para el buscador). ----
-function ZonaSelector({ value, onChange, incluirTodas, className, style }) {
+function ZonaSelector({ value, onChange, incluirTodas, placeholder, className, style }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} style={style || inputStyle} className={className || "rounded-lg px-2 py-2 text-sm"}>
-      <option value="">{incluirTodas ? "Todas las zonas" : "Elige tu municipio..."}</option>
+      <option value="">{placeholder || (incluirTodas ? "Todas las zonas" : "Elige tu municipio...")}</option>
       {MUNICIPIOS_NL.map((m) => <option key={m} value={m}>{m}</option>)}
     </select>
   );
@@ -1060,6 +1060,9 @@ function AccountModal({ onClose, onAuthed }) {
   const [telefono, setTelefono] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [facebook, setFacebook] = useState("");
+  const [direccionTienda, setDireccionTienda] = useState("");
+  const [zonaTienda, setZonaTienda] = useState("");
+  const [sinLocalTienda, setSinLocalTienda] = useState(false);
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null); // vista previa (blob local o URL de Pokémon)
   const [avatarPokemonUrl, setAvatarPokemonUrl] = useState(null);
@@ -1090,6 +1093,12 @@ function AccountModal({ onClose, onAuthed }) {
       const auth = await authSignUp(email, password, {
         tipo: accountType, nombre, telefono: telefono || null, whatsapp: whatsapp || null, facebook: facebook || null,
         avatar_url: avatarUrlPokemonFinal,
+        // Solo se usan si hace falta confirmar el correo antes de tener
+        // sesión -- ver el bloque equivalente en cargarOCrearPerfil(),
+        // que crea la tienda en ese caso (aquí abajo no se llega a usar).
+        direccion: accountType === "tienda" ? direccionTienda.trim() || null : null,
+        zona: accountType === "tienda" ? zonaTienda || null : null,
+        sin_local: accountType === "tienda" ? sinLocalTienda : null,
       });
       if (!auth.access_token) {
         setInfo("Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.");
@@ -1102,6 +1111,23 @@ function AccountModal({ onClose, onAuthed }) {
         id: auth.user.id, tipo: accountType, nombre, email: auth.user.email,
         telefono: telefono || null, whatsapp: whatsapp || null, facebook: facebook || null, avatar_url: avatarUrl,
       }, session);
+      // Una cuenta de tienda ya nace siendo una tienda real del directorio,
+      // sin depender de que un admin la vincule a mano después. Si no dio
+      // dirección todavía, queda marcada "sin local" -- puede completarla
+      // (o corregirla) después desde su panel de tienda.
+      if (accountType === "tienda") {
+        // No debe tumbar el registro si esto falla -- la cuenta y el
+        // perfil ya se crearon con éxito. Si algo sale mal aquí, la
+        // tienda queda pendiente de vincular como antes (AdminPanel).
+        await crearConSlugUnico("tiendas", {
+          nombre: nombre.trim(),
+          perfil_id: auth.user.id,
+          direccion: direccionTienda.trim() || null,
+          zona: zonaTienda || null,
+          telefono: telefono.trim() || null,
+          sin_local: sinLocalTienda || !direccionTienda.trim(),
+        }, nombre.trim(), session, "tienda").catch((e) => console.error("No se pudo crear la tienda al registrarse:", e));
+      }
       localStorage.setItem("ec_session", JSON.stringify(session));
       onAuthed(session, { esNuevo: true });
     } catch (e) {
@@ -1200,6 +1226,20 @@ function AccountModal({ onClose, onAuthed }) {
                   style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
               </>
             )}
+            {accountType === "tienda" && (
+              <>
+                <input placeholder="Teléfono (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)}
+                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={sinLocalTienda} onChange={(e) => setSinLocalTienda(e.target.checked)} />
+                  Mi tienda no tiene local físico (vendo solo en línea/envíos)
+                </label>
+                <input placeholder={sinLocalTienda ? "Dirección (opcional)" : "Dirección (opcional, puedes agregarla después)"} value={direccionTienda} onChange={(e) => setDireccionTienda(e.target.value)}
+                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+                <ZonaSelector value={zonaTienda} onChange={setZonaTienda}
+                  placeholder={sinLocalTienda ? "Municipio (opcional, no tienes local)" : "Municipio (opcional)"} />
+              </>
+            )}
             {error && <ErrorBox message={error} />}
             {info && <p style={{ color: COLORS.azulPalido }} className="text-xs">{info}</p>}
             <button onClick={handleSignUp} disabled={loading || !email || !password || !nombre}
@@ -1242,6 +1282,9 @@ function CompletarPerfilOAuthModal({ session, onCreado, onCancelar }) {
   const [accountType, setAccountType] = useState(null);
   const [nombre, setNombre] = useState(meta.full_name || meta.name || "");
   const [telefono, setTelefono] = useState("");
+  const [direccionTienda, setDireccionTienda] = useState("");
+  const [zonaTienda, setZonaTienda] = useState("");
+  const [sinLocalTienda, setSinLocalTienda] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -1253,6 +1296,18 @@ function CompletarPerfilOAuthModal({ session, onCreado, onCancelar }) {
         id: session.user.id, tipo: accountType, nombre: nombre.trim(), email: session.user.email || null,
         telefono: telefono || null, avatar_url: meta.avatar_url || meta.picture || randomPokemonAvatar(),
       }, nombre.trim(), session, "usuario");
+      // Ver el comentario equivalente en AccountModal.handleSignUp: una
+      // cuenta de tienda ya nace como tienda real del directorio.
+      if (accountType === "tienda") {
+        await crearConSlugUnico("tiendas", {
+          nombre: nombre.trim(),
+          perfil_id: session.user.id,
+          direccion: direccionTienda.trim() || null,
+          zona: zonaTienda || null,
+          telefono: telefono.trim() || null,
+          sin_local: sinLocalTienda || !direccionTienda.trim(),
+        }, nombre.trim(), session, "tienda").catch((e) => console.error("No se pudo crear la tienda al registrarse:", e));
+      }
       onCreado(Array.isArray(creado) ? creado[0] : creado);
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   };
@@ -1280,6 +1335,20 @@ function CompletarPerfilOAuthModal({ session, onCreado, onCancelar }) {
           {accountType === "individual" && (
             <input placeholder="Teléfono (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)}
               style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+          )}
+          {accountType === "tienda" && (
+            <>
+              <input placeholder="Teléfono (opcional)" value={telefono} onChange={(e) => setTelefono(e.target.value)}
+                style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={sinLocalTienda} onChange={(e) => setSinLocalTienda(e.target.checked)} />
+                Mi tienda no tiene local físico (vendo solo en línea/envíos)
+              </label>
+              <input placeholder="Dirección (opcional, puedes agregarla después)" value={direccionTienda} onChange={(e) => setDireccionTienda(e.target.value)}
+                style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
+              <ZonaSelector value={zonaTienda} onChange={setZonaTienda}
+                placeholder={sinLocalTienda ? "Municipio (opcional, no tienes local)" : "Municipio (opcional)"} />
+            </>
           )}
           {error && <ErrorBox message={error} />}
           <button onClick={confirmar} disabled={loading || !accountType || !nombre.trim()}
@@ -3464,7 +3533,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
               onChange={(e) => setNuevaTienda({ ...nuevaTienda, direccion: e.target.value })}
               style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
             <div className="grid sm:grid-cols-2 gap-2">
-              <input placeholder="Zona (ej. Centro, San Pedro)" value={nuevaTienda.zona}
+              <input placeholder={nuevaTienda.sinLocal ? "Zona (opcional, no tiene local)" : "Zona (ej. Centro, San Pedro)"} value={nuevaTienda.zona}
                 onChange={(e) => setNuevaTienda({ ...nuevaTienda, zona: e.target.value })}
                 style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
               <input placeholder="Teléfono (opcional)" value={nuevaTienda.telefono}
@@ -3591,7 +3660,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                           onChange={(e) => setTiendaEdit({ ...tiendaEdit, direccion: e.target.value })}
                           style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs" />
                         <div className="grid sm:grid-cols-2 gap-2">
-                          <input placeholder="Zona" value={tiendaEdit.zona}
+                          <input placeholder={t.sin_local ? "Zona (opcional)" : "Zona"} value={tiendaEdit.zona}
                             onChange={(e) => setTiendaEdit({ ...tiendaEdit, zona: e.target.value })}
                             style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs" />
                           <input placeholder="Teléfono" value={tiendaEdit.telefono}
@@ -4822,6 +4891,16 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // ---- Editar información de la tienda (nombre, dirección, zona,
+  // teléfono, sin local). Antes solo el Admin podía tocar esto; ahora que
+  // la tienda nace sola al registrarse, el dueño necesita poder
+  // completarla o corregirla él mismo (ver migración 067).
+  const [editandoInfo, setEditandoInfo] = useState(false);
+  const [infoEdit, setInfoEdit] = useState({ nombre: "", direccion: "", zona: "", telefono: "", sinLocal: false, lat: "", lng: "" });
+  const [guardandoInfo, setGuardandoInfo] = useState(false);
+  const [buscandoCoordsInfo, setBuscandoCoordsInfo] = useState(false);
+  const [errorInfo, setErrorInfo] = useState(null);
+
   const [nuevaCarta, setNuevaCarta] = useState({
     tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, foto_real_url: "", foto_real_reverso_url: "",
     gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
@@ -4991,6 +5070,54 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
+  const abrirEditarInfo = () => {
+    setInfoEdit({
+      nombre: tienda.nombre || "",
+      direccion: tienda.direccion || "",
+      zona: tienda.zona || "",
+      telefono: tienda.telefono || "",
+      sinLocal: !!tienda.sin_local,
+      lat: tienda.lat != null ? String(tienda.lat) : "",
+      lng: tienda.lng != null ? String(tienda.lng) : "",
+    });
+    setErrorInfo(null);
+    setEditandoInfo(true);
+  };
+
+  const buscarCoordsInfo = async () => {
+    if (!infoEdit.direccion.trim()) { setErrorInfo("Escribe la dirección primero."); return; }
+    setBuscandoCoordsInfo(true); setErrorInfo(null);
+    try {
+      const { lat, lng } = await buscarCoordenadasPorDireccion(infoEdit.direccion.trim());
+      setInfoEdit((f) => ({ ...f, lat: String(lat), lng: String(lng) }));
+    } catch (e) { setErrorInfo(e.message); } finally { setBuscandoCoordsInfo(false); }
+  };
+
+  const usarMiUbicacionInfo = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      setInfoEdit((f) => ({ ...f, lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) }));
+    });
+  };
+
+  const guardarInfoTienda = async () => {
+    if (!infoEdit.nombre.trim() || (!infoEdit.sinLocal && !infoEdit.direccion.trim())) return;
+    setGuardandoInfo(true); setErrorInfo(null);
+    try {
+      await sbWrite("PATCH", `tiendas?id=eq.${tienda.id}`, {
+        nombre: infoEdit.nombre.trim(),
+        direccion: infoEdit.direccion.trim() || null,
+        zona: infoEdit.zona || null,
+        telefono: infoEdit.telefono.trim() || null,
+        sin_local: infoEdit.sinLocal,
+        lat: infoEdit.lat ? Number(infoEdit.lat) : null,
+        lng: infoEdit.lng ? Number(infoEdit.lng) : null,
+      }, session);
+      setEditandoInfo(false);
+      cargar();
+    } catch (e) { setErrorInfo(e.message); } finally { setGuardandoInfo(false); }
+  };
+
   if (loading) return <Loading label="Cargando tu tienda..." />;
 
   if (!tienda) {
@@ -5010,9 +5137,56 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
       <div className="flex items-center gap-2 flex-wrap mb-1">
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">{tienda.nombre}</h2>
         <PlanBadge perfil={perfil} size="lg" />
+        <button onClick={() => (editandoInfo ? setEditandoInfo(false) : abrirEditarInfo())}
+          style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-2 py-1 text-xs font-semibold ml-auto whitespace-nowrap">
+          {editandoInfo ? "Cancelar" : "✏️ Editar información"}
+        </button>
       </div>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-1">
+        {tienda.sin_local ? "Sin local físico — venta en línea" : (tienda.direccion || "Todavía no agregaste una dirección")}{tienda.zona ? ` · ${tienda.zona}` : ""}
+      </p>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Administra tu inventario y producto sellado.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {editandoInfo && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-6 grid gap-2">
+          {errorInfo && <ErrorBox message={errorInfo} />}
+          <input placeholder="Nombre de la tienda" value={infoEdit.nombre}
+            onChange={(e) => setInfoEdit({ ...infoEdit, nombre: e.target.value })}
+            style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={infoEdit.sinLocal}
+              onChange={(e) => setInfoEdit({ ...infoEdit, sinLocal: e.target.checked })} />
+            Mi tienda no tiene local físico (vendo solo en línea/envíos)
+          </label>
+          <input placeholder={infoEdit.sinLocal ? "Dirección (opcional)" : "Dirección completa (calle, número, colonia, ciudad)"} value={infoEdit.direccion}
+            onChange={(e) => setInfoEdit({ ...infoEdit, direccion: e.target.value })}
+            style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <div className="grid sm:grid-cols-2 gap-2">
+            <ZonaSelector value={infoEdit.zona} onChange={(v) => setInfoEdit({ ...infoEdit, zona: v })} style={inputStyle}
+              placeholder={infoEdit.sinLocal ? "Municipio (opcional, no tienes local)" : "Municipio (opcional)"} />
+            <input placeholder="Teléfono (opcional)" value={infoEdit.telefono}
+              onChange={(e) => setInfoEdit({ ...infoEdit, telefono: e.target.value })}
+              style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={buscarCoordsInfo} disabled={buscandoCoordsInfo || !infoEdit.direccion.trim()}
+              style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+              className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center justify-center gap-1 whitespace-nowrap">
+              📍 {buscandoCoordsInfo ? "Buscando coordenadas..." : "Buscar coordenadas por la dirección"}
+            </button>
+            <button type="button" onClick={usarMiUbicacionInfo}
+              style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }}
+              className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1 whitespace-nowrap">
+              <Navigation size={12} /> Usar mi ubicación
+            </button>
+          </div>
+          <button onClick={guardarInfoTienda} disabled={guardandoInfo || !infoEdit.nombre.trim() || (!infoEdit.sinLocal && !infoEdit.direccion.trim())}
+            style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
+            {guardandoInfo ? "Guardando..." : "Guardar cambios"}
+          </button>
+        </div>
+      )}
 
       <MisEstadisticasTienda session={session} perfil={perfil} totalActivos={totalActivos} onIrAPlanes={onIrAPlanes} />
 
@@ -11165,6 +11339,20 @@ export default function EncuentraCartas() {
           email: s.user.email || null,
         }, s.user.user_metadata.nombre, s, "usuario");
         p = Array.isArray(creado) ? creado[0] : creado;
+        // Mismo caso que en AccountModal.handleSignUp: si tuvo que
+        // confirmar su correo antes de tener sesión, la tienda se crea
+        // hasta ahora (primer login), con los datos que guardamos en
+        // user_metadata al registrarse.
+        if (p && s.user.user_metadata.tipo === "tienda") {
+          await crearConSlugUnico("tiendas", {
+            nombre: s.user.user_metadata.nombre,
+            perfil_id: s.user.id,
+            direccion: s.user.user_metadata.direccion || null,
+            zona: s.user.user_metadata.zona || null,
+            telefono: s.user.user_metadata.telefono || null,
+            sin_local: !!s.user.user_metadata.sin_local || !s.user.user_metadata.direccion,
+          }, s.user.user_metadata.nombre, s, "tienda").catch(() => {});
+        }
       }
       setPerfil(p || null);
     } catch {
