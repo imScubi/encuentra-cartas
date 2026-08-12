@@ -2933,7 +2933,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
   };
 
   // ---- Crear tienda ----
-  const tiendaVacia = { nombre: "", direccion: "", zona: "", telefono: "", vincularCon: "", lat: "", lng: "" };
+  const tiendaVacia = { nombre: "", direccion: "", zona: "", telefono: "", vincularCon: "", lat: "", lng: "", sinLocal: false };
   const [nuevaTienda, setNuevaTienda] = useState(tiendaVacia);
   const [creandoTienda, setCreandoTienda] = useState(false);
   const [errorCrear, setErrorCrear] = useState(null);
@@ -2961,17 +2961,18 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
   };
 
   const crearTienda = async () => {
-    if (!nuevaTienda.nombre.trim() || !nuevaTienda.direccion.trim()) return;
+    if (!nuevaTienda.nombre.trim() || (!nuevaTienda.sinLocal && !nuevaTienda.direccion.trim())) return;
     setCreandoTienda(true); setErrorCrear(null); setOkCrear(null);
     try {
       await crearConSlugUnico("tiendas", {
         nombre: nuevaTienda.nombre.trim(),
-        direccion: nuevaTienda.direccion.trim(),
+        direccion: nuevaTienda.direccion.trim() || null,
         zona: nuevaTienda.zona.trim() || null,
         telefono: nuevaTienda.telefono.trim() || null,
         perfil_id: nuevaTienda.vincularCon || null,
         lat: nuevaTienda.lat ? Number(nuevaTienda.lat) : null,
         lng: nuevaTienda.lng ? Number(nuevaTienda.lng) : null,
+        sin_local: nuevaTienda.sinLocal,
       }, nuevaTienda.nombre.trim(), session, "tienda");
       setOkCrear(`Tienda "${nuevaTienda.nombre.trim()}" creada.`);
       setNuevaTienda(tiendaVacia);
@@ -3014,13 +3015,13 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
     } catch (e) { setError(e.message); } finally { setBuscandoCoordsEdit(false); }
   };
 
-  const guardarTiendaEditada = async (tiendaId) => {
-    if (!tiendaEdit.nombre.trim() || !tiendaEdit.direccion.trim()) return;
+  const guardarTiendaEditada = async (tiendaId, sinLocal) => {
+    if (!tiendaEdit.nombre.trim() || (!sinLocal && !tiendaEdit.direccion.trim())) return;
     setGuardandoTienda(tiendaId);
     try {
       await sbWrite("PATCH", `tiendas?id=eq.${tiendaId}`, {
         nombre: tiendaEdit.nombre.trim(),
-        direccion: tiendaEdit.direccion.trim(),
+        direccion: tiendaEdit.direccion.trim() || null,
         zona: tiendaEdit.zona.trim() || null,
         telefono: tiendaEdit.telefono.trim() || null,
         lat: tiendaEdit.lat ? Number(tiendaEdit.lat) : null,
@@ -3250,6 +3251,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
   const [borrandoTienda, setBorrandoTienda] = useState(null);
   const [cambiandoAmatista, setCambiandoAmatista] = useState(null);
   const [cambiandoAfiliada, setCambiandoAfiliada] = useState(null);
+  const [cambiandoSinLocal, setCambiandoSinLocal] = useState(null);
 
   const cargarTodasTiendas = () => {
     setLoadingTodasTiendas(true);
@@ -3288,6 +3290,16 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
       await sbWrite("PATCH", `tiendas?id=eq.${t.id}`, { afiliada: !t.afiliada }, session);
       setTodasTiendas((prev) => prev.map((x) => (x.id === t.id ? { ...x, afiliada: !t.afiliada } : x)));
     } catch (e) { setError(e.message); } finally { setCambiandoAfiliada(null); }
+  };
+
+  // "Sin local": la tienda no tiene dirección física real (vende solo en
+  // línea/envíos) -- deja de pedirse/mostrarse la dirección para ella.
+  const toggleSinLocal = async (t) => {
+    setCambiandoSinLocal(t.id);
+    try {
+      await sbWrite("PATCH", `tiendas?id=eq.${t.id}`, { sin_local: !t.sin_local }, session);
+      setTodasTiendas((prev) => prev.map((x) => (x.id === t.id ? { ...x, sin_local: !t.sin_local } : x)));
+    } catch (e) { setError(e.message); } finally { setCambiandoSinLocal(null); }
   };
 
   const borrarTienda = async (t) => {
@@ -3443,7 +3455,12 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
             <input placeholder="Nombre de la tienda" value={nuevaTienda.nombre}
               onChange={(e) => setNuevaTienda({ ...nuevaTienda, nombre: e.target.value })}
               style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-            <input placeholder="Dirección completa (calle, número, colonia, ciudad)" value={nuevaTienda.direccion}
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={nuevaTienda.sinLocal}
+                onChange={(e) => setNuevaTienda({ ...nuevaTienda, sinLocal: e.target.checked })} />
+              Esta tienda no tiene local físico (vende solo en línea/envíos)
+            </label>
+            <input placeholder={nuevaTienda.sinLocal ? "Dirección (opcional para tiendas sin local)" : "Dirección completa (calle, número, colonia, ciudad)"} value={nuevaTienda.direccion}
               onChange={(e) => setNuevaTienda({ ...nuevaTienda, direccion: e.target.value })}
               style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
             <div className="grid sm:grid-cols-2 gap-2">
@@ -3480,7 +3497,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
               <option value="">Vincular con una cuenta ahora (opcional, puedes hacerlo después)</option>
               {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
             </select>
-            <button onClick={crearTienda} disabled={creandoTienda || !nuevaTienda.nombre.trim() || !nuevaTienda.direccion.trim()}
+            <button onClick={crearTienda} disabled={creandoTienda || !nuevaTienda.nombre.trim() || (!nuevaTienda.sinLocal && !nuevaTienda.direccion.trim())}
               style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
               {creandoTienda ? "Creando..." : "Crear tienda"}
             </button>
@@ -3532,8 +3549,8 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                       <div>
                         <p className="font-medium text-sm">{t.nombre} {esDuplicada && <span style={{ color: "#C24444" }} className="text-xs font-semibold">· posible duplicado</span>}</p>
                         <p style={{ color: COLORS.muted }} className="text-xs">
-                          {t.direccion}{t.zona ? ` · ${t.zona}` : ""}{t.perfil_id ? "" : " · sin cuenta vinculada"}
-                          {t.lat && t.lng ? " · 📍 con ubicación" : " · sin ubicación"}
+                          {t.sin_local ? "Sin local físico (solo en línea)" : t.direccion}{t.zona ? ` · ${t.zona}` : ""}{t.perfil_id ? "" : " · sin cuenta vinculada"}
+                          {!t.sin_local && (t.lat && t.lng ? " · 📍 con ubicación" : " · sin ubicación")}
                           {t.afiliada ? " · 📦 Afiliada (buzón)" : ""}
                         </p>
                       </div>
@@ -3552,6 +3569,10 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                           style={{ color: COLORS.azulMedio, border: `1px solid ${COLORS.azulMedio}` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
                           {cambiandoAfiliada === t.id ? "..." : t.afiliada ? "📦 Quitar afiliada" : "📦 Marcar afiliada"}
                         </button>
+                        <button onClick={() => toggleSinLocal(t)} disabled={cambiandoSinLocal === t.id}
+                          style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                          {cambiandoSinLocal === t.id ? "..." : t.sin_local ? "🏠 Quitar \"sin local\"" : "🏠 Marcar \"sin local\""}
+                        </button>
                         <button onClick={() => borrarTienda(t)} disabled={borrandoTienda === t.id}
                           style={{ color: "#C24444", border: "1px solid #C2444455" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                           {borrandoTienda === t.id ? "Borrando..." : "Borrar tienda"}
@@ -3563,7 +3584,10 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                         <input placeholder="Nombre de la tienda" value={tiendaEdit.nombre}
                           onChange={(e) => setTiendaEdit({ ...tiendaEdit, nombre: e.target.value })}
                           style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs" />
-                        <input placeholder="Dirección completa" value={tiendaEdit.direccion}
+                        {t.sin_local && (
+                          <p style={{ color: COLORS.gold }} className="text-xs">🏠 Tienda sin local físico — la dirección es opcional.</p>
+                        )}
+                        <input placeholder={t.sin_local ? "Dirección (opcional)" : "Dirección completa"} value={tiendaEdit.direccion}
                           onChange={(e) => setTiendaEdit({ ...tiendaEdit, direccion: e.target.value })}
                           style={inputStyle} className="rounded-lg px-2 py-1.5 text-xs" />
                         <div className="grid sm:grid-cols-2 gap-2">
@@ -3589,7 +3613,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                           <button onClick={usarMiUbicacionEditarTienda} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-2 py-1.5 text-xs font-semibold flex items-center gap-1">
                             <Navigation size={12} /> Mi ubicación
                           </button>
-                          <button onClick={() => guardarTiendaEditada(t.id)} disabled={guardandoTienda === t.id || !tiendaEdit.nombre.trim() || !tiendaEdit.direccion.trim()}
+                          <button onClick={() => guardarTiendaEditada(t.id, t.sin_local)} disabled={guardandoTienda === t.id || !tiendaEdit.nombre.trim() || (!t.sin_local && !tiendaEdit.direccion.trim())}
                             style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
                             {guardandoTienda === t.id ? "Guardando..." : "Guardar cambios"}
                           </button>
@@ -12228,7 +12252,11 @@ export default function EncuentraCartas() {
                     </div>
                   </div>
                   <p style={{ color: COLORS.muted }} className="text-sm mt-2 flex items-start gap-1">
-                    <MapPin size={14} className="mt-0.5 shrink-0" /> {store.direccion}
+                    {store.sin_local ? (
+                      <><Store size={14} className="mt-0.5 shrink-0" /> Sin local físico — venta en línea</>
+                    ) : (
+                      <><MapPin size={14} className="mt-0.5 shrink-0" /> {store.direccion}</>
+                    )}
                   </p>
                 </div>
               ))}
@@ -12664,7 +12692,11 @@ export default function EncuentraCartas() {
                   </div>
                 )}
               </div>
-              <p style={{ color: COLORS.muted }} className="mt-2 flex items-center gap-1 text-sm"><MapPin size={14} /> {selectedStore.direccion}</p>
+              {selectedStore.sin_local ? (
+                <p style={{ color: COLORS.muted }} className="mt-2 flex items-center gap-1 text-sm"><Store size={14} /> Sin local físico — venta en línea</p>
+              ) : selectedStore.direccion ? (
+                <p style={{ color: COLORS.muted }} className="mt-2 flex items-center gap-1 text-sm"><MapPin size={14} /> {selectedStore.direccion}</p>
+              ) : null}
               {selectedStore.telefono && <p style={{ color: COLORS.muted }} className="mt-1 flex items-center gap-1 text-sm"><Phone size={14} /> {selectedStore.telefono}</p>}
               {(selectedStore.perfiles?.instagram || selectedStore.perfiles?.google_maps_url || selectedStore.perfiles?.sitio_web) && (
                 <div className="flex gap-2 mt-3 flex-wrap">
