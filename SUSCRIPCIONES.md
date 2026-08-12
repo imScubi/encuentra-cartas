@@ -3666,6 +3666,41 @@ conversación, así que no hay forma de leer el log real de esos días) --
 pero con este cambio, la próxima vez que algo le impida mandarse al
 boletín, vas a recibir un aviso real en vez de silencio.
 
+## 119. Fix: "boosts por vencer" tronaba el cron con un error críptico
+
+Un admin reportó el correo "⚠️ Falló una parte del cron diario" con el
+mensaje `(filas || []) is not iterable`. La causa: la consulta de boosts
+por vencer pedía `tiendas(perfil_id,perfiles(email))` -- pero `perfiles`
+tiene dos relaciones distintas con `tiendas` (`tiendas.perfil_id` y
+`perfiles.buzon_default_tienda_id`, agregada en la sección 141), así que
+PostgREST rechaza el embed por ambiguo y devuelve un objeto de error en
+vez de un arreglo. El resto del código ya resolvía esto mismo con
+`perfiles!perfil_id(...)` (ver sección 147); a esta consulta del cron
+se le había quedado sin el sufijo. Se corrigió igual que las demás, y
+además se agregó una verificación explícita (`r.ok` + `Array.isArray`)
+para que, si vuelve a fallar por cualquier otra razón, el aviso al admin
+traiga el error real de PostgREST en vez de un `TypeError` sin contexto.
+
+## 120. Tiendas sin local físico
+
+Varias tiendas venden solo en línea (envíos, redes sociales) y no tienen
+una dirección real que mostrar -- antes el formulario de alta y edición
+de tiendas (AdminPanel → Tiendas) exigía dirección sí o sí.
+
+- Migración 066: `tiendas.sin_local boolean not null default false`.
+- "Crear tienda": nueva casilla "Esta tienda no tiene local físico
+  (vende solo en línea/envíos)". Al marcarla, la dirección deja de ser
+  obligatoria para crear la tienda.
+- "Todas las tiendas": nuevo botón "🏠 Marcar/Quitar 'sin local'" (mismo
+  patrón que "Marcar afiliada") para cambiar esta bandera en tiendas que
+  ya existen, sin tener que borrarlas y recrearlas.
+- El formulario de edición respeta la bandera: si la tienda está marcada
+  como sin local, guardar cambios ya no exige escribir una dirección.
+- Donde antes se mostraba la dirección en público (directorio de tiendas
+  y perfil de tienda), una tienda sin local ahora muestra "Sin local
+  físico — venta en línea" en su lugar; el mapa embebido simplemente no
+  se muestra si no hay dirección ni coordenadas (ya se comportaba así).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

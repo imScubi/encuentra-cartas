@@ -436,13 +436,16 @@ export default async function handler(req, res) {
   // ---- Boosts por vencer ----
   try {
     for (const tabla of TABLAS) {
-      const select = tabla === "mercado_listings" ? "*,perfiles(id,email)" : "*,tiendas(perfil_id,perfiles(email))";
+      const select = tabla === "mercado_listings" ? "*,perfiles(id,email)" : "*,tiendas(perfil_id,perfiles!perfil_id(email))";
       const r = await fetch(
         `${supabaseUrl}/rest/v1/${tabla}?select=${select}&destacado_hasta=gte.${ahora.toISOString()}&destacado_hasta=lte.${en1dia.toISOString()}`,
         { headers }
       );
       const filas = await r.json();
-      for (const item of filas || []) {
+      if (!r.ok || !Array.isArray(filas)) {
+        throw new Error(`consulta de boosts en "${tabla}" falló: ${JSON.stringify(filas).slice(0, 300)}`);
+      }
+      for (const item of filas) {
         const perfilId = tabla === "mercado_listings" ? item.perfil_id : item.tiendas?.perfil_id;
         if (!perfilId) continue;
         const email = tabla === "mercado_listings" ? item.perfiles?.email : item.tiendas?.perfiles?.email;
