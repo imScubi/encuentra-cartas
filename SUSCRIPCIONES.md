@@ -3701,6 +3701,51 @@ de tiendas (AdminPanel → Tiendas) exigía dirección sí o sí.
   físico — venta en línea" en su lugar; el mapa embebido simplemente no
   se muestra si no hay dirección ni coordenadas (ya se comportaba así).
 
+## 121. Una cuenta de tienda ya nace siendo una tienda real del directorio
+
+Antes, crear una cuenta de tipo "tienda" solo creaba el `perfiles` --
+la fila real en `tiendas` (la que aparece en el directorio, con
+inventario, dirección, etc.) solo la podía crear un Admin a mano desde
+AdminPanel, y luego había que vincularla. Alguien podía registrarse
+como tienda y quedar "flotando" sin aparecer en ningún lado hasta que
+un admin se enterara y la diera de alta.
+
+- Migración 067: nuevas políticas RLS `"tiendas: dueño crea la suya"`
+  (INSERT) y `"tiendas: dueño edita la suya"` (UPDATE), ambas con
+  `perfil_id = auth.uid()`. Antes el INSERT/UPDATE de `tiendas` era
+  admin-only (ver migración original de tiendas); sin esto, el alta
+  automática de abajo hubiera fallado en silencio por RLS.
+- `AccountModal.handleSignUp`: si el tipo de cuenta elegido es
+  "tienda", justo después de crear el `perfiles` también se crea la
+  fila en `tiendas` (mismo nombre, `perfil_id` de la cuenta nueva). El
+  formulario de registro ahora pide, solo para tiendas: teléfono
+  (opcional), la misma casilla "no tiene local físico" que ya existía
+  en AdminPanel (sección 120), dirección (opcional) y municipio
+  (opcional, con `ZonaSelector`). Si no marcó la casilla pero tampoco
+  puso dirección, igual queda como sin local -- no se le exige elegir
+  una cosa u otra.
+- Si Supabase exige confirmar el correo antes de dar sesión, la cuenta
+  se crea hasta el primer login (`cargarOCrearPerfil`, ya existía este
+  camino para el `perfiles`); ahora ese mismo camino también crea la
+  tienda, usando los datos que se guardaron en `user_metadata` al
+  registrarse originalmente.
+- Mismo tratamiento en `CompletarPerfilOAuthModal` (registro por
+  Google/Facebook, que no pasa por `user_metadata` porque ya hay
+  sesión): mismos campos, misma creación de tienda al confirmar.
+- Si la creación de la tienda falla por cualquier motivo, NO tumba el
+  registro de la cuenta (que ya se creó con éxito) -- solo se registra
+  en consola; la tienda queda pendiente de vincular a mano como
+  funcionaba antes de este cambio, así que no hay forma de perder una
+  cuenta nueva por esto.
+- Como ahora el dueño puede crear su tienda sin pasar por un Admin,
+  también necesitaba poder editarla él mismo (antes SOLO el Admin
+  podía tocar `tiendas`). Se agregó un panel "✏️ Editar información" en
+  MyStorePanel (nombre, casilla sin local, dirección, municipio,
+  teléfono, coordenadas por dirección o por ubicación del navegador) --
+  mismos campos y mismos helpers (`buscarCoordenadasPorDireccion`) que
+  ya usaba AdminPanel, ahora también disponibles al dueño de la tienda
+  gracias a la migración 067.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
