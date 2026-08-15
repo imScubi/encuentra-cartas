@@ -3746,6 +3746,48 @@ un admin se enterara y la diera de alta.
   ya usaba AdminPanel, ahora también disponibles al dueño de la tienda
   gracias a la migración 067.
 
+## 122. Una cuenta puede controlar varias tiendas
+
+Caso real: un cliente tiene dos locales con nombres distintos pero los
+maneja la misma persona/cuenta. Antes el código en todos lados asumía
+"una cuenta = una tienda" (`MyStorePanel` pedía `tiendas?...&limit`
+implícito y se quedaba con `rows[0]`, `AdminPanel` excluía del selector
+de vincular a cualquier cuenta que ya tuviera una tienda). No hizo
+falta migración nueva -- la RLS de la 067 (`perfil_id = auth.uid()`)
+ya permitía tener más de una fila en `tiendas` por cuenta, solo el
+frontend no lo aprovechaba.
+
+- `MyStorePanel`: ahora carga TODAS las tiendas de la cuenta
+  (`misTiendas`) y cuál está activa (`tiendaActivaId`, se recuerda en
+  localStorage por cuenta). Arriba del panel aparece un selector en
+  forma de pastillas con el nombre de cada tienda -- click y cambia
+  (recarga solo inventario/sellado/verificación/sorteos de esa tienda,
+  no la página completa). Cada tienda se administra 100% por separado
+  (su propio inventario, dirección, zona, verificación, sorteos), pero
+  comparten cuenta y plan/suscripción.
+- Botón "+ Agregar otra tienda" (mismos campos que dar de alta la
+  primera: nombre, casilla sin local, dirección, zona, teléfono) --
+  usa la misma RLS de owner-insert de la migración 067, así que el
+  dueño puede agregarse una segunda tienda él mismo sin pasar por un
+  Admin.
+- El estado vacío ("aún no tienes tienda") ahora también deja crear la
+  tienda ahí mismo, en vez de solo decir "pídele al administrador".
+- `AdminPanel` → Tiendas → "Vincular tiendas": ya no excluye a las
+  cuentas que ya tienen una tienda vinculada del selector -- solo les
+  anota cuántas tienen ("ya tiene 1 tienda") para que el admin sepa que
+  está vinculando una adicional a propósito, no por error. Así también
+  se puede armar el caso del cliente con dos locales completamente
+  desde el lado del Admin si hace falta.
+- `RecompensasView` (canjear Destellos por boost gratis): antes solo
+  consideraba la primera tienda de la cuenta para elegir qué destacar;
+  ahora junta las publicaciones de todas.
+- Límite conocido, no se tocó: el perfil público (`PerfilPublicoView`)
+  todavía solo muestra la zona de una tienda como subtítulo bajo el
+  nombre de la cuenta -- con varias tiendas, muestra la primera que
+  regrese la consulta. Es solo cosmético (un renglón de texto), no
+  afecta que cada tienda tenga su propia página completa en el
+  directorio.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

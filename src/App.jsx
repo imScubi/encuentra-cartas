@@ -2981,9 +2981,14 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
       sb(`tiendas?select=perfil_id&perfil_id=not.is.null`, session),
     ])
       .then(([sinDueno, perfilesTienda, conDueno]) => {
-        const vinculados = new Set(conDueno.map((t) => t.perfil_id));
+        // Una cuenta puede tener más de una tienda vinculada (ej. un dueño
+        // con dos locales), así que ya no se excluyen las cuentas que ya
+        // tienen alguna -- solo se anota cuántas tiene, para que el admin
+        // sepa si está vinculando una tienda adicional a propósito.
+        const conteoTiendas = {};
+        conDueno.forEach((t) => { conteoTiendas[t.perfil_id] = (conteoTiendas[t.perfil_id] || 0) + 1; });
         setTiendasSinDueno(sinDueno);
-        setPerfilesDisponibles(perfilesTienda.filter((p) => !vinculados.has(p.id)));
+        setPerfilesDisponibles(perfilesTienda.map((p) => ({ ...p, _tiendasVinculadas: conteoTiendas[p.id] || 0 })));
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -3564,7 +3569,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
             <select value={nuevaTienda.vincularCon} onChange={(e) => setNuevaTienda({ ...nuevaTienda, vincularCon: e.target.value })}
               style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
               <option value="">Vincular con una cuenta ahora (opcional, puedes hacerlo después)</option>
-              {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}{p._tiendasVinculadas > 0 ? ` (ya tiene ${p._tiendasVinculadas} tienda${p._tiendasVinculadas === 1 ? "" : "s"})` : ""}</option>)}
             </select>
             <button onClick={crearTienda} disabled={creandoTienda || !nuevaTienda.nombre.trim() || (!nuevaTienda.sinLocal && !nuevaTienda.direccion.trim())}
               style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
@@ -3573,7 +3578,9 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
           </div>
 
           <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Vincular tiendas</h2>
-          <p style={{ color: COLORS.muted }} className="text-sm mb-6">Vincula cuentas de tienda registradas con su tienda real en el directorio.</p>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-6">
+            Vincula cuentas de tienda registradas con su tienda real en el directorio. Una cuenta puede tener más de una tienda vinculada (ej. un dueño con dos locales de nombres distintos) -- el dueño puede cambiar entre ellas desde su panel de tienda.
+          </p>
 
           {tiendasSinDueno.length === 0 ? (
             <p style={{ color: COLORS.muted }} className="text-sm mb-8">Todas las tiendas del directorio ya tienen una cuenta vinculada. 🎉</p>
@@ -3588,7 +3595,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                   <div className="flex items-center gap-2">
                     <select value={seleccion[t.id] || ""} onChange={(e) => setSeleccion({ ...seleccion, [t.id]: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
                       <option value="">Selecciona cuenta...</option>
-                      {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                      {perfilesDisponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre}{p._tiendasVinculadas > 0 ? ` (ya tiene ${p._tiendasVinculadas} tienda${p._tiendasVinculadas === 1 ? "" : "s"})` : ""}</option>)}
                     </select>
                     <button onClick={() => vincular(t.id)} disabled={!seleccion[t.id] || vinculando === t.id}
                       style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: seleccion[t.id] ? 1 : 0.5 }}
@@ -4882,8 +4889,50 @@ function MisEstadisticasTienda({ session, perfil, totalActivos, onIrAPlanes }) {
   );
 }
 
+// Campos compartidos para dar de alta una tienda (usado tanto para crear la
+// primera tienda de una cuenta como para agregarle una tienda adicional).
+function TiendaCamposForm({ valor, onChange }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  return (
+    <>
+      <input placeholder="Nombre de la tienda" value={valor.nombre}
+        onChange={(e) => onChange({ ...valor, nombre: e.target.value })}
+        style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+      <label className="flex items-center gap-2 text-sm cursor-pointer">
+        <input type="checkbox" checked={valor.sinLocal} onChange={(e) => onChange({ ...valor, sinLocal: e.target.checked })} />
+        No tiene local físico (vende solo en línea/envíos)
+      </label>
+      <input placeholder={valor.sinLocal ? "Dirección (opcional)" : "Dirección completa (calle, número, colonia, ciudad)"} value={valor.direccion}
+        onChange={(e) => onChange({ ...valor, direccion: e.target.value })}
+        style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+      <div className="grid sm:grid-cols-2 gap-2">
+        <ZonaSelector value={valor.zona} onChange={(v) => onChange({ ...valor, zona: v })} style={inputStyle}
+          placeholder={valor.sinLocal ? "Municipio (opcional, no tiene local)" : "Municipio (opcional)"} />
+        <input placeholder="Teléfono (opcional)" value={valor.telefono}
+          onChange={(e) => onChange({ ...valor, telefono: e.target.value })}
+          style={inputStyle} className="rounded-lg px-2 py-2 text-sm" />
+      </div>
+    </>
+  );
+}
+
 function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
-  const [tienda, setTienda] = useState(undefined); // undefined = cargando, null = no vinculada
+  // Una cuenta puede controlar varias tiendas (ej. un dueño con dos
+  // locales de nombres distintos) -- misTiendas trae todas las suyas,
+  // tiendaActivaId cuál está viendo/editando ahora mismo (se recuerda en
+  // localStorage para no perderla al recargar). `tienda` es esa tienda
+  // activa, y el resto del panel sigue funcionando igual que antes
+  // (todo se agrega/edita/consulta contra tienda.id) -- solo cambia por
+  // dónde sale ese id.
+  const claveTiendaActiva = `ec_tienda_activa_${session.user.id}`;
+  const [misTiendas, setMisTiendas] = useState([]);
+  const [tiendaActivaId, setTiendaActivaId] = useState(null);
+  const [cargandoTiendaActiva, setCargandoTiendaActiva] = useState(false);
+  const [mostrandoNuevaTienda, setMostrandoNuevaTienda] = useState(false);
+  const [nuevaTiendaForm, setNuevaTiendaForm] = useState({ nombre: "", direccion: "", zona: "", telefono: "", sinLocal: false });
+  const [creandoOtraTienda, setCreandoOtraTienda] = useState(false);
+  const [errorNuevaTienda, setErrorNuevaTienda] = useState(null);
+  const tienda = misTiendas.length === 0 ? null : (misTiendas.find((t) => t.id === tiendaActivaId) || misTiendas[0]);
   const [inventario, setInventario] = useState([]);
   const [sellado, setSellado] = useState([]);
   const [verificacion, setVerificacion] = useState(null); // solicitud de verificación más reciente, o null
@@ -4919,24 +4968,34 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
   const [plantillaSorteo, setPlantillaSorteo] = useState(null);
   const [sorteoFormKey, setSorteoFormKey] = useState(0);
 
+  const cargarDatosTienda = async (t) => {
+    const [inv, sel, verif] = await Promise.all([
+      sb(`inventario_tienda?select=*&tienda_id=eq.${t.id}&order=carta.asc`, session),
+      sb(`sellado_tienda?select=*&tienda_id=eq.${t.id}&order=producto.asc`, session),
+      sb(`verificaciones_tienda?select=*&tienda_id=eq.${t.id}&order=created_at.desc&limit=1`, session),
+    ]);
+    setInventario(inv);
+    setSellado(sel);
+    setVerificacion(verif[0] || null);
+    if (planDe(perfil).sorteos || t.afiliada) {
+      sb(`sorteos?select=*&tienda_id=eq.${t.id}&order=created_at.desc`, session).then(setMisSorteos).catch(() => setMisSorteos([]));
+    } else {
+      setMisSorteos([]);
+    }
+  };
+
   const cargar = () => {
     setLoading(true); setError(null);
-    sb(`tiendas?select=*&perfil_id=eq.${session.user.id}`, session)
+    sb(`tiendas?select=*&perfil_id=eq.${session.user.id}&order=nombre.asc`, session)
       .then(async (rows) => {
-        const t = rows[0] || null;
-        setTienda(t);
-        if (t) {
-          const [inv, sel, verif] = await Promise.all([
-            sb(`inventario_tienda?select=*&tienda_id=eq.${t.id}&order=carta.asc`, session),
-            sb(`sellado_tienda?select=*&tienda_id=eq.${t.id}&order=producto.asc`, session),
-            sb(`verificaciones_tienda?select=*&tienda_id=eq.${t.id}&order=created_at.desc&limit=1`, session),
-          ]);
-          setInventario(inv);
-          setSellado(sel);
-          setVerificacion(verif[0] || null);
-          if (planDe(perfil).sorteos || t.afiliada) {
-            sb(`sorteos?select=*&tienda_id=eq.${t.id}&order=created_at.desc`, session).then(setMisSorteos).catch(() => setMisSorteos([]));
-          }
+        setMisTiendas(rows);
+        const guardada = localStorage.getItem(claveTiendaActiva);
+        const activa = rows.find((t) => t.id === guardada) || rows[0] || null;
+        setTiendaActivaId(activa?.id || null);
+        if (activa) {
+          await cargarDatosTienda(activa);
+        } else {
+          setInventario([]); setSellado([]); setVerificacion(null); setMisSorteos([]);
         }
       })
       .catch((e) => setError(e.message))
@@ -4944,6 +5003,39 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
   };
 
   useEffect(() => { cargar(); }, []);
+
+  // Cambiar de tienda no recarga la lista completa, solo los datos
+  // (inventario/sellado/verificación/sorteos) de la que se acaba de elegir.
+  const cambiarTienda = async (id) => {
+    if (id === tiendaActivaId) return;
+    const t = misTiendas.find((x) => x.id === id);
+    if (!t) return;
+    setTiendaActivaId(id);
+    localStorage.setItem(claveTiendaActiva, id);
+    setEditandoInfo(false);
+    setCargandoTiendaActiva(true); setError(null);
+    try { await cargarDatosTienda(t); } catch (e) { setError(e.message); } finally { setCargandoTiendaActiva(false); }
+  };
+
+  const agregarOtraTienda = async () => {
+    if (!nuevaTiendaForm.nombre.trim() || (!nuevaTiendaForm.sinLocal && !nuevaTiendaForm.direccion.trim())) return;
+    setCreandoOtraTienda(true); setErrorNuevaTienda(null);
+    try {
+      const creada = await crearConSlugUnico("tiendas", {
+        nombre: nuevaTiendaForm.nombre.trim(),
+        perfil_id: session.user.id,
+        direccion: nuevaTiendaForm.direccion.trim() || null,
+        zona: nuevaTiendaForm.zona || null,
+        telefono: nuevaTiendaForm.telefono.trim() || null,
+        sin_local: nuevaTiendaForm.sinLocal,
+      }, nuevaTiendaForm.nombre.trim(), session, "tienda");
+      const nueva = Array.isArray(creada) ? creada[0] : creada;
+      localStorage.setItem(claveTiendaActiva, nueva.id);
+      setMostrandoNuevaTienda(false);
+      setNuevaTiendaForm({ nombre: "", direccion: "", zona: "", telefono: "", sinLocal: false });
+      cargar();
+    } catch (e) { setErrorNuevaTienda(e.message); } finally { setCreandoOtraTienda(false); }
+  };
 
   const solicitarVerificacion = async () => {
     if (!tienda) return;
@@ -5122,18 +5214,61 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
 
   if (!tienda) {
     return (
-      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-6 text-center">
-        <Store size={32} color={COLORS.azulPalido} className="mx-auto mb-3" />
-        <p className="font-semibold mb-1">Tu cuenta todavía no está vinculada a una tienda</p>
-        <p style={{ color: COLORS.muted }} className="text-sm">
-          Pídele al administrador que conecte tu cuenta con tu tienda en el directorio. Necesita tu correo o el ID de tu cuenta ({session.user.id}).
-        </p>
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-6">
+        <div className="text-center mb-4">
+          <Store size={32} color={COLORS.azulPalido} className="mx-auto mb-3" />
+          <p className="font-semibold mb-1">Aún no tienes una tienda en el directorio</p>
+          <p style={{ color: COLORS.muted }} className="text-sm">
+            Créala aquí para empezar a publicar. Si el administrador ya dio de alta tu tienda con otro nombre, pídele que la vincule a tu cuenta en su lugar (necesita tu correo o el ID de tu cuenta: {session.user.id}).
+          </p>
+        </div>
+        {errorNuevaTienda && <div className="mb-3"><ErrorBox message={errorNuevaTienda} /></div>}
+        <div className="grid gap-2">
+          <TiendaCamposForm valor={nuevaTiendaForm} onChange={setNuevaTiendaForm} />
+          <button onClick={agregarOtraTienda} disabled={creandoOtraTienda || !nuevaTiendaForm.nombre.trim() || (!nuevaTiendaForm.sinLocal && !nuevaTiendaForm.direccion.trim())}
+            style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
+            {creandoOtraTienda ? "Creando..." : "Crear mi tienda"}
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <div>
+      <div className="flex items-center gap-2 flex-wrap mb-4">
+        {misTiendas.length > 1 && misTiendas.map((t) => (
+          <button key={t.id} onClick={() => cambiarTienda(t.id)} disabled={cargandoTiendaActiva}
+            style={{
+              background: t.id === tienda.id ? COLORS.azulPalido : COLORS.surface2,
+              color: t.id === tienda.id ? COLORS.textoOscuro : COLORS.text,
+              border: `1px solid ${t.id === tienda.id ? COLORS.azulPalido : COLORS.surface2}`,
+            }}
+            className="rounded-full px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+            {t.nombre}
+          </button>
+        ))}
+        <button onClick={() => setMostrandoNuevaTienda((v) => !v)}
+          style={{ color: COLORS.azulPalido, border: `1px dashed ${COLORS.azul}55` }}
+          className="rounded-full px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+          {mostrandoNuevaTienda ? "Cancelar" : "+ Agregar otra tienda"}
+        </button>
+      </div>
+
+      {mostrandoNuevaTienda && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-6 grid gap-2">
+          <p style={{ color: COLORS.muted }} className="text-xs -mt-1 mb-1">
+            Se administra por separado (inventario, dirección y estadísticas propias), bajo la misma cuenta y el mismo plan.
+          </p>
+          {errorNuevaTienda && <ErrorBox message={errorNuevaTienda} />}
+          <TiendaCamposForm valor={nuevaTiendaForm} onChange={setNuevaTiendaForm} />
+          <button onClick={agregarOtraTienda} disabled={creandoOtraTienda || !nuevaTiendaForm.nombre.trim() || (!nuevaTiendaForm.sinLocal && !nuevaTiendaForm.direccion.trim())}
+            style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold">
+            {creandoOtraTienda ? "Creando..." : "Crear tienda"}
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap mb-1">
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">{tienda.nombre}</h2>
         <PlanBadge perfil={perfil} size="lg" />
@@ -5146,6 +5281,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
         {tienda.sin_local ? "Sin local físico — venta en línea" : (tienda.direccion || "Todavía no agregaste una dirección")}{tienda.zona ? ` · ${tienda.zona}` : ""}
       </p>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Administra tu inventario y producto sellado.</p>
+      {cargandoTiendaActiva && <p style={{ color: COLORS.muted }} className="text-xs -mt-4 mb-4">Cambiando de tienda...</p>}
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
       {editandoInfo && (
@@ -5955,12 +6091,15 @@ function RecompensasView({ session, perfil }) {
         .then((filas) => setPublicaciones(filas.map((f) => ({ ...f, tabla: "mercado_listings", nombre: f.carta })))));
     } else if (perfil?.tipo === "tienda") {
       tareas.push(
+        // Una cuenta puede tener más de una tienda vinculada -- se juntan las
+        // publicaciones de todas, no solo de la primera.
         sb(`tiendas?select=id&perfil_id=eq.${session.user.id}`, session).then(async (rows) => {
-          const tiendaId = rows[0]?.id;
-          if (!tiendaId) return;
+          const tiendaIds = rows.map((r) => r.id);
+          if (tiendaIds.length === 0) return;
+          const filtro = `tienda_id=in.(${tiendaIds.join(",")})`;
           const [inv, sell] = await Promise.all([
-            sb(`inventario_tienda?select=id,carta,destacado_hasta&tienda_id=eq.${tiendaId}`, session),
-            sb(`sellado_tienda?select=id,producto,destacado_hasta&tienda_id=eq.${tiendaId}`, session),
+            sb(`inventario_tienda?select=id,carta,destacado_hasta&${filtro}`, session),
+            sb(`sellado_tienda?select=id,producto,destacado_hasta&${filtro}`, session),
           ]);
           setPublicaciones([
             ...inv.map((f) => ({ ...f, tabla: "inventario_tienda", nombre: f.carta })),
