@@ -3837,6 +3837,31 @@ tiene que ver con el dispositivo, el navegador en el que se abrió
   problema era de la plataforma y no de ellas -- ya pueden iniciar
   sesión normal con su correo y contraseña.
 
+## 124. Fix visual (Anuncios) + se quitó por completo el Boletín de precios
+
+**Fix**: las tarjetas de "Anuncios y noticias" (y las 3 vistas de
+Anuncios en AdminPanel) se veían rotas cuando un anuncio tenía varias
+fotos -- la galería interna (que ya tenía su propio scroll horizontal)
+empujaba TODA la página hacia los lados en vez de quedarse contenida.
+Causa: la tarjeta es hija directa de un `grid`, y por default un hijo
+de grid/flex no se encoge más allá del contenido que tiene adentro
+(`min-width: auto`), así que el grid agrandaba la columna entera para
+caber la galería en vez de dejar que ella sola hiciera scroll. Se
+arregló agregando `min-w-0` a esas 4 tarjetas -- el fix clásico de
+Tailwind para este caso. De paso se quitó un banner de debug ("🔌
+Conectado en vivo a tu base de datos real de Supabase") que aparecía
+arriba de TODAS las vistas de la app -- un mensaje interno que nunca
+debió llegarle a un usuario final.
+
+**Se quitó por completo** el Boletín de precios (banner en Inicio,
+vista dedicada, botón "Me interesa" por TCG, y la generación
+automática cada 3 días en el cron): componentes `BoletinBanner` /
+`BoletinView` / `FilaBoletin` borrados de `App.jsx`, la generación
+(`generarYEnviarBoletines` y todo lo que dependía de ella) borrada de
+`api/cron/recordatorios.js`, `lib/precios.js` borrado por completo (ya
+no lo usaba nadie más), y migración 069 que borra las tablas
+`boletines`, `boletin_subscripciones` y `precio_historial_semanal`.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

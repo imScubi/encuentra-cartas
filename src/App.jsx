@@ -5,7 +5,7 @@ import {
   User, Megaphone, Newspaper, ShoppingBag, ShoppingCart, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
   ArrowUp, ArrowDown, Navigation, ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
-  Gift, Gavel, TrendingUp,
+  Gift, Gavel,
 } from "./lib/icons.jsx";
 import {
   VAPID_PUBLIC_KEY,
@@ -3828,7 +3828,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
           {pendientes.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm mb-6">No hay anuncios esperando aprobación.</p>}
           <div className="grid gap-3 mb-8">
             {pendientes.map((n) => (
-              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 min-w-0">
                 <div className="flex items-center gap-2 mb-2">
                   <AvatarImg url={n.tiendas?.perfiles?.avatar_url} size={24} />
                   <p className="text-sm font-semibold">{n.tiendas?.nombre || "Tienda"}</p>
@@ -3858,7 +3858,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
           {programados.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm mb-8">No hay anuncios programados.</p>}
           <div className="grid gap-3 mb-8">
             {programados.map((n) => (
-              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 min-w-0">
                 <p style={{ color: COLORS.muted }} className="text-xs mb-1">
                   Se publica: {new Date(n.fecha_publicacion).toLocaleString("es-MX")}
                 </p>
@@ -3877,7 +3877,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
           {publicados.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Todavía no hay anuncios publicados.</p>}
           <div className="grid gap-3">
             {publicados.map((n) => (
-              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+              <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 min-w-0">
                 {editandoAnuncio === n.id ? (
                   <div className="grid gap-2">
                     <input placeholder="Título del anuncio" value={anuncioEdit.titulo}
@@ -8139,139 +8139,8 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
   );
 }
 
-// TCG con boletín de precios, cada 3 días (ver lib/precios.js del lado del
-// servidor): solo los que ya tienen una fuente de precio real integrada
-// (Pokémon: pokemontcg.io, Magic: Scryfall, Yu-Gi-Oh: YGOPRODeck).
-// Lorcana/One Piece se agregan aquí el día que tengan una fuente
-// confiable -- no antes, para no mostrar números inventados o a medias.
-const TCGS_CON_BOLETIN = ["pokemon", "magic", "yugioh"];
-
-function FilaBoletin({ c, signo, color }) {
-  return (
-    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-2 flex items-center gap-2">
-      {c.imagen_url ? <img src={c.imagen_url} alt={c.nombre} style={{ width: 32, height: 44, objectFit: "contain" }} /> : <Package size={20} color={COLORS.muted} />}
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold truncate">{c.nombre}</p>
-        {c.set_nombre && <p style={{ color: COLORS.muted }} className="text-[10px] truncate">{c.set_nombre}</p>}
-      </div>
-      <div className="text-right shrink-0">
-        <p style={{ color }} className="text-xs font-bold">{signo}{c.cambio_pct}%</p>
-        <p style={{ color: COLORS.muted }} className="text-[10px]">${c.precio_mxn} MXN</p>
-      </div>
-    </div>
-  );
-}
-
-// Vista dedicada del boletín: selector de TCG, análisis en palabras
-// simples generado por IA, y las 20 cartas que más subieron/bajaron de
-// precio en el periodo. "Me interesa" suscribe (boletin_subscripciones)
-// para que el mismo boletín también llegue por correo cada 3 días.
-function BoletinView({ session }) {
-  const [tcg, setTcg] = useState("pokemon");
-  const [boletin, setBoletin] = useState(undefined); // undefined = cargando, null = sin boletín todavía
-  const [suscrito, setSuscrito] = useState(false);
-  const [cambiando, setCambiando] = useState(false);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    setBoletin(undefined);
-    sb(`boletines?select=*&tcg=eq.${tcg}&order=semana.desc&limit=1`)
-      .then((rows) => setBoletin(rows[0] || null))
-      .catch((e) => { setBoletin(null); setError(e.message); });
-    if (session) {
-      sb(`boletin_subscripciones?select=id&perfil_id=eq.${session.user.id}&tcg=eq.${tcg}`, session)
-        .then((rows) => setSuscrito(rows.length > 0))
-        .catch(() => setSuscrito(false));
-    } else {
-      setSuscrito(false);
-    }
-  }, [tcg, session?.user?.id]);
-
-  const alternarSuscripcion = async () => {
-    if (!session) return;
-    setCambiando(true); setError(null);
-    try {
-      if (suscrito) {
-        await sbWrite("DELETE", `boletin_subscripciones?perfil_id=eq.${session.user.id}&tcg=eq.${tcg}`, {}, session);
-        setSuscrito(false);
-      } else {
-        await sbWrite("POST", "boletin_subscripciones", { perfil_id: session.user.id, tcg }, session);
-        setSuscrito(true);
-      }
-    } catch (e) { setError(e.message); } finally { setCambiando(false); }
-  };
-
-  return (
-    <div>
-      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1 flex items-center gap-2"><TrendingUp size={20} /> Boletín de precios</h2>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
-        Cada 3 días: las 20 cartas que más subieron y las 20 que más bajaron de precio en el mercado del TCG en
-        general (no solo lo publicado en Encuentra Cartas), con un análisis fácil de entender. Datos de fuentes
-        reales (pokemontcg.io, Scryfall, YGOPRODeck) -- nada inventado.
-      </p>
-
-      <div className="flex gap-2 mb-4 flex-wrap">
-        {TCGS_CON_BOLETIN.map((t) => (
-          <button key={t} onClick={() => setTcg(t)}
-            style={{ background: tcg === t ? COLORS.surface2 : "transparent", border: `1px solid ${tcg === t ? COLORS.azulClaro : COLORS.surface2}`, color: tcg === t ? COLORS.azulClaro : COLORS.muted }}
-            className="px-3 py-1.5 rounded-full text-xs font-semibold">
-            {TCG_LABEL[t] || t}
-          </button>
-        ))}
-      </div>
-
-      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
-
-      {session ? (
-        <button onClick={alternarSuscripcion} disabled={cambiando}
-          style={{ background: suscrito ? COLORS.gold : "transparent", color: suscrito ? COLORS.textoOscuro : COLORS.gold, border: `1px solid ${COLORS.gold}66` }}
-          className="rounded-lg px-4 py-2 text-sm font-semibold mb-6">
-          {cambiando ? "..." : suscrito ? `🔔 Ya te llega por correo (${TCG_LABEL[tcg]})` : "🔔 Me interesa -- avísame por correo"}
-        </button>
-      ) : (
-        <p style={{ color: COLORS.muted }} className="text-sm mb-6">Inicia sesión para recibir este boletín por correo cada semana.</p>
-      )}
-
-      {boletin === undefined ? (
-        <Loading label="Cargando boletín..." />
-      ) : !boletin ? (
-        <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
-          Todavía no hay boletín de {TCG_LABEL[tcg]} -- el primero sale el próximo lunes.
-        </p>
-      ) : (
-        <>
-          <p style={{ color: COLORS.muted }} className="text-xs mb-4">
-            Semana del {new Date(boletin.semana).toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" })}
-          </p>
-          {boletin.analisis && (
-            <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 text-sm whitespace-pre-line">
-              {boletin.analisis}
-            </div>
-          )}
-          <div className="grid sm:grid-cols-2 gap-6">
-            <div>
-              <h3 style={{ color: COLORS.gold }} className="font-semibold text-sm uppercase mb-2 flex items-center gap-1"><TrendingUp size={14} /> Las que más subieron</h3>
-              <div className="grid gap-2">
-                {boletin.top_suben.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs">Sin datos suficientes por ahora.</p>}
-                {boletin.top_suben.map((c, i) => <FilaBoletin key={i} c={c} signo="+" color={COLORS.gold} />)}
-              </div>
-            </div>
-            <div>
-              <h3 style={{ color: COLORS.azulClaro }} className="font-semibold text-sm uppercase mb-2">📉 Las que más bajaron</h3>
-              <div className="grid gap-2">
-                {boletin.top_bajan.length === 0 && <p style={{ color: COLORS.muted }} className="text-xs">Sin datos suficientes por ahora.</p>}
-                {boletin.top_bajan.map((c, i) => <FilaBoletin key={i} c={c} signo="" color={COLORS.azulClaro} />)}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 // Guía corta de 3 pasos para quien recién llega (ver esVisitanteNuevo):
-// reemplaza momentáneamente los banners promocionales (sorteo, boletín,
+// reemplaza momentáneamente los banners promocionales (sorteo,
 // "buscas una carta", búsquedas de la comunidad) para que la primera
 // impresión sea "así funciona esto" y no una pila de anuncios.
 function ComoFuncionaGuia() {
@@ -8309,38 +8178,7 @@ function NovedadesCondensadas({ children }) {
     <button onClick={() => setAbierto(true)}
       style={{ background: `${COLORS.violeta}14`, border: `1px solid ${COLORS.violeta}44`, color: COLORS.violeta }}
       className="w-full rounded-xl p-3 mb-6 flex items-center justify-center gap-2 text-xs font-semibold">
-      <Gift size={14} /> Ver sorteos, boletín de precios y otras novedades
-    </button>
-  );
-}
-
-// Banner chico en Inicio (Buscar, cuando no hay texto escrito): teaser
-// del boletín más reciente entre los TCG soportados, para que quien
-// entre a la página lo note sin tener que ir a buscarlo.
-function BoletinBanner({ onAbrir }) {
-  const [boletin, setBoletin] = useState(null);
-
-  useEffect(() => {
-    sb(`boletines?select=*&tcg=in.(${TCGS_CON_BOLETIN.join(",")})&order=semana.desc,created_at.desc&limit=1`)
-      .then((rows) => setBoletin(rows[0] || null))
-      .catch(() => setBoletin(null));
-  }, []);
-
-  if (!boletin) return null;
-  const destacada = boletin.top_suben?.[0];
-
-  return (
-    <button onClick={onAbrir}
-      style={{ background: `${COLORS.surface2}99`, border: `1px solid ${COLORS.azulClaro}55` }}
-      className="w-full rounded-xl p-3 mb-6 flex items-center gap-3 text-left hover:brightness-110 transition">
-      <TrendingUp size={20} color={COLORS.azulClaro} className="shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold">📊 Boletín de {TCG_LABEL[boletin.tcg] || boletin.tcg}</p>
-        <p style={{ color: COLORS.muted }} className="text-xs truncate">
-          {destacada ? `${destacada.nombre} subió +${destacada.cambio_pct}% -- ` : ""}Ver los 20 que más subieron y bajaron
-        </p>
-      </div>
-      <span style={{ color: COLORS.azulClaro }} className="text-xs font-semibold whitespace-nowrap">Ver boletín →</span>
+      <Gift size={14} /> Ver sorteos y otras novedades
     </button>
   );
 }
@@ -12065,7 +11903,6 @@ export default function EncuentraCartas() {
         { id: "armarMazo", label: "Armar mazo", icon: Layers },
         { id: "comunidad", label: "Comunidad", icon: Newspaper },
         { id: "news", label: "Noticias", icon: Megaphone },
-        { id: "boletin", label: "Boletín de precios", icon: TrendingUp },
         { id: "busquedas", label: "Cartas que están buscando", icon: Search },
         ...(session ? [{ id: "siguiendo", label: "Tiendas que sigo", icon: User }] : []),
       ],
@@ -12217,11 +12054,6 @@ export default function EncuentraCartas() {
       )}
 
       <main style={{ position: "relative", zIndex: 1 }} className="max-w-5xl mx-auto px-4 sm:px-8 py-10">
-        <div style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55`, background: `${COLORS.azulPalido}11` }}
-          className="rounded-lg px-4 py-2 text-xs mb-6 text-center">
-          🔌 Conectado en vivo a tu base de datos real de Supabase
-        </div>
-
         {/* SEARCH */}
         {view === "search" && (
           <div>
@@ -12229,7 +12061,6 @@ export default function EncuentraCartas() {
               const banners = (
                 <>
                   <SorteoDestacadoBanner onAbrirSorteo={abrirSorteo} />
-                  <BoletinBanner onAbrir={() => setView("boletin")} />
                   <button onClick={() => (session ? setMostrarBuscarCarta(true) : setShowAccountModal(true))}
                     style={{ background: `${COLORS.violeta}1a`, border: `1px solid ${COLORS.violeta}55` }}
                     className="w-full rounded-xl p-3 mb-3 flex items-center gap-3 text-left hover:brightness-110 transition">
@@ -12811,7 +12642,7 @@ export default function EncuentraCartas() {
             )}
             <div className="grid gap-4">
               {news.map((n) => (
-                <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-5">
+                <div key={n.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-5 min-w-0">
                   <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
                     <div className="flex items-center gap-2">
                       <AvatarImg url={n.tiendas?.perfiles?.avatar_url} size={24} />
@@ -13246,7 +13077,6 @@ export default function EncuentraCartas() {
           <ArmarMazoSection session={session} perfil={perfil} onAbrirChat={abrirChat} onVerTienda={verTiendaDesdePerfil} onIrAPlanes={() => setView("planes")} />
         )}
         {view === "comunidad" && <ComunidadView session={session} onVerPerfil={verPerfil} />}
-        {view === "boletin" && <BoletinView session={session} />}
         {view === "busquedas" && (
           <BusquedasView session={session} onAbrirChat={abrirChat} onVerPerfil={verPerfil} onRequireLogin={() => setShowAccountModal(true)} />
         )}
