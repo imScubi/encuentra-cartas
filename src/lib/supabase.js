@@ -148,6 +148,30 @@ export async function authSignUp(email, password, metadata) {
   return data; // incluye access_token si la confirmación por correo está desactivada
 }
 
+// ---- Confirmar correo con un token_hash (ver ConfirmarCorreoModal en App.jsx) ----
+// El link "de siempre" que manda Supabase apunta directo a su endpoint
+// GET /auth/v1/verify, que consume el token de un solo uso con el simple
+// hecho de que alguien (o algo) le haga un GET -- y muchos clientes de
+// correo (Gmail, Outlook/Safe Links, antivirus corporativos) le hacen ese
+// GET automáticamente para "escanear" el link ANTES de que el usuario lo
+// toque, dejando el token ya quemado cuando la persona sí da clic ("Email
+// link is invalid or has expired" aunque el link sea el correcto y
+// recién llegado). Por eso la plantilla de correo en Supabase debe
+// apuntar aquí (?confirmar=1&token_hash=...&type=signup) en vez de al
+// link de Supabase directo: cargar esta página no gasta el token, solo
+// lo gasta este POST, que solo se dispara cuando la persona de verdad le
+// da clic al botón de confirmar.
+export async function authVerifyOtp(tokenHash, type) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ type, token_hash: tokenHash }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.msg || data?.error_description || "Ese enlace de confirmación ya no es válido. Pide que te reenviemos uno nuevo e intenta de nuevo.");
+  return data; // incluye access_token/refresh_token/user
+}
+
 // ---- Login social (Google/Facebook) ----
 // La app no usa el SDK de supabase-js, así que hacemos el flujo "implícito" a
 // mano: redirigimos a /auth/v1/authorize, Supabase habla con el proveedor y
