@@ -10,7 +10,7 @@ import {
 import {
   VAPID_PUBLIC_KEY,
   setOnSesionRefrescada,
-  sb, sbWrite, authSignUp, authSignIn,
+  sb, sbWrite, authSignUp, authSignIn, authVerifyOtp,
   subirAvatar, subirImagenAnuncio, subirImagenABucket, subirImagenCarta, subirImagenMensaje,
   urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken, pgLikeValor,
 } from "./lib/supabase.js";
@@ -1358,6 +1358,42 @@ function CompletarPerfilOAuthModal({ session, onCreado, onCancelar }) {
           </button>
           <button onClick={onCancelar} style={{ color: COLORS.muted }} className="text-xs">Cancelar e iniciar sesión con otra cuenta</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Pantalla a la que llega el link del correo "Confirma tu cuenta". A propósito
+// exige un clic explícito (no confirma solo con que cargue la página) -- ver
+// el comentario de authVerifyOtp() en lib/supabase.js para el porqué.
+function ConfirmarCorreoModal({ tokenHash, tipo, onConfirmado, onCerrar }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const confirmar = async () => {
+    setLoading(true); setError(null);
+    try {
+      const data = await authVerifyOtp(tokenHash, tipo);
+      if (!data.access_token) throw new Error("No se pudo confirmar tu cuenta. Pide que te reenviemos el correo e intenta de nuevo.");
+      const session = { access_token: data.access_token, refresh_token: data.refresh_token, user: data.user };
+      localStorage.setItem("ec_session", JSON.stringify(session));
+      onConfirmado(session);
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 40px ${COLORS.azulMedio}33` }} className="w-full max-w-md rounded-2xl p-6 text-center">
+        <Store size={32} color={COLORS.azulPalido} className="mx-auto mb-3" />
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-1">Confirma tu cuenta</h2>
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">Dale clic para terminar de activar tu cuenta y entrar.</p>
+        {error && <div className="mb-4 text-left"><ErrorBox message={error} /></div>}
+        <button onClick={confirmar} disabled={loading}
+          style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, opacity: loading ? 0.6 : 1 }}
+          className="rounded-lg py-2 px-6 font-semibold flex items-center justify-center gap-2 mx-auto">
+          {loading && <Loader2 size={16} className="animate-spin" />} Confirmar mi cuenta
+        </button>
+        <button onClick={onCerrar} style={{ color: COLORS.muted }} className="text-xs mt-4">Cerrar</button>
       </div>
     </div>
   );
@@ -11362,6 +11398,7 @@ export default function EncuentraCartas() {
   // de completar registro de más.
   const [perfilChecked, setPerfilChecked] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [confirmarInfo, setConfirmarInfo] = useState(null); // {tokenHash, tipo} del link "Confirma tu cuenta"
   const [logoError, setLogoError] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -11425,6 +11462,25 @@ export default function EncuentraCartas() {
       cargarOCrearPerfil(session);
     }
   }, [session]);
+
+  // Link "Confirma tu cuenta" del correo (?confirmar=1&token_hash=...&type=...).
+  // Ver el comentario de authVerifyOtp() en lib/supabase.js: a propósito NO se
+  // confirma solo con que esta página cargue, solo con el clic del modal.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get("token_hash");
+    if (params.get("confirmar") && tokenHash) {
+      setConfirmarInfo({ tokenHash, tipo: params.get("type") || "signup" });
+    }
+  }, []);
+
+  const confirmarCorreoConfirmado = (s) => {
+    setConfirmarInfo(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("confirmar"); url.searchParams.delete("token_hash"); url.searchParams.delete("type");
+    window.history.replaceState({}, "", url.toString());
+    handleAuthed(s, { esNuevo: true });
+  };
 
   // Restaurar sesión guardada al abrir la app
   useEffect(() => {
@@ -12137,6 +12193,10 @@ export default function EncuentraCartas() {
       {showOnboarding && <OnboardingTutorial onClose={() => setShowOnboarding(false)} />}
 
       {showAccountModal && <AccountModal onClose={() => setShowAccountModal(false)} onAuthed={handleAuthed} />}
+      {confirmarInfo && (
+        <ConfirmarCorreoModal tokenHash={confirmarInfo.tokenHash} tipo={confirmarInfo.tipo}
+          onConfirmado={confirmarCorreoConfirmado} onCerrar={() => setConfirmarInfo(null)} />
+      )}
       {session && perfilChecked && !perfil && (
         <CompletarPerfilOAuthModal session={session} onCreado={(p) => setPerfil(p)} onCancelar={handleLogout} />
       )}

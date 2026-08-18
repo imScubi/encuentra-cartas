@@ -3788,6 +3788,55 @@ frontend no lo aprovechaba.
   afecta que cada tienda tenga su propia página completa en el
   directorio.
 
+## 123. Fix: cuentas nuevas se quedaban sin poder confirmar su correo
+
+Un usuario reportó "For security purposes, you can only request this
+after 48 seconds" al intentar crear su cuenta de tienda. Revisando los
+logs de Auth de Supabase se encontró el problema real (no era solo ese
+mensaje): a esa persona SÍ le llegó el correo de confirmación, pero
+cada vez que le daba clic al link, Supabase respondía "403: Email link
+is invalid or has expired" / "One-time token not found" -- seis veces
+seguidas, incluso en el primer clic. Al revisar cuántas cuentas más
+estaban en ese mismo estado (correo nunca confirmado, nunca iniciaron
+sesión), aparecieron **10 cuentas reales más** desde el 20 de julio.
+
+**Causa real**: el link que manda Supabase por default apunta
+directo a su propio endpoint `GET /auth/v1/verify`, que gasta el token
+de un solo uso con el simple hecho de que alguien (o *algo*) le haga
+un GET -- y varios clientes de correo y filtros de seguridad (Gmail,
+Outlook/Safe Links, antivirus corporativos) "previsualizan"/escanean
+automáticamente los links de un correo apenas llega, haciendo ese GET
+ellos mismos antes de que la persona alcance a tocarlo. Para cuando el
+usuario de verdad da clic, el token ya está quemado. Es un problema
+conocido de Supabase (y de cualquier magic link de un solo uso), no
+tiene que ver con el dispositivo, el navegador en el que se abrió
+(WhatsApp, Chrome, etc.) ni con haber hecho algo mal.
+
+**Arreglo**:
+- `lib/supabase.js`: nueva función `authVerifyOtp(tokenHash, type)` --
+  llama `POST /auth/v1/verify` con `{ type, token_hash }` (en vez del
+  link GET de Supabase) y devuelve la sesión.
+- Nuevo componente `ConfirmarCorreoModal` en `App.jsx`: se activa con
+  `?confirmar=1&token_hash=...&type=...` en la URL, y a propósito NO
+  confirma solo con que la página cargue -- exige que la persona le dé
+  clic a un botón "Confirmar mi cuenta". Cargar la página no gasta el
+  token (es una página normal de la app, no el endpoint de Supabase);
+  solo el clic real dispara el POST que sí lo gasta. Así un escáner
+  automático puede visitar la página todo lo que quiera sin romper
+  nada, porque nunca le da clic al botón.
+- **Pendiente de un paso manual en el Dashboard de Supabase** (no hay
+  forma de tocar plantillas de correo desde aquí): hay que cambiar la
+  plantilla "Confirm signup" (Authentication → Email Templates) para
+  que el link ya no sea `{{ .ConfirmationURL }}` sino
+  `{{ .SiteURL }}/?confirmar=1&token_hash={{ .TokenHash }}&type=signup`.
+  Sin este cambio de plantilla, el correo sigue mandando el link viejo
+  y el bug sigue ahí -- el código de la app ya está listo para
+  recibirlo en cuanto se haga el cambio.
+- Las 11 cuentas afectadas (incluida la de este reporte) se marcaron
+  como confirmadas directamente en la base de datos, ya que el
+  problema era de la plataforma y no de ellas -- ya pueden iniciar
+  sesión normal con su correo y contraseña.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
