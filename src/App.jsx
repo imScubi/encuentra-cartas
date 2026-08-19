@@ -10859,35 +10859,52 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
   const [mazoDestino, setMazoDestino] = useState("");
   const [agregandoMazoId, setAgregandoMazoId] = useState(null);
   const [misTengoSets, setMisTengoSets] = useState({}); // set_nombre -> cantidad marcada "tengo"
+  // Mismo problema que el efecto de tcgSel: si entras a un set y le das clic
+  // a otro antes de que termine de cargar, la respuesta del primero puede
+  // llegar después y pisar las cartas del segundo (o dejarlo en "sin
+  // cartas" si esa fue la que falló). abrirSetTokenRef descarta cualquier
+  // respuesta que ya no sea la del set vigente.
+  const abrirSetTokenRef = useRef(0);
 
   useEffect(() => {
+    // Si cambias de categoría rápido (Pokémon → Magic → Pokémon), quedan
+    // varias peticiones en vuelo a la vez -- sin esto, la que responde AL
+    // ÚLTIMO gana el estado aunque ya no sea la categoría seleccionada, y
+    // si esa era la que falló/tardó, se veía "no hay sets disponibles"
+    // hasta que algo más disparaba el efecto de nuevo (entrar y salir 2-3
+    // veces). `cancelado` descarta cualquier respuesta que ya no aplique.
+    let cancelado = false;
     setEraSel(null); setSetSel(null); setCartas([]); setError(null);
     setLoadingEras(true);
     (async () => {
       if (tcgSel === "onepiece") {
         const catId = await categoriaIdTCGplayer("onepiece");
+        if (cancelado) return;
         setCategoriaIdOP(catId);
         if (!catId) { setEras([]); setLoadingEras(false); return; }
         try {
           const res = await fetch(`/api/tcgcsv?path=tcgplayer/${catId}/groups`);
           const data = await res.json();
+          if (cancelado) return;
           const sets = (data.results || [])
             .slice()
             .sort((a, b) => (b.publishedOn || "").localeCompare(a.publishedOn || ""))
             .map((g) => ({ id: g.groupId, nombre: g.name, cardCount: null, imagen: null }));
           setEras([{ era: null, sets }]);
-        } catch { setEras([]); }
-        setLoadingEras(false);
+        } catch { if (!cancelado) setEras([]); }
+        if (!cancelado) setLoadingEras(false);
         return;
       }
       try {
-        setEras(await obtenerErasYSetsCatalogo(tcgSel));
+        const resultado = await obtenerErasYSetsCatalogo(tcgSel);
+        if (!cancelado) setEras(resultado);
       } catch {
-        setEras([]);
+        if (!cancelado) setEras([]);
       } finally {
-        setLoadingEras(false);
+        if (!cancelado) setLoadingEras(false);
       }
     })();
+    return () => { cancelado = true; };
   }, [tcgSel]);
 
   useEffect(() => {
@@ -10940,6 +10957,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
   };
 
   const abrirSet = async (set) => {
+    const miToken = ++abrirSetTokenRef.current;
     setSetSel(set); setLoadingCartas(true); setCartas([]); setError(null);
     try {
       if (tcgSel === "onepiece") {
@@ -10947,6 +10965,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
           fetch(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/products`).then((r) => r.json()),
           fetch(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/prices`).then((r) => r.json()),
         ]);
+        if (abrirSetTokenRef.current !== miToken) return;
         const productos = (dataProd.results || []).filter(looksLikeCard);
         const precios = dataPrecios.results || [];
         setCartas(productos.map((p) => {
@@ -10957,9 +10976,11 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
           };
         }));
       } else {
-        setCartas(await obtenerCartasDeSetCatalogo(tcgSel, set.id));
+        const resultado = await obtenerCartasDeSetCatalogo(tcgSel, set.id);
+        if (abrirSetTokenRef.current !== miToken) return;
+        setCartas(resultado);
       }
-    } catch (e) { setError(e.message); } finally { setLoadingCartas(false); }
+    } catch (e) { if (abrirSetTokenRef.current === miToken) setError(e.message); } finally { if (abrirSetTokenRef.current === miToken) setLoadingCartas(false); }
   };
 
   const marcar = async (carta, estado) => {
