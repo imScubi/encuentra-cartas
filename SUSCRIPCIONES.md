@@ -3862,6 +3862,29 @@ automática cada 3 días en el cron): componentes `BoletinBanner` /
 no lo usaba nadie más), y migración 069 que borra las tablas
 `boletines`, `boletin_subscripciones` y `precio_historial_semanal`.
 
+## 125. Fix: Catálogo se quedaba en "no hay sets disponibles" al cambiar rápido
+
+Se reportó que en Catálogo, al cambiar de categoría (Pokémon/Magic/Yu-Gi-Oh/
+etc.) rápido, salía "no hay sets disponibles" y solo se corregía al
+entrar y salir 2-3 veces -- y que dentro de un set a veces pasaba lo
+mismo con las cartas.
+
+Causa: condición de carrera clásica. El `useEffect` que carga sets se
+vuelve a disparar en cada cambio de `tcgSel`, y `abrirSet()` en cada
+clic a un set -- pero ninguno de los dos cancelaba ni ignoraba una
+respuesta que ya no correspondía a la selección vigente. Si cambiabas
+de Pokémon a Magic rápido, se quedaban dos peticiones en el aire; si la
+de Pokémon (la vieja) tardaba más y respondía después, pisaba el
+estado con sus datos (o con `[]` si esa fue la que falló) aunque ya
+estuvieras viendo Magic. Nada volvía a intentarlo hasta que algo más
+disparaba el efecto de nuevo -- de ahí el "entrar y salir 2-3 veces".
+
+Arreglo: mismo patrón en los dos lugares -- un token/bandera que se
+marca "ya no vigente" en cuanto se dispara una petición más nueva, y
+antes de aplicar cualquier `setEras`/`setCartas`/`setError` se checa
+que la respuesta siga siendo la de la selección actual. Si no lo es,
+se descarta en silencio (la petición más nueva es la que manda).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
