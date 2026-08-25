@@ -4108,6 +4108,91 @@ recoja la variable de entorno nueva, así que después de este push es buen
 momento para volver a probar "First Partner" (o cualquier carta del set)
 en producción.
 
+## 131. Fix: "Charmander 038" no encontraba la carta aunque "038" solo sí
+
+El dueño probó en vivo con la key ya puesta: buscar solo "038" sí
+encontraba la carta, pero "Charmander 038" (nombre + número juntos, como
+la gente busca normalmente) no traía nada. Tres bugs encadenados en
+`buscarCartasVisualApiTCG` (`lib/pokemonApi.js`):
+
+1. El filtro `?name=` de apitcg.com no incluye el número de carta -- había
+   que separar "Charmander" de "038" antes de buscar (con
+   `extraerNumeroDeTexto`, ya existente) y ordenar los resultados por
+   coincidencia de número después, en el cliente.
+2. La búsqueda por nombre de set (sección 130) solo miraba el primer set
+   que hiciera match (`.find()`), pero apitcg.com tiene **dos** sets
+   distintos con "First Partner" en el nombre ("First Partner Pack" y
+   "First Partner Collection 2026") -- cambiado a `.filter().slice(0, 3)`
+   + `Promise.all` para traer cartas de hasta 3 sets que coincidan, no
+   solo del primero.
+3. El fetch por nombre solo pedía 24 resultados como máximo. Charmander
+   tiene 74 impresiones distintas en apitcg.com, así que la variante
+   "038" podía quedar fuera de esos primeros 24 (vienen en el orden que
+   apitcg.com decida, no por número). Cambiado a pedir siempre el máximo
+   que permite apitcg.com (`limit: "100"`) antes de ordenar por
+   coincidencia de número y recién ahí recortar al límite pedido.
+
+De paso, el dueño pidió que cuando se busca solo por nombre (sin número),
+se muestre la lista completa en vez de recortarla a 8 o 24 -- ahora ese
+caso regresa los 100 resultados sin recortar.
+
+## 132. Rediseño "cozy": paleta, tipografía, grid orgánico y menos botones apretados
+
+El dueño pidió cambiar la vibra de la web de "elegante/profesional" a
+algo más acogedor y relajado, usando como referencia el logo ya
+publicado y una paleta de marca (crema/café/tan con azul de acento).
+Aprobó primero un mockup (canvas de Design Components) y después dio luz
+verde a implementarlo directo en la app real ("me gusta implementa").
+
+**Paleta y tipografía** (`src/theme.js`, `index.html`): los colores base
+de `COLORS`, `MODOS_COLOR.dia/.noche` y `TIPOS_POKEMON_COLOR.default` se
+reescribieron a la paleta cozy (crema `#E0CEBA`-ish, café `#433324`,
+azules `#1F3A6E`/`#2A4C91`/`#6882AD` de acento). Como el resto de la app
+lee `COLORS.xxx` en vivo en cada render (nunca copia el valor), cambiar
+solo estas constantes recoloreó las ~700 referencias existentes sin
+tocar componente por componente. Tipografía: "Space Grotesk" (títulos) y
+"Rajdhani"/"Space Mono" (texto/precios) se reemplazaron por "Rye"
+(títulos, sustituto de la fuente "Rock Bro" de la referencia -- no es
+una Google Font real) y "Cabin" (texto), cargadas vía Google Fonts en
+`index.html`.
+
+**Bug encontrado antes de publicar** (no reportado por el dueño, se
+encontró probando en vivo con Playwright): el sistema de acento por tipo
+de Pokémon (`aplicarTema()`, feature de Amatista+) mezcla un color de
+acento sobre la base con un porcentaje fijo -- ese porcentaje (22-34%)
+estaba calibrado para la base azul marino vieja, y sobre la nueva base
+color crema producía un gris-lavanda visible en vez de un tinte sutil.
+Se bajó a 10-16%.
+
+**Grid orgánico**: las cuadrículas de tarjetas (Inicio, Mercado,
+Siguiendo, Subastas) pasaron de `grid` a `columns-N` (CSS multi-column,
+con `break-inside-avoid` en cada tarjeta) para un acomodo escalonado en
+vez de filas parejas. Se dejó **a propósito sin cambiar** la cuadrícula
+de Catálogo (era → set → cartas): es para hojear cientos de cartas de
+referencia rápido, y ahí una cuadrícula estricta y escaneable sirve
+mejor que una escalonada.
+
+**Filtro de TCG en Mercado**: la vista de Mercado ya filtraba
+internamente por `tcgFiltro`, pero no tenía ningún control visible para
+cambiarlo ahí (sí existía en "Directorio de tiendas"). Se agregó la
+misma fila de pastillas de TCG que ya existía en Tiendas.
+
+**Botones menos apretados (Mi tienda, Mi mercado, Admin)**: las filas de
+acciones de cada publicación (Reintentar imagen, subir fotos, Boost,
+Marcar vendida, Duplicar, Borrar) venían todas en una sola fila
+`flex-wrap` junto con el nombre/precio, lo que se sentía apretado sobre
+todo en móvil. Se reorganizaron en tarjetas de 2-3 filas: info arriba,
+precios en medio, acciones abajo en su propia fila con separador --
+aplicado en "Mis publicaciones" (Mercado), "Cartas sueltas" y "Producto
+sellado" (Mi tienda), y en la lista "Todas las tiendas" del panel de
+Admin (la única fila ahí que de plano no tenía `flex-wrap` y podía
+desbordarse en móvil con sus 5 botones).
+
+No se pudo probar visualmente con datos reales (Supabase de producción
+está bloqueado desde este sandbox), pero sí se verificó que compila
+(`npm run build`) y que el patrón replicado es idéntico al ya probado en
+pantalla en el mockup aprobado.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
