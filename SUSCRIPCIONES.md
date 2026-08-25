@@ -3885,6 +3885,73 @@ antes de aplicar cualquier `setEras`/`setCartas`/`setError` se checa
 que la respuesta siga siendo la de la selección actual. Si no lo es,
 se descarta en silencio (la petición más nueva es la que manda).
 
+## 126. Cambio de logo
+
+Se reemplazó el logo de la marca (ícono + wordmark) por el nuevo diseño
+que mandó el dueño (un ícono estilo anteojos/mariposa en tono café/tan
+sobre fondo café oscuro, con "ENCUENTRA CARTAS" debajo). Se recortó el
+ícono y el texto de la imagen original, se hicieron transparentes, y se
+armaron de nuevo como un lockup horizontal (ícono a la izquierda, texto
+a la derecha) porque el header muestra el logo a una altura fija -- la
+imagen original traía el texto debajo del ícono, apilado, lo que no
+cabía en ese espacio. Se generaron tres archivos en `public/branding/`:
+`logo.png` (versión oscura, para modo día), `logo-noche.png` (versión
+en el tono tan original, para modo noche) y `logo-icon.png` (solo el
+ícono, cuadrado, sobre fondo café oscuro sólido -- usado como favicon y
+como insignia chica). No se tocó ningún código: el header, el favicon
+y el `og:image` ya apuntaban a esos tres nombres de archivo desde antes.
+
+## 127. Modo Evento (Amatista+): control de ventas en eventos presenciales
+
+Se agregó "Modo Evento", pensado para vendedores que venden cara a cara
+en un evento (expo, torneo, bazar). Exclusivo Amatista y Diamante y
+Aurora (`info.modoEvento` en `theme.js` -- Diamante se incluyó también
+aunque el dueño solo mencionó Amatista y Aurora, porque su propio texto
+de beneficios dice "Todo lo de Amatista" y dejarlo fuera habría sido
+quitarle una función al subir de plan).
+
+Cada evento (tabla `eventos`: nombre, lugar, fechas, estado
+activo/cerrado) junta:
+
+- **Inventario del evento** (tabla `evento_ventas`, `vendida=false`
+  mientras sigue en la mesa): se arma a mano, o importando de un solo
+  jalón las publicaciones activas del perfil (`mercado_listings` si es
+  cuenta individual) o de todas las tiendas vinculadas a la cuenta
+  (`inventario_tienda` + `sellado_tienda`, igual que ya suma
+  `RecompensasView` para cuentas con más de una tienda) -- cada fila
+  importada guarda `origen_tabla`/`origen_id` para no duplicarla si se
+  vuelve a importar, y una `carpeta` de texto libre (con autocompletado
+  vía `<datalist>` de las carpetas ya usadas en ese evento) para
+  organizarlo en cajas/categorías, que es lo que pidió el dueño de
+  "poder separarlo por carpetas".
+- **Ventas** (`vendida=true`): al marcar una pieza como vendida (o al
+  agregarla directo como ya vendida) se le pone costo real, precio de
+  venta real (puede diferir del `precio_lista` sugerido por el regateo
+  típico de un evento) y el día -- opcionalmente eligiendo la carta con
+  el mismo `CardPickerUniversal` que ya usa el resto de la app (autocompleta
+  nombre e imagen contra el catálogo oficial), o a mano si no está en
+  ningún catálogo.
+- **Gastos** (tabla `evento_gastos`): cede/mesa, comida, transporte u
+  otro, con monto y día opcional.
+
+Con esos tres datasets, `EventoDetalle` calcula en el cliente (sin
+ninguna función serverless nueva -- ya estamos en las 12 del plan
+Hobby): ingresos, costo de mercancía vendida, gastos operativos,
+ganancia neta, valor del inventario sin vender (a costo), y un
+desglose por día. Un botón genera un reporte en PDF (vía `jspdf`,
+cargado solo con `import()` dinámico al generar el reporte para no
+engordar el bundle principal de quien no usa esto) con el mismo
+resumen, la tabla por día, los gastos, las ventas y lo que quedó sin
+vender.
+
+Archivos: migración `070_modo_evento.sql` (tablas `eventos`,
+`evento_ventas`, `evento_gastos`, RLS dueño-solo vía `perfil_id =
+auth.uid()`), `theme.js` (`modoEvento` en `PLAN_INFO`), `App.jsx`
+(`ModoEventoView`, `EventoDetalle`, `FormVentaEvento`, `FilaVentaEvento`,
+nueva entrada de nav "Modo Evento" dentro de "Vender"), `lib/icons.jsx`
+(ícono `Download` nuevo, para el botón del PDF), y `jspdf` agregado a
+`package.json`.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
