@@ -841,21 +841,61 @@ export async function obtenerCartasDeSetCatalogo(tcg, setId) {
 const CACHE_BUSQUEDA_TTL_MS = 2 * 60 * 1000;
 const _cacheBusqueda = new Map();
 
+// ---- Respaldo experimental: apitcg.com (ver sección 129 de
+// SUSCRIPCIONES.md) -- un solo API cubre Pokémon/Magic/Yu-Gi-Oh/Lorcana (y
+// varios más) con esquema consistente, imagen y precio real de TCGplayer en
+// la misma respuesta. A diferencia de pokemontcg.io/Scryfall/YGOPRODeck/
+// lorcana-api (llamadas directas desde el navegador, todas sin llave o con
+// llave opcional), esta sí necesita una llave secreta de verdad -- por eso
+// NO se llama directo desde aquí, sino a través de /api/tcgcsv?fuente=apitcg
+// (ver api/tcgcsv.js), que la manda en el header `x-api-key` desde el
+// servidor. Es el ÚLTIMO intento, después de la fuente principal de cada
+// TCG (y de TCGdex también, en Pokémon) -- nunca las reemplaza, solo amplía
+// las probabilidades de encontrar algo cuando de plano nadie más lo tiene
+// todavía. Si la llave no está configurada en el servidor (variable de
+// entorno APITCG_API_KEY en Vercel) o si apitcg.com falla, se degrada en
+// silencio a "sin resultados" -- nunca rompe una búsqueda que ya funcionaba.
+const TCG_SLUG_APITCG = { pokemon: "pokemon", magic: "magic", yugioh: "yugioh", lorcana: "lorcana", onepiece: "one-piece" };
+
+function mapearProductoApiTCG(p) {
+  const precio = p?.markets?.tcgplayer?.prices?.market ?? p?.markets?.tcgplayer?.prices?.mid ?? p?.markets?.tcgplayer?.prices?.low ?? null;
+  return {
+    id: `apitcg:${p._id}`,
+    name: p.name,
+    localId: p.attributes?.Number || p.code || "",
+    setName: p.set?.name || "",
+    setTotal: "",
+    image: p.images?.[0]?.large || p.images?.[0]?.medium || p.images?.[0]?.small || null,
+    precioRefMxn: precio != null ? Math.round(Number(precio) * USD_TO_MXN) : null,
+    precioRefFuente: precio != null ? "TCGplayer" : null,
+  };
+}
+
+async function buscarCartasVisualApiTCG(tcg, texto, limite, signal) {
+  const slug = TCG_SLUG_APITCG[tcg];
+  if (!slug) return [];
+  try {
+    const path = `api/products?${new URLSearchParams({ tcg: slug, type: "card", name: texto, limit: String(limite) })}`;
+    const res = await fetch(`/api/tcgcsv?fuente=apitcg&path=${encodeURIComponent(path)}`, { signal });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data?.data || []).map(mapearProductoApiTCG);
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return [];
+  }
+}
+
 // Elige el catálogo correcto según el TCG de la publicación (ver
 // TCG_CON_CATALOGO en theme.js: qué TCG ya tienen buscador de texto libre).
 // One Piece todavía no tiene una fuente gratis confiable de texto libre —
 // usa TCGplayerPicker (elegir set, luego buscar dentro de ese set) en vez
 // de este despachador; ver App.jsx.
 // A diferencia de obtenerErasYSetsCatalogo/obtenerCartasDeSetCatalogo, este
-// despachador NO atrapa el error aquí: su único punto de uso (CardPicker,
-// el cuadro de búsqueda al publicar una carta) ya distingue "no se pudo
-// conectar" de "sin resultados" con su propio try/catch, para mostrarle a
-// quien está publicando el mensaje correcto en cada caso. Atraparlo aquí
-// también (como se hizo por error para los otros dos despachadores) hacía
-// que una caída real de Scryfall/pokemontcg.io/YGOPRODeck/lorcana-api se
-// viera igual que "esa carta no existe" -- quien buscaba una carta de
-// Magic real se quedaba viendo "sin resultados" para CUALQUIER búsqueda,
-// sin ninguna pista de que el problema era la conexión y no el catálogo.
+// despachador SÍ distingue una caída real de conexión de un "sin
+// resultados" genuino (ver más abajo): su único punto de uso (CardPicker,
+// el cuadro de búsqueda al publicar una carta) usa esa distinción para
+// mostrarle a quien está publicando el mensaje correcto en cada caso.
 // "signal" (opcional): CardPicker cancela la búsqueda anterior en cuanto
 // hay una nueva, para no dejar peticiones viejas compitiendo con la vigente.
 export async function buscarCartasCatalogo(tcg, texto, signal) {
@@ -863,12 +903,27 @@ export async function buscarCartasCatalogo(tcg, texto, signal) {
   const enCache = _cacheBusqueda.get(clave);
   if (enCache && Date.now() - enCache.ts < CACHE_BUSQUEDA_TTL_MS) return enCache.resultado;
 
-  let resultado;
-  if (tcg === "magic") resultado = await buscarCartasMagic(texto, 24, signal);
-  else if (tcg === "pokemon") resultado = await buscarCartasVisual(texto, 8, signal);
-  else if (tcg === "yugioh") resultado = await buscarCartasYugioh(texto, 24, signal);
-  else if (tcg === "lorcana") resultado = await buscarCartasLorcana(texto, 24, signal);
-  else resultado = [];
+  let resultado = [];
+  let fuentePrincipalFallo = false;
+  try {
+    if (tcg === "magic") resultado = await buscarCartasMagic(texto, 24, signal);
+    else if (tcg === "pokemon") resultado = await buscarCartasVisual(texto, 8, signal);
+    else if (tcg === "yugioh") resultado = await buscarCartasYugioh(texto, 24, signal);
+    else if (tcg === "lorcana") resultado = await buscarCartasLorcana(texto, 24, signal);
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    fuentePrincipalFallo = true;
+  }
+
+  // Se prueba apitcg.com tanto si la fuente principal no trajo nada como si
+  // de plano falló la conexión -- así una caída momentánea de Scryfall/
+  // pokemontcg.io/YGOPRODeck/lorcana-api ya no se traduce automáticamente
+  // en "no se pudo conectar" si apitcg.com sí responde.
+  if (resultado.length === 0) {
+    const deApiTCG = await buscarCartasVisualApiTCG(tcg, texto, 24, signal);
+    if (deApiTCG.length > 0) resultado = deApiTCG;
+    else if (fuentePrincipalFallo) throw new Error("No se pudo conectar con el catálogo. Intenta de nuevo en un momento.");
+  }
 
   if (_cacheBusqueda.size > 200) _cacheBusqueda.clear(); // tope simple, no hace falta ser precisos aquí
   _cacheBusqueda.set(clave, { ts: Date.now(), resultado });
