@@ -52,7 +52,7 @@ export function setOnSesionRefrescada(fn) {
 }
 
 export function pareceSesionExpirada(status, data) {
-  return status === 401 || /jwt expired|invalid jwt/i.test(JSON.stringify(data || {}));
+  return status === 401 || /jwt expired|invalid jwt|claim.*expired|expired.*claim|"exp"\s*claim/i.test(JSON.stringify(data || {}));
 }
 
 export async function refrescarSesion(session) {
@@ -239,7 +239,8 @@ export async function subirAvatar(file, session) {
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || "No se pudo subir la foto");
+    reportarError(`Error subiendo avatar (${res.status}): ${data?.message || JSON.stringify(data) || "sin detalle"}`);
+    throw new Error("No se pudo subir la foto. Intenta de nuevo en un momento.");
   }
   return `${SUPABASE_URL}/storage/v1/object/public/avatars/${path}?t=${Date.now()}`;
 }
@@ -264,7 +265,8 @@ export async function subirImagenAnuncio(file, session, indice = 0) {
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || "No se pudo subir la imagen");
+    reportarError(`Error subiendo imagen de anuncio (${res.status}): ${data?.message || JSON.stringify(data) || "sin detalle"}`);
+    throw new Error("No se pudo subir la imagen. Intenta de nuevo en un momento.");
   }
   return `${SUPABASE_URL}/storage/v1/object/public/anuncios/${path}`;
 }
@@ -289,7 +291,8 @@ export async function subirImagenABucket(bucket, file, session) {
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || "No se pudo subir la imagen");
+    reportarError(`Error subiendo imagen a ${bucket} (${res.status}): ${data?.message || JSON.stringify(data) || "sin detalle"}`);
+    throw new Error("No se pudo subir la imagen. Intenta de nuevo en un momento.");
   }
   return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
 }

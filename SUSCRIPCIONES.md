@@ -4193,6 +4193,35 @@ está bloqueado desde este sandbox), pero sí se verificó que compila
 (`npm run build`) y que el patrón replicado es idéntico al ya probado en
 pantalla en el mockup aprobado.
 
+## 133. Fix: favicon con caché atascada + error crudo de sesión expirada al publicar un anuncio
+
+Dos reportes del dueño después del rediseño:
+
+1. **El ícono de la pestaña seguía siendo el viejo.** El archivo ya
+   estaba actualizado desde una sesión anterior (`logo-icon.png`), pero
+   los navegadores cachean el favicon de forma especialmente agresiva --
+   a veces ignoran hasta un recargado normal. Se le agregó `?v=2` a la
+   URL en `index.html` para forzar que se trate como un recurso nuevo.
+2. **Al publicar un anuncio (panel Admin) salió el error crudo `"exp"
+   claim timestamp check failed`** en vez de un mensaje entendible. La
+   causa: `sb()`/`sbWrite()` (`lib/supabase.js`) sí traducen cualquier
+   error a un mensaje amable en español antes de mostrarlo (y de paso
+   reintentan solos si la sesión expiró, refrescando el token) -- pero
+   las tres funciones de subir imágenes a Storage (`subirAvatar`,
+   `subirImagenAnuncio`, `subirImagenABucket`, esta última usada también
+   por `subirImagenCarta`/`subirImagenMensaje`) se quedaron con el
+   mensaje crudo de Supabase (`data.message`) sin traducir, así que
+   cuando el token expiraba a medio subir una imagen, el texto interno
+   del validador de JWT se le mostraba tal cual al usuario. Se corrigió
+   para que las tres reporten el detalle real solo al equipo (vía
+   `reportarError`, igual que `sb()`/`sbWrite()`) y le muestren al
+   usuario un mensaje amable ("No se pudo subir la imagen. Intenta de
+   nuevo en un momento."). De paso, `pareceSesionExpirada()` ahora
+   también reconoce esta redacción específica del error de expiración
+   (antes solo buscaba "jwt expired"/"invalid jwt"), para que el
+   reintento automático con refresh_token se dispare también en este
+   caso y no solo cuando el status es 401.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
