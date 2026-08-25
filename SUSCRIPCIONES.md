@@ -4305,6 +4305,66 @@ la selección múltiple), solo separada para que no estorbe. No aplica a
 "Producto sellado" porque ese tipo de publicación no se agrupa en
 carpetas ni tiene el concepto de exhibición.
 
+## 137. Link público por carpeta, ocultar cartas, y exportar CSV/Excel/PDF
+
+El dueño pidió que cada carpeta tenga su propio link para compartir, que
+el dueño pueda ocultar/marcar vendida/borrar una carta y que el link ya
+lo refleje, un diseño propio para verla cómodamente, y exportar el
+contenido a CSV/Excel/PDF desde su panel. Se confirmó con el dueño que
+"en tiempo real" significa que el link siempre muestra el estado actual
+de la base de datos al abrirse/recargarse -- no push instantáneo por
+WebSocket (eso hubiera significado meter Supabase Realtime, una pieza de
+infraestructura que hoy no usa ninguna otra parte de la app).
+
+- **Migración `072_carpeta_oculta.sql`**: agrega `oculta boolean not
+  null default false` a `inventario_tienda` y `mercado_listings`. Es un
+  concepto nuevo y distinto de `en_venta` (exhibición): una carpeta de
+  exhibición sigue siendo visible pero no vendible; una carta oculta no
+  debe aparecer en NINGÚN lado público.
+- **Ocultar/mostrar**: en el modal de detalle de una carpeta
+  (`CarpetasPanel`), la barra de selección múltiple ganó dos botones más
+  ("👁️ Ocultar" / "Mostrar") junto a Duplicar/Borrar -- mismo patrón de
+  `PATCH ... ?id=in.(...)` que ya usaban esas dos acciones. Las cartas
+  ocultas se siguen viendo en el panel del dueño (atenuadas, con una
+  insignia "👁️ Oculta") para poder mostrarlas de nuevo, pero se filtran
+  (`oculta=eq.false` / `!item.oculta`) tanto en la carpeta pública nueva
+  como en `CarpetasStorefront` (la vitrina ya embebida en perfil/tienda).
+  "Marcar vendida" y "Borrar" no necesitaron ningún cambio: ya existían
+  y ya borran la fila de la base de datos (`MarcarVendidaModal` mueve el
+  registro a `ventas` y borra el original), así que la carpeta pública
+  -- que siempre re-consulta al abrirse -- ya los refleja solos.
+- **Link público**: cada carpeta se comparte por su `id` (no tiene
+  slug propio, un uuid ya es suficientemente no adivinable) vía
+  `?carpeta=<id>`, mismo patrón que ya usan perfil (`?u=`) y tienda
+  (`?tienda=`) -- `CopiarLinkBoton` (ya existente) en el encabezado del
+  modal de detalle de la carpeta, y una rama nueva en el `useEffect` de
+  deep-links que abre la vista `carpetaPublica` directo si la URL trae
+  ese parámetro.
+- **`CarpetaPublicaView`** (nuevo componente, standalone -- no depende
+  de haber cargado el perfil/tienda completo primero): portada grande
+  con el color/cintilla de la carpeta, datos del dueño con link a su
+  perfil/tienda, y una cuadrícula tipo masonry de las cartas visibles
+  (mismo estilo que Mercado/Inicio) -- cada una abre el detalle normal
+  (`abrirDetalle`, con Contactar/Carrito ya integrados ahí, sin tocar
+  nada de eso).
+- **Exportar CSV/Excel/PDF**: tres botones en el modal de detalle de la
+  carpeta, usando `cardsCarpeta` (ya cargado, sin pedir nada nuevo a la
+  BD). CSV se arma a mano con un `Blob`+`<a download>` (sin librería
+  nueva); Excel usa `xlsx` (`XLSX.utils.json_to_sheet` +
+  `XLSX.writeFile`, ya es dependencia del proyecto -- hoy solo se usaba
+  para LEER un archivo subido en el Importador Masivo, aquí se usa por
+  primera vez para escribir); PDF usa `jspdf` con el mismo patrón de
+  tabla manual (`doc.text` en columnas fijas + paginación) que ya usa el
+  reporte de Modo Evento. Ambas se cargan con `import()` dinámico, igual
+  que ya hacían esas dos librerías, para no engordar el bundle principal.
+
+**Pendiente, que solo puede hacer el dueño**: correr
+`072_carpeta_oculta.sql` en Supabase → SQL Editor antes de que
+ocultar/mostrar funcione en producción (sin la migración, esas dos
+acciones van a fallar al intentar guardar la columna que todavía no
+existe -- el resto de esta sección, incluido el link público y los
+exports, no depende de la migración y ya funciona sin ella).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -4320,3 +4380,4 @@ carpetas ni tiene el concepto de exhibición.
 - Evaluar migrar de pokemontcg.io (ahora legado, sin cartas/sets nuevos) a Scrydex (su sucesor oficial, de paga) si el catálogo automático se empieza a sentir viejo de verdad -- ver sección 128.
 - Falta poner `APITCG_API_KEY` en Vercel y confirmar que el piloto de apitcg.com funciona de verdad en producción (ver sección 129) -- y, si funciona bien, decidir si conviene volverla la fuente principal o migrar todo el catálogo (incluido producto sellado/TCGCSV) a ella.
 - Falta correr `071_carpetas_ubicacion.sql` en Supabase (ver sección 132) para que el color/zona/envío/punto de encuentro de las carpetas funcionen en producción -- sin la migración, crear una carpeta seguirá fallando al intentar guardar esas columnas.
+- Falta correr `072_carpeta_oculta.sql` en Supabase (ver sección 137) para que ocultar/mostrar cartas de una carpeta funcione en producción -- el link público de la carpeta y los exports CSV/Excel/PDF no dependen de esta migración y ya funcionan sin ella.

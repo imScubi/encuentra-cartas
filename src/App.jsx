@@ -4455,6 +4455,9 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   const [seleccionadas, setSeleccionadas] = useState(new Set());
   const [duplicando, setDuplicando] = useState(false);
   const [borrandoSeleccion, setBorrandoSeleccion] = useState(false);
+  const [ocultando, setOcultando] = useState(false);
+  const [exportandoExcel, setExportandoExcel] = useState(false);
+  const [exportandoPdf, setExportandoPdf] = useState(false);
   const [editandoUbicacion, setEditandoUbicacion] = useState(false);
   const [zonaEdit, setZonaEdit] = useState("");
   const [envioEdit, setEnvioEdit] = useState(false);
@@ -4537,6 +4540,91 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
       cargarCards(carpetaAbierta.id);
       onPublicado?.();
     } catch (e) { setError(e.message); } finally { setBorrandoSeleccion(false); }
+  };
+
+  // Ocultar: distinto de "en_venta" (exhibición) -- una carta oculta no
+  // aparece en ningún lado público (ni el link de la carpeta ni la
+  // vitrina del perfil/tienda), pero el dueño la sigue viendo en su
+  // panel para poder mostrarla de nuevo cuando quiera.
+  const ocultarSeleccionadas = async (ocultar) => {
+    if (!seleccionadas.size) return;
+    setOcultando(true); setError(null);
+    try {
+      await sbWrite("PATCH", `${tabla}?id=in.(${[...seleccionadas].join(",")})`, { oculta: ocultar }, session);
+      setSeleccionadas(new Set());
+      cargarCards(carpetaAbierta.id);
+    } catch (e) { setError(e.message); } finally { setOcultando(false); }
+  };
+
+  // ---- Exportar el contenido de una carpeta (CSV/Excel/PDF), desde el
+  // propio panel del dueño -- usa cardsCarpeta, ya cargado al abrir la
+  // carpeta, sin pedir nada nuevo a la BD. ----
+  const filaExportable = (item) => ({
+    Nombre: item.carta || item.producto || "",
+    Set: item.set_nombre || "",
+    Precio: item.precio ?? "",
+    "Precio antes": item.precio_antes ?? "",
+    Cantidad: item.cantidad ?? "",
+    Condición: item.condicion || "",
+    Idioma: item.idioma || "",
+    Estado: item.oculta ? "Oculta" : item.en_venta === false ? "Exhibición" : "En venta",
+  });
+
+  const exportarCSV = (carpeta, cards) => {
+    if (!cards.length) return;
+    const filas = cards.map(filaExportable);
+    const columnas = Object.keys(filas[0]);
+    const escapar = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [columnas.join(","), ...filas.map((f) => columnas.map((c) => escapar(f[c])).join(","))].join("\n");
+    const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(carpeta.nombre || "carpeta").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportarExcel = async (carpeta, cards) => {
+    if (!cards.length) return;
+    setExportandoExcel(true); setError(null);
+    try {
+      const XLSX = await import("xlsx");
+      const hoja = XLSX.utils.json_to_sheet(cards.map(filaExportable));
+      const libro = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(libro, hoja, "Cartas");
+      XLSX.writeFile(libro, `${(carpeta.nombre || "carpeta").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.xlsx`);
+    } catch (e) { setError("No se pudo generar el Excel: " + e.message); } finally { setExportandoExcel(false); }
+  };
+
+  const exportarPDF = async (carpeta, cards) => {
+    if (!cards.length) return;
+    setExportandoPdf(true); setError(null);
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF();
+      const margen = 14;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      let y = 20;
+      const saltoSiNecesario = (alto = 7) => { if (y + alto > pageHeight - 16) { doc.addPage(); y = 20; } };
+
+      doc.setFontSize(16); doc.setTextColor(20);
+      doc.text(carpeta.nombre || "Carpeta", margen, y); y += 10;
+      doc.setFontSize(9); doc.setTextColor(110);
+      doc.text("Nombre", margen, y); doc.text("Set", margen + 65, y); doc.text("Precio", margen + 120, y); doc.text("Estado", pageWidth - margen, y, { align: "right" });
+      y += 2; doc.line(margen, y, pageWidth - margen, y); y += 5;
+      doc.setTextColor(20);
+      cards.map(filaExportable).forEach((f) => {
+        saltoSiNecesario();
+        doc.text(String(f.Nombre).slice(0, 32), margen, y);
+        doc.text(String(f.Set).slice(0, 24), margen + 65, y);
+        doc.text(f.Precio !== "" ? `$${f.Precio}` : "", margen + 120, y);
+        doc.text(f.Estado, pageWidth - margen, y, { align: "right" });
+        y += 6;
+      });
+      doc.save(`${(carpeta.nombre || "carpeta").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.pdf`);
+    } catch (e) { setError("No se pudo generar el PDF: " + e.message); } finally { setExportandoPdf(false); }
   };
 
   const guardarUbicacion = async () => {
@@ -4899,7 +4987,10 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
                   <p style={{ color: COLORS.muted }} className="text-xs">{carpetaAbierta.columnas || 4}×{carpetaAbierta.filas || 3} por página</p>
                 </div>
               </div>
-              <button onClick={() => setCarpetaAbierta(null)} style={{ color: COLORS.muted }} className="text-sm shrink-0">✕ Cerrar</button>
+              <div className="flex items-center gap-2 shrink-0">
+                <CopiarLinkBoton param="carpeta" slug={carpetaAbierta.id} />
+                <button onClick={() => setCarpetaAbierta(null)} style={{ color: COLORS.muted }} className="text-sm">✕ Cerrar</button>
+              </div>
             </div>
 
             {error && <ErrorBox message={error} />}
@@ -5002,29 +5093,56 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
             <div>
               <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                 <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold">Cartas en esta carpeta ({cardsCarpeta.length})</p>
-                {seleccionadas.size > 0 && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span style={{ color: COLORS.muted }} className="text-xs">{seleccionadas.size} seleccionada{seleccionadas.size === 1 ? "" : "s"}</span>
-                    <button onClick={duplicarSeleccionadas} disabled={duplicando}
-                      style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
-                      {duplicando ? "Duplicando..." : "Duplicar"}
-                    </button>
-                    <button onClick={borrarSeleccionadas} disabled={borrandoSeleccion}
-                      style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
-                      {borrandoSeleccion ? "Borrando..." : "Borrar"}
-                    </button>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button onClick={() => exportarCSV(carpetaAbierta, cardsCarpeta)} disabled={!cardsCarpeta.length}
+                    style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+                    ⬇ CSV
+                  </button>
+                  <button onClick={() => exportarExcel(carpetaAbierta, cardsCarpeta)} disabled={exportandoExcel || !cardsCarpeta.length}
+                    style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+                    {exportandoExcel ? "..." : "⬇ Excel"}
+                  </button>
+                  <button onClick={() => exportarPDF(carpetaAbierta, cardsCarpeta)} disabled={exportandoPdf || !cardsCarpeta.length}
+                    style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+                    {exportandoPdf ? "..." : "⬇ PDF"}
+                  </button>
+                </div>
               </div>
+              {seleccionadas.size > 0 && (
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                  <span style={{ color: COLORS.muted }} className="text-xs">{seleccionadas.size} seleccionada{seleccionadas.size === 1 ? "" : "s"}</span>
+                  <button onClick={duplicarSeleccionadas} disabled={duplicando}
+                    style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+                    {duplicando ? "Duplicando..." : "Duplicar"}
+                  </button>
+                  <button onClick={() => ocultarSeleccionadas(true)} disabled={ocultando}
+                    style={{ color: COLORS.violeta, border: `1px solid ${COLORS.violeta}55` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+                    {ocultando ? "..." : "👁️ Ocultar"}
+                  </button>
+                  <button onClick={() => ocultarSeleccionadas(false)} disabled={ocultando}
+                    style={{ color: COLORS.violeta, border: `1px solid ${COLORS.violeta}55` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+                    {ocultando ? "..." : "Mostrar"}
+                  </button>
+                  <button onClick={borrarSeleccionadas} disabled={borrandoSeleccion}
+                    style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+                    {borrandoSeleccion ? "Borrando..." : "Borrar"}
+                  </button>
+                </div>
+              )}
               {cargandoCards ? <Loading label="Cargando cartas..." /> : cardsCarpeta.length === 0 ? (
                 <p style={{ color: COLORS.muted }} className="text-sm">Esta carpeta todavía no tiene cartas.</p>
               ) : (
                 <div className="grid grid-cols-3 gap-2">
                   {cardsCarpeta.map((item) => (
-                    <label key={item.id} style={{ background: COLORS.bg, border: `1px solid ${seleccionadas.has(item.id) ? COLORS.azulPalido : COLORS.surface2}` }}
+                    <label key={item.id} style={{ background: COLORS.bg, border: `1px solid ${seleccionadas.has(item.id) ? COLORS.azulPalido : COLORS.surface2}`, opacity: item.oculta ? 0.55 : 1 }}
                       className="relative rounded-lg overflow-hidden cursor-pointer flex flex-col">
                       <input type="checkbox" checked={seleccionadas.has(item.id)} onChange={() => toggleSeleccionCarta(item.id)}
                         className="absolute top-1.5 left-1.5 z-10 w-4 h-4" />
+                      {item.oculta && (
+                        <span style={{ background: `${COLORS.violeta}dd`, color: "#fff" }} className="absolute top-1.5 right-1.5 z-10 rounded-full text-[9px] font-bold px-1.5 py-0.5">
+                          👁️ Oculta
+                        </span>
+                      )}
                       <div style={{ background: COLORS.surface2, aspectRatio: "3/4" }} className="flex items-center justify-center">
                         {miniaturaListing(item) ? (
                           <img src={miniaturaListing(item)} alt={item.carta || item.producto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
@@ -5059,8 +5177,11 @@ function CarpetasStorefront({ carpetas, items, tabla, onAbrirDetalle, colorAcent
   const [pagina, setPagina] = useState(1);
   const acento = colorAcento || COLORS.azulPalido;
 
+  // Las cartas ocultas (ver sección 137 de SUSCRIPCIONES.md) no deben
+  // aparecer en ninguna vitrina pública -- se filtran aquí para que
+  // ningún llamador tenga que acordarse de hacerlo.
   const conCartas = (carpetas || [])
-    .map((c) => ({ c, propias: items.filter((i) => i.carpeta_id === c.id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) }))
+    .map((c) => ({ c, propias: items.filter((i) => i.carpeta_id === c.id && !i.oculta).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) }))
     .filter((g) => g.propias.length > 0);
 
   if (conCartas.length === 0) return null;
@@ -5139,6 +5260,117 @@ function CarpetasStorefront({ carpetas, items, tabla, onAbrirDetalle, colorAcent
             style={{ color: pagina === totalPaginas ? COLORS.surface2 : COLORS.muted }} className="text-xs font-semibold flex items-center gap-1">
             Siguiente <ChevronRight size={14} />
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Carpeta pública: la página que abre el link compartido de una
+// carpeta (?carpeta=<id>), independiente del perfil/tienda completo --
+// se puede compartir y ver sola. Siempre carga el estado actual de la
+// base de datos al abrirse (sin WebSockets/Realtime): si el dueño oculta,
+// borra o marca vendida una carta desde su panel, cualquiera que abra o
+// recargue este link ya la ve reflejada. ----
+function CarpetaPublicaView({ carpetaId, onAbrirDetalle, onVerPerfil, onAbrirTienda, onVolver }) {
+  const [carpeta, setCarpeta] = useState(null);
+  const [dueno, setDueno] = useState(null);
+  const [esTienda, setEsTienda] = useState(false);
+  const [cards, setCards] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setLoading(true); setError(null);
+    sb(`carpetas?select=*&id=eq.${carpetaId}`)
+      .then(async (rows) => {
+        const c = rows[0];
+        if (!c) { setError("Esta carpeta ya no está disponible."); return; }
+        setCarpeta(c);
+        const tabla = c.tienda_id ? "inventario_tienda" : "mercado_listings";
+        setEsTienda(!!c.tienda_id);
+        const [duenoRows, cardsRows] = await Promise.all([
+          c.tienda_id
+            ? sb(`tiendas?select=id,nombre,slug,perfil_id,perfiles!perfil_id(avatar_url)&id=eq.${c.tienda_id}`)
+            : sb(`perfiles?select=id,nombre,slug,avatar_url&id=eq.${c.perfil_id}`),
+          sb(`${tabla}?select=*&carpeta_id=eq.${carpetaId}&oculta=eq.false&order=created_at.desc`),
+        ]);
+        setDueno(duenoRows[0] || null);
+        setCards(cardsRows);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [carpetaId]);
+
+  if (loading) return <Loading label="Cargando carpeta..." />;
+
+  if (error || !carpeta) {
+    return (
+      <div className="text-center py-16">
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">{error || "Esta carpeta ya no está disponible."}</p>
+        <button onClick={onVolver} style={{ color: COLORS.azulPalido }} className="text-sm font-semibold">← Volver a Inicio</button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button onClick={onVolver} style={{ color: COLORS.muted }} className="flex items-center gap-1 text-sm mb-6">
+        <ChevronLeft size={16} /> Volver
+      </button>
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-2xl overflow-hidden mb-6">
+        <div style={{ height: 140 }}><CarpetaCover color={carpeta.color} nombre={carpeta.nombre} /></div>
+        <div className="p-5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h1 style={{ fontFamily: "'Rye', serif" }} className="text-2xl font-bold">{carpeta.nombre}</h1>
+            {carpeta.tipo === "exhibicion" && <Badge color={COLORS.violeta}>🖼️ Exhibición</Badge>}
+          </div>
+          <p style={{ color: COLORS.muted }} className="text-sm mt-1">{cards.length} carta{cards.length === 1 ? "" : "s"}</p>
+          {dueno && (
+            <button onClick={() => (esTienda ? onAbrirTienda(dueno) : onVerPerfil(dueno.id))}
+              className="flex items-center gap-2 mt-4 hover:brightness-125">
+              <AvatarImg url={esTienda ? dueno.perfiles?.avatar_url : dueno.avatar_url} size={32} />
+              <p className="text-sm font-medium">{dueno.nombre}</p>
+              <ExternalLink size={13} color={COLORS.muted} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {cards.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">Esta carpeta todavía no tiene cartas para mostrar.</p>
+      ) : (
+        <div className="columns-2 sm:columns-3 lg:columns-4 gap-4">
+          {cards.map((item) => (
+            <button key={item.id} onClick={() => onAbrirDetalle(item.id, esTienda ? "inventario_tienda" : "mercado_listings")}
+              style={{ background: `${COLORS.surface2}99`, border: `1px solid ${COLORS.azulClaro}29` }}
+              className="text-left rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid w-full transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
+              <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
+                {miniaturaListing(item) ? (
+                  <img src={miniaturaListing(item)} alt={item.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                ) : (
+                  <Package size={40} color={COLORS.muted} />
+                )}
+              </div>
+              <div className="p-3 flex flex-col gap-1">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <IdiomaBadge idioma={item.idioma} />
+                  <EstadoCartaBadge condicion={item.condicion} />
+                  <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />
+                </div>
+                <p className="font-semibold text-sm leading-snug line-clamp-2">{item.carta}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs truncate">{item.set_nombre}</p>
+                <div className="mt-1">
+                  {item.en_venta === false ? (
+                    <Badge color={COLORS.violeta}>🖼️ Exhibición</Badge>
+                  ) : (
+                    <PrecioConOferta precio={item.precio} precioAntes={item.precio_antes} size="md" />
+                  )}
+                </div>
+              </div>
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -12793,6 +13025,7 @@ export default function EncuentraCartas() {
   const [selectedPerfilId, setSelectedPerfilId] = useState(null);
   const [selectedSorteoId, setSelectedSorteoId] = useState(null);
   const [selectedSubastaId, setSelectedSubastaId] = useState(null);
+  const [selectedCarpetaPublicaId, setSelectedCarpetaPublicaId] = useState(null);
   const [vistaAntesDePerfil, setVistaAntesDePerfil] = useState("search");
   const [vistaAntesLegal, setVistaAntesLegal] = useState("search");
   const irALegal = (id) => { setVistaAntesLegal(view); setView(id); };
@@ -13029,7 +13262,7 @@ export default function EncuentraCartas() {
   const actualizarUrlCompartible = (params) => {
     try {
       const u = new URL(window.location.href);
-      ["listing", "tabla", "u", "tienda", "sorteo", "ref", "subasta"].forEach((k) => u.searchParams.delete(k));
+      ["listing", "tabla", "u", "tienda", "sorteo", "ref", "subasta", "carpeta"].forEach((k) => u.searchParams.delete(k));
       Object.entries(params || {}).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
       window.history.pushState({}, "", u);
     } catch {}
@@ -13118,6 +13351,7 @@ export default function EncuentraCartas() {
     const sorteoId = params.get("sorteo");
     const refPerfilId = params.get("ref");
     const subastaId = params.get("subasta");
+    const carpetaId = params.get("carpeta");
     // Link de referido de un sorteo (?sorteo=X&ref=Y): se guarda para
     // acreditárselo a quien invitó en cuanto esta visita termine de
     // registrarse (ver handleAuthed) -- puede pasar varias pantallas
@@ -13142,8 +13376,17 @@ export default function EncuentraCartas() {
     } else if (subastaId) {
       setSelectedSubastaId(subastaId);
       setView("subastaDetalle");
+    } else if (carpetaId) {
+      setSelectedCarpetaPublicaId(carpetaId);
+      setView("carpetaPublica");
     }
   }, []);
+
+  const abrirCarpetaPublica = (id) => {
+    setSelectedCarpetaPublicaId(id);
+    setView("carpetaPublica");
+    actualizarUrlCompartible({ carpeta: id });
+  };
 
   const verTiendaDesdePerfil = (tiendaId) => {
     sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at,tiempo_respuesta_promedio_minutos,tiempo_respuesta_conteo),verificaciones_tienda(estado)&id=eq.${tiendaId}`)
@@ -14286,6 +14529,16 @@ export default function EncuentraCartas() {
               </>
             )}
           </div>
+        )}
+
+        {view === "carpetaPublica" && selectedCarpetaPublicaId && (
+          <CarpetaPublicaView
+            carpetaId={selectedCarpetaPublicaId}
+            onAbrirDetalle={abrirDetalle}
+            onVerPerfil={verPerfil}
+            onAbrirTienda={openStore}
+            onVolver={() => { setSelectedCarpetaPublicaId(null); setView("search"); actualizarUrlCompartible({}); }}
+          />
         )}
 
         {view === "perfilPublico" && selectedPerfilId && (
