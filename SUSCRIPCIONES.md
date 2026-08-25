@@ -4011,6 +4011,71 @@ ya tenía toda la app: las fotos nunca bloquean publicar, se pueden
 agregar después) -- el cambio es de claridad y descubribilidad, no de
 validación.
 
+## 129. Piloto: apitcg.com como último respaldo del buscador de cartas
+
+El dueño encontró una API key y pidió probar si convenía mudar el
+catálogo de cartas a un API nuevo, con la condición explícita de que nada
+de lo que ya funciona se rompiera. La key resultó ser de **apitcg.com**
+(no de Scrydex, que se había mencionado en la sección 128 -- se confirmó
+por descarte y con el spec OpenAPI real que mandó el dueño, ya que
+docs.apitcg.com/api.apitcg.com están bloqueados desde este sandbox y no se
+pudo probar la conexión en vivo desde aquí).
+
+apitcg.com es un solo API que cubre 16 TCG (Pokémon, Magic, Yu-Gi-Oh,
+Lorcana, One Piece, Riftbound y más) con un esquema consistente: cada
+"producto" (carta o sellado) trae imagen, atributos, y precio real de
+TCGplayer (`markets.tcgplayer.prices.market/mid/low`) en la misma
+respuesta. Autenticación simple (un solo header `x-api-key`, sin el
+"Team ID" aparte que sí pedía Scrydex) y cuenta gratis para conseguir la
+key. A diferencia de pokemontcg.io/Scryfall/YGOPRODeck/lorcana-api (todas
+sin llave o con llave opcional, llamadas directas desde el navegador),
+esta key hay que mantenerla en secreto de verdad -- por eso NO se llama
+directo desde `pokemonApi.js` como las demás.
+
+**Qué se implementó** (piloto, no reemplazo):
+
+- `api/tcgcsv.js` gana un tercer modo `fuente=apitcg`: reenvía la petición
+  a `https://api.apitcg.com/{path}` mandando la key desde el servidor
+  (`process.env.APITCG_API_KEY`, nunca una variable `VITE_...` -- esas sí
+  quedan visibles en el bundle que le llega al navegador). Vive en el
+  mismo archivo que ya multiplexaba Shopify y el experimento de Wikidex,
+  para no pasar del límite de 12 funciones serverless del plan Hobby.
+- `lib/pokemonApi.js`: `buscarCartasVisualApiTCG()` llama a ese proxy y
+  traduce la respuesta al mismo formato interno que ya usan las demás
+  fuentes. `buscarCartasCatalogo()` (el despachador que usa `CardPicker`
+  al publicar) ahora la prueba como **último recurso**, después de la
+  fuente principal de cada TCG (y, en Pokémon, después de TCGdex también)
+  -- nunca antes, nunca en vez de. También se activa si la fuente
+  principal falló de plano (no solo si volvió vacía), así una caída
+  momentánea de Scryfall/pokemontcg.io/YGOPRODeck/lorcana-api ya no se ve
+  igual que "no se pudo conectar" si apitcg.com sí responde.
+- Si `APITCG_API_KEY` no está configurada en Vercel, o si apitcg.com
+  falla, todo se degrada en silencio a como estaba antes -- ningún camino
+  existente cambió de comportamiento.
+
+**Pendiente, que solo puede hacer el dueño:**
+
+1. Confirmar que la key es válida y suya (creada en apitcg.com/register).
+2. Ponerla en Vercel → Settings → Environment Variables como
+   `APITCG_API_KEY` (Production **y** Preview), sin el prefijo `VITE_`.
+   No se pudo hacer desde aquí: la sesión de Claude Code no tenía en ese
+   momento acceso a las herramientas de Vercel para leer/escribir
+   variables de entorno.
+3. Volver a desplegar (o esperar al siguiente push) y probar buscando algo
+   que hoy falle en las demás fuentes (ej. una promo "First Partner", ver
+   sección 128) para confirmar que de verdad está respondiendo.
+
+**Qué NO se hizo todavía** (a propósito, para no arriesgar nada de golpe):
+no se cambió el orden de ninguna fuente existente, no se agregó Riftbound
+ni ningún TCG nuevo a `TCG_OPCIONES` (agregar un TCG completo implica
+mucho más que tener sus datos: formularios, filtros, validaciones en toda
+la app), y no se tocó la vista "Catálogo" (era → set → cartas) ni el
+producto sellado (`TCGplayerPicker`/TCGCSV). Si después de probar el
+piloto funciona bien, la migración completa (volverla la fuente principal,
+o reemplazar TCGCSV/pokemontcg.io/Scryfall/YGOPRODeck/lorcana-api por
+completo) sería el siguiente paso a decidir -- no se intentó en esta
+pasada por no poder validar nada en vivo desde este sandbox.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -4024,3 +4089,4 @@ validación.
 - Extender el color de acento y la biografía a la página de detalle de tienda del Mercado (hoy solo aplica en "Perfil público").
 - La vista "Catálogo" (era → set → cartas) de Pokémon sigue sin respaldo de TCGdex -- solo se agregó al buscador de publicar (ver sección 128). Un set nuevo puede tardar en aparecer ahí aunque ya se pueda publicar con él a mano.
 - Evaluar migrar de pokemontcg.io (ahora legado, sin cartas/sets nuevos) a Scrydex (su sucesor oficial, de paga) si el catálogo automático se empieza a sentir viejo de verdad -- ver sección 128.
+- Falta poner `APITCG_API_KEY` en Vercel y confirmar que el piloto de apitcg.com funciona de verdad en producción (ver sección 129) -- y, si funciona bien, decidir si conviene volverla la fuente principal o migrar todo el catálogo (incluido producto sellado/TCGCSV) a ella.

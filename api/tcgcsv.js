@@ -3,12 +3,13 @@
 // que el navegador le pregunte directamente (política de seguridad de ellos, no nuestra).
 //
 // También atiende `fuente=shopify` (importar el catálogo de la tienda
-// Shopify PROPIA de un vendedor, ver ImportadorShopify en App.jsx) -- vive
-// en el mismo archivo por el límite de 12 funciones serverless del plan
-// Hobby de Vercel (ya estaba al tope, igual que la moderación de fotos de
-// la sección 74). El servidor arma la URL final a partir de un origen y
-// una colección por separado (nunca una ruta libre que mande el cliente)
-// para no abrir un proxy genérico hacia cualquier URL.
+// Shopify PROPIA de un vendedor, ver ImportadorShopify en App.jsx) y
+// `fuente=apitcg` (ver más abajo) -- todo vive en el mismo archivo por el
+// límite de 12 funciones serverless del plan Hobby de Vercel (ya estaba al
+// tope, igual que la moderación de fotos de la sección 74). El servidor
+// arma la URL final a partir de un origen y una colección por separado
+// (nunca una ruta libre que mande el cliente) para no abrir un proxy
+// genérico hacia cualquier URL.
 const HOSTNAMES_BLOQUEADOS = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/i;
 
 function origenValido(origin) {
@@ -90,12 +91,47 @@ async function importarShopify(req, res) {
   }
 }
 
+// Respaldo experimental para el catálogo de cartas (ver sección 129 de
+// SUSCRIPCIONES.md): apitcg.com cubre los mismos TCG que ya tenemos (y
+// varios más, incluido Riftbound) con un solo esquema consistente, imagen +
+// precio real de TCGplayer en la misma respuesta. A diferencia de
+// pokemontcg.io/TCGdex (llamadas directas desde el navegador, sin llave
+// secreta), esta sí es una llave de verdad que hay que mantener en secreto
+// -- por eso pasa por aquí (el server la manda en `x-api-key`) en vez de
+// llamarse directo desde pokemonApi.js como las demás. La llave vive en la
+// variable de entorno APITCG_API_KEY (Vercel → Settings → Environment
+// Variables), nunca en el código ni en una variable VITE_ (esas sí quedan
+// visibles en el bundle que le llega al navegador).
+async function apitcgProxy(req, res) {
+  const { path } = req.query;
+  if (!path || !/^api\//.test(String(path))) {
+    return res.status(400).json({ error: "Ruta inválida para API TCG." });
+  }
+  const apiKey = process.env.APITCG_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: "API TCG todavía no está configurada en el servidor." });
+  }
+  try {
+    const upstream = await fetch(`https://api.apitcg.com/${path}`, {
+      headers: { "x-api-key": apiKey, "User-Agent": "EncuentraCartas/1.0 (app de tiendas de TCG Monterrey)" },
+    });
+    const data = await upstream.json().catch(() => null);
+    res.setHeader("Cache-Control", "s-maxage=1800, stale-while-revalidate=86400");
+    res.status(upstream.status).json(data ?? { error: "Respuesta inválida de API TCG." });
+  } catch (e) {
+    res.status(500).json({ error: "No se pudo conectar con API TCG." });
+  }
+}
+
 export default async function handler(req, res) {
   if (req.query.fuente === "shopify") {
     return importarShopify(req, res);
   }
   if (req.query.fuente === "wikidex") {
     return wikidexProxy(req, res);
+  }
+  if (req.query.fuente === "apitcg") {
+    return apitcgProxy(req, res);
   }
 
   const { path } = req.query;
