@@ -871,15 +871,65 @@ function mapearProductoApiTCG(p) {
   };
 }
 
+async function pedirProductosApiTCG(query, signal) {
+  const path = `api/products?${query}`;
+  const res = await fetch(`/api/tcgcsv?fuente=apitcg&path=${encodeURIComponent(path)}`, { signal });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data?.data || []).map(mapearProductoApiTCG);
+}
+
+// Lista de sets de un TCG en apitcg.com -- se cachea en memoria (casi no
+// cambia en lo que dura la sesión). Se pide ordenada por fecha de salida
+// descendente y hasta 100 (el máximo que permite `limit`) para que un set
+// recién anunciado (ej. "First Partner", 2026) quede dentro de esa primera
+// página aunque el TCG tenga cientos de sets en total -- alfabético
+// (el orden por default) lo hubiera dejado fuera.
+const _apitcgSetsCache = {};
+async function obtenerSetsApiTCG(slug, signal) {
+  if (_apitcgSetsCache[slug]) return _apitcgSetsCache[slug];
+  try {
+    const path = `api/${slug}/sets?${new URLSearchParams({ sortBy: "release_date", sortOrder: "desc", limit: "100" })}`;
+    const res = await fetch(`/api/tcgcsv?fuente=apitcg&path=${encodeURIComponent(path)}`, { signal });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const sets = data?.data || [];
+    _apitcgSetsCache[slug] = sets;
+    return sets;
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return [];
+  }
+}
+
+// Busca por nombre de carta primero (ej. "Charmander") -- si no trae nada,
+// prueba tratando el texto como el nombre de un SET/colección (ej. "First
+// Partner"): apitcg.com no tiene un filtro de nombre de set, así que se
+// busca en la lista de sets ya cacheada y, si hay coincidencia, se piden
+// las cartas de ese set. Cubre los dos hábitos de búsqueda que ya soporta
+// el resto de la app (nombre de carta, o carta + set juntos).
 async function buscarCartasVisualApiTCG(tcg, texto, limite, signal) {
   const slug = TCG_SLUG_APITCG[tcg];
   if (!slug) return [];
   try {
-    const path = `api/products?${new URLSearchParams({ tcg: slug, type: "card", name: texto, limit: String(limite) })}`;
-    const res = await fetch(`/api/tcgcsv?fuente=apitcg&path=${encodeURIComponent(path)}`, { signal });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data?.data || []).map(mapearProductoApiTCG);
+    const porNombre = await pedirProductosApiTCG(
+      new URLSearchParams({ tcg: slug, type: "card", name: texto, limit: String(limite) }),
+      signal
+    );
+    if (porNombre.length > 0) return porNombre;
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+  }
+
+  try {
+    const sets = await obtenerSetsApiTCG(slug, signal);
+    const textoNorm = texto.trim().toLowerCase();
+    const setEncontrado = sets.find((s) => (s.name || "").toLowerCase().includes(textoNorm));
+    if (!setEncontrado) return [];
+    return await pedirProductosApiTCG(
+      new URLSearchParams({ tcg: slug, type: "card", set: setEncontrado._id, limit: String(limite) }),
+      signal
+    );
   } catch (e) {
     if (e?.name === "AbortError") throw e;
     return [];
@@ -898,31 +948,37 @@ async function buscarCartasVisualApiTCG(tcg, texto, limite, signal) {
 // mostrarle a quien está publicando el mensaje correcto en cada caso.
 // "signal" (opcional): CardPicker cancela la búsqueda anterior en cuanto
 // hay una nueva, para no dejar peticiones viejas compitiendo con la vigente.
+//
+// apitcg.com se prueba PRIMERO (ver sección 130 de SUSCRIPCIONES.md): ya
+// tiene la llave configurada en Vercel y, a diferencia de pokemontcg.io
+// (legado, ver sección 128), sí recibe cartas/sets nuevos -- buena parte
+// del motivo de este cambio fue que promos recién salidas (ej. "First
+// Partner") seguían sin aparecer aunque ya se había agregado como último
+// respaldo. Si no responde o no encuentra nada, se cae a la cadena de
+// siempre (pokemontcg.io+TCGdex en Pokémon, Scryfall, YGOPRODeck,
+// lorcana-api) sin que nadie note la diferencia -- esa cadena nunca se quitó.
 export async function buscarCartasCatalogo(tcg, texto, signal) {
   const clave = `${tcg}::${(texto || "").trim().toLowerCase()}`;
   const enCache = _cacheBusqueda.get(clave);
   if (enCache && Date.now() - enCache.ts < CACHE_BUSQUEDA_TTL_MS) return enCache.resultado;
 
-  let resultado = [];
+  let resultado = await buscarCartasVisualApiTCG(tcg, texto, tcg === "pokemon" ? 8 : 24, signal);
   let fuentePrincipalFallo = false;
-  try {
-    if (tcg === "magic") resultado = await buscarCartasMagic(texto, 24, signal);
-    else if (tcg === "pokemon") resultado = await buscarCartasVisual(texto, 8, signal);
-    else if (tcg === "yugioh") resultado = await buscarCartasYugioh(texto, 24, signal);
-    else if (tcg === "lorcana") resultado = await buscarCartasLorcana(texto, 24, signal);
-  } catch (e) {
-    if (e?.name === "AbortError") throw e;
-    fuentePrincipalFallo = true;
+
+  if (resultado.length === 0) {
+    try {
+      if (tcg === "magic") resultado = await buscarCartasMagic(texto, 24, signal);
+      else if (tcg === "pokemon") resultado = await buscarCartasVisual(texto, 8, signal);
+      else if (tcg === "yugioh") resultado = await buscarCartasYugioh(texto, 24, signal);
+      else if (tcg === "lorcana") resultado = await buscarCartasLorcana(texto, 24, signal);
+    } catch (e) {
+      if (e?.name === "AbortError") throw e;
+      fuentePrincipalFallo = true;
+    }
   }
 
-  // Se prueba apitcg.com tanto si la fuente principal no trajo nada como si
-  // de plano falló la conexión -- así una caída momentánea de Scryfall/
-  // pokemontcg.io/YGOPRODeck/lorcana-api ya no se traduce automáticamente
-  // en "no se pudo conectar" si apitcg.com sí responde.
-  if (resultado.length === 0) {
-    const deApiTCG = await buscarCartasVisualApiTCG(tcg, texto, 24, signal);
-    if (deApiTCG.length > 0) resultado = deApiTCG;
-    else if (fuentePrincipalFallo) throw new Error("No se pudo conectar con el catálogo. Intenta de nuevo en un momento.");
+  if (resultado.length === 0 && fuentePrincipalFallo) {
+    throw new Error("No se pudo conectar con el catálogo. Intenta de nuevo en un momento.");
   }
 
   if (_cacheBusqueda.size > 200) _cacheBusqueda.clear(); // tope simple, no hace falta ser precisos aquí
