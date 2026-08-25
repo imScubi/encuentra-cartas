@@ -4076,6 +4076,38 @@ o reemplazar TCGCSV/pokemontcg.io/Scryfall/YGOPRODeck/lorcana-api por
 completo) sería el siguiente paso a decidir -- no se intentó en esta
 pasada por no poder validar nada en vivo desde este sandbox.
 
+## 130. apitcg.com pasa a ser la primera fuente (ya no la última)
+
+El dueño ya puso `APITCG_API_KEY` en Vercel y probó buscando "First
+Partner" -- seguía sin aparecer nada, y pidió que apitcg.com se probara
+**primero** en vez de al final. Dos cambios:
+
+1. **Orden invertido en `buscarCartasCatalogo`**: ahora apitcg.com se
+   prueba primero para los 4 TCG con catálogo (Pokémon, Magic, Yu-Gi-Oh,
+   Lorcana); si no responde o no encuentra nada, recién ahí se cae a la
+   cadena de siempre (pokemontcg.io+TCGdex, Scryfall, YGOPRODeck,
+   lorcana-api), que no se quitó ni se modificó -- sigue siendo el
+   respaldo si apitcg.com falla o se queda sin cupo.
+2. **Buscar por nombre de SET, no solo de carta**: "First Partner" es el
+   nombre de la colección/set, no el de ninguna carta individual (las
+   cartas se llaman "Charmander", "Squirtle", etc.) -- el filtro
+   `?name=` de apitcg.com busca por nombre de PRODUCTO, así que buscar
+   literal "First Partner" ahí nunca iba a encontrar nada, sin importar
+   qué tan al día esté su catálogo. Se agregó un segundo intento
+   (`buscarCartasVisualApiTCG` en `lib/pokemonApi.js`): si la búsqueda por
+   nombre de carta no trae nada, se busca el texto contra la lista de
+   sets del TCG (`GET /api/{tcg}/sets`, cacheada en memoria, pedida
+   ordenada por fecha de salida descendente para que un set recién
+   anunciado quede en los primeros 100 aunque el TCG tenga cientos en
+   total) y, si hay coincidencia, se traen las cartas de ese set.
+
+Sigue sin poder probarse en vivo desde este sandbox (api.apitcg.com y
+encuentracartasmx.com están bloqueados aquí) -- el push que trae este
+cambio también sirve como el redeploy que hace falta para que Vercel
+recoja la variable de entorno nueva, así que después de este push es buen
+momento para volver a probar "First Partner" (o cualquier carta del set)
+en producción.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
