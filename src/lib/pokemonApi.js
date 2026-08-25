@@ -950,12 +950,19 @@ async function buscarCartasVisualApiTCG(tcg, texto, limite, signal) {
   try {
     const sets = await obtenerSetsApiTCG(slug, signal);
     const textoNorm = texto.trim().toLowerCase();
-    const setEncontrado = sets.find((s) => (s.name || "").toLowerCase().includes(textoNorm));
-    if (!setEncontrado) return [];
-    return await pedirProductosApiTCG(
-      new URLSearchParams({ tcg: slug, type: "card", set: setEncontrado._id, limit: String(limite) }),
-      signal
+    // Puede haber más de un set con nombres parecidos (ej. "First Partner
+    // Pack" y "First Partner Collection 2026" son sets distintos, ambos
+    // contienen "first partner") -- se buscan cartas en varios a la vez
+    // (hasta 3) en vez de quedarse solo con el primero que haga match, para
+    // no perder al que sí traía la carta buscada.
+    const setsEncontrados = sets.filter((s) => (s.name || "").toLowerCase().includes(textoNorm)).slice(0, 3);
+    if (setsEncontrados.length === 0) return [];
+    const porSet = await Promise.all(
+      setsEncontrados.map((s) =>
+        pedirProductosApiTCG(new URLSearchParams({ tcg: slug, type: "card", set: s._id, limit: String(limite) }), signal)
+      )
     );
+    return porSet.flat().slice(0, limite);
   } catch (e) {
     if (e?.name === "AbortError") throw e;
     return [];
