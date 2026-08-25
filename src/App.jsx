@@ -5,7 +5,7 @@ import {
   User, Megaphone, Newspaper, ShoppingBag, ShoppingCart, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
   ArrowUp, ArrowDown, Navigation, ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
-  Gift, Gavel,
+  Gift, Gavel, Download,
 } from "./lib/icons.jsx";
 import {
   VAPID_PUBLIC_KEY,
@@ -7000,6 +7000,828 @@ function ArmarMazoSection({ session, perfil, onAbrirChat, onVerTienda, onIrAPlan
   );
 }
 
+// ---- Modo Evento (Amatista+): control de ventas/costos/gastos para
+// vendedores que venden en un evento presencial (expo, torneo, bazar). Cada
+// evento junta el inventario que se llevan (a mano o importado de su
+// perfil/tienda, organizado en "carpetas" -- cajas o categorías del
+// evento), lo que van vendiendo (con costo real y precio de venta, que
+// puede diferir del precio de lista por regateo) y sus gastos operativos
+// (cede, comida, transporte). El cálculo de ganancia y el desglose por día
+// se hacen en el cliente con esos datos -- no hace falta ninguna función
+// serverless nueva (ya estamos en el límite de 12 del plan Hobby).
+const TIPO_GASTO_EVENTO_OPCIONES = [
+  { key: "cede", label: "Cede / mesa" },
+  { key: "comida", label: "Comida" },
+  { key: "transporte", label: "Transporte" },
+  { key: "otro", label: "Otro" },
+];
+const TIPO_GASTO_EVENTO_LABEL = Object.fromEntries(TIPO_GASTO_EVENTO_OPCIONES.map((o) => [o.key, o.label]));
+const fmtMoneyEvento = (n) => `$${Number(n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const hoyISO = () => new Date().toISOString().slice(0, 10);
+
+function ModoEventoView({ session, perfil, onIrAPlanes }) {
+  const info = planDe(perfil);
+  const [eventos, setEventos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [eventoAbiertoId, setEventoAbiertoId] = useState(null);
+  const [mostrarNuevo, setMostrarNuevo] = useState(false);
+  const [nuevo, setNuevo] = useState({ nombre: "", lugar: "", fecha_inicio: hoyISO(), fecha_fin: "" });
+  const [creando, setCreando] = useState(false);
+
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`eventos?select=*&perfil_id=eq.${session.user.id}&order=fecha_inicio.desc`, session)
+      .then(setEventos)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { if (info.modoEvento) cargar(); }, []);
+
+  if (!info.modoEvento) {
+    return (
+      <div>
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold mb-6">🎪 Modo Evento</h2>
+        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
+          Lleva el control de tus ventas en un evento presencial: qué te costó cada pieza, en cuánto la vendiste, tus gastos del día (cede, comida, transporte) y tu ganancia en tiempo real -- con reporte final en PDF.
+        </UpsellCard>
+      </div>
+    );
+  }
+
+  const crear = async () => {
+    if (!nuevo.nombre.trim() || !nuevo.fecha_inicio) { setError("Ponle un nombre y una fecha de inicio al evento."); return; }
+    setCreando(true); setError(null);
+    try {
+      const [fila] = await sbWrite("POST", "eventos", {
+        perfil_id: session.user.id,
+        nombre: nuevo.nombre.trim(),
+        lugar: nuevo.lugar.trim() || null,
+        fecha_inicio: nuevo.fecha_inicio,
+        fecha_fin: nuevo.fecha_fin || null,
+      }, session);
+      setEventos((e) => [fila, ...e]);
+      setNuevo({ nombre: "", lugar: "", fecha_inicio: hoyISO(), fecha_fin: "" });
+      setMostrarNuevo(false);
+      setEventoAbiertoId(fila.id);
+    } catch (e) { setError(e.message); } finally { setCreando(false); }
+  };
+
+  if (eventoAbiertoId) {
+    const evento = eventos.find((e) => e.id === eventoAbiertoId);
+    if (evento) {
+      return (
+        <EventoDetalle
+          session={session} perfil={perfil} evento={evento}
+          onVolver={() => setEventoAbiertoId(null)}
+          onEventoActualizado={(patch) => setEventos((es) => es.map((e) => (e.id === evento.id ? { ...e, ...patch } : e)))}
+          onEventoBorrado={() => { setEventos((es) => es.filter((e) => e.id !== evento.id)); setEventoAbiertoId(null); }}
+        />
+      );
+    }
+  }
+
+  if (loading) return <Loading label="Cargando tus eventos..." />;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">🎪 Modo Evento</h2>
+        <button onClick={() => setMostrarNuevo((v) => !v)} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+          {mostrarNuevo ? "Cancelar" : "+ Nuevo evento"}
+        </button>
+      </div>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Registra cada evento donde vendas en persona: importa tu inventario, marca lo que vayas vendiendo con su costo real, anota tus gastos del día y mira tu ganancia en vivo.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {mostrarNuevo && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-xl p-4 mb-6 grid gap-2 sm:grid-cols-2">
+          <input placeholder="Nombre del evento (ej. Expo TCG Monterrey)" value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm sm:col-span-2" />
+          <input placeholder="Lugar (opcional)" value={nuevo.lugar} onChange={(e) => setNuevo({ ...nuevo, lugar: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm sm:col-span-2" />
+          <label className="text-xs" style={{ color: COLORS.muted }}>
+            Fecha de inicio
+            <input type="date" value={nuevo.fecha_inicio} onChange={(e) => setNuevo({ ...nuevo, fecha_inicio: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+          </label>
+          <label className="text-xs" style={{ color: COLORS.muted }}>
+            Fecha de fin (opcional, si dura varios días)
+            <input type="date" value={nuevo.fecha_fin} onChange={(e) => setNuevo({ ...nuevo, fecha_fin: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+          </label>
+          <button onClick={crear} disabled={creando} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-2 w-fit px-4">
+            {creando ? "Creando..." : "Crear evento"}
+          </button>
+        </div>
+      )}
+
+      {eventos.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Todavía no registras ningún evento. Crea el primero arriba.</p>
+      ) : (
+        <div className="grid gap-2">
+          {eventos.map((ev) => (
+            <button key={ev.id} onClick={() => setEventoAbiertoId(ev.id)} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 text-left flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="font-semibold">{ev.nombre}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs mt-0.5">
+                  {new Date(ev.fecha_inicio + "T00:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
+                  {ev.fecha_fin && ev.fecha_fin !== ev.fecha_inicio ? ` – ${new Date(ev.fecha_fin + "T00:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}` : ""}
+                  {ev.lugar ? ` · ${ev.lugar}` : ""}
+                </p>
+              </div>
+              <Badge color={ev.estado === "cerrado" ? COLORS.muted : COLORS.azulPalido}>{ev.estado === "cerrado" ? "Cerrado" : "Activo"}</Badge>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado, onEventoBorrado }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [ventas, setVentas] = useState([]);
+  const [gastos, setGastos] = useState([]);
+  const [loadingDetalle, setLoadingDetalle] = useState(true);
+  const [errorDetalle, setErrorDetalle] = useState(null);
+  const [okDetalle, setOkDetalle] = useState(null);
+
+  const cargarDetalle = () => {
+    setLoadingDetalle(true); setErrorDetalle(null);
+    Promise.all([
+      sb(`evento_ventas?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session).then(setVentas),
+      sb(`evento_gastos?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session).then(setGastos),
+    ]).catch((e) => setErrorDetalle(e.message)).finally(() => setLoadingDetalle(false));
+  };
+  useEffect(() => { cargarDetalle(); }, [evento.id]);
+
+  const resumen = useMemo(() => {
+    const vendidas = ventas.filter((v) => v.vendida);
+    const pendientes = ventas.filter((v) => !v.vendida);
+    const ingresos = vendidas.reduce((s, v) => s + Number(v.precio_venta || 0) * v.cantidad, 0);
+    const costoVendido = vendidas.reduce((s, v) => s + Number(v.costo || 0) * v.cantidad, 0);
+    const gastosTotal = gastos.reduce((s, g) => s + Number(g.monto || 0), 0);
+    const gananciaNeta = ingresos - costoVendido - gastosTotal;
+    const valorRestante = pendientes.reduce((s, v) => s + Number(v.costo || 0) * v.cantidad, 0);
+    const piezasVendidas = vendidas.reduce((s, v) => s + v.cantidad, 0);
+    return { vendidas, pendientes, ingresos, costoVendido, gastosTotal, gananciaNeta, valorRestante, piezasVendidas };
+  }, [ventas, gastos]);
+
+  const porDia = useMemo(() => {
+    const mapa = {};
+    resumen.vendidas.forEach((v) => {
+      const k = v.dia;
+      mapa[k] = mapa[k] || { dia: k, ingresos: 0, costo: 0, gastos: 0 };
+      mapa[k].ingresos += Number(v.precio_venta || 0) * v.cantidad;
+      mapa[k].costo += Number(v.costo || 0) * v.cantidad;
+    });
+    gastos.forEach((g) => {
+      const k = g.dia || "Sin fecha";
+      mapa[k] = mapa[k] || { dia: k, ingresos: 0, costo: 0, gastos: 0 };
+      mapa[k].gastos += Number(g.monto || 0);
+    });
+    return Object.values(mapa).sort((a, b) => String(a.dia).localeCompare(String(b.dia)));
+  }, [resumen.vendidas, gastos]);
+
+  const carpetasUsadas = useMemo(() => [...new Set(ventas.map((v) => v.carpeta).filter(Boolean))], [ventas]);
+
+  const fmtDia = (d) => (!d || d === "Sin fecha" ? "Sin fecha" : new Date(d + "T00:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" }));
+
+  // ---- Cerrar/reabrir/borrar el evento ----
+  const [cambiandoEstado, setCambiandoEstado] = useState(false);
+  const cambiarEstado = async () => {
+    setCambiandoEstado(true); setErrorDetalle(null);
+    try {
+      const nuevoEstado = evento.estado === "cerrado" ? "activo" : "cerrado";
+      await sbWrite("PATCH", `eventos?id=eq.${evento.id}`, { estado: nuevoEstado }, session);
+      onEventoActualizado({ estado: nuevoEstado });
+    } catch (e) { setErrorDetalle(e.message); } finally { setCambiandoEstado(false); }
+  };
+  const borrarEvento = async () => {
+    if (!window.confirm(`¿Borrar el evento "${evento.nombre}"? Se borran también todas sus ventas y gastos registrados. Esto no se puede deshacer.`)) return;
+    try {
+      await sbWrite("DELETE", `eventos?id=eq.${evento.id}`, {}, session);
+      onEventoBorrado();
+    } catch (e) { setErrorDetalle(e.message); }
+  };
+
+  // ---- Importar inventario propio (perfil individual o tienda(s)) ----
+  const [mostrarImportar, setMostrarImportar] = useState(false);
+  const [cargandoInventario, setCargandoInventario] = useState(false);
+  const [inventarioDisponible, setInventarioDisponible] = useState(null);
+  const [buscarImportar, setBuscarImportar] = useState("");
+  const [seleccionados, setSeleccionados] = useState(new Set());
+  const [carpetaImportar, setCarpetaImportar] = useState("");
+  const [importando, setImportando] = useState(false);
+
+  const abrirImportar = async () => {
+    setMostrarImportar(true);
+    if (inventarioDisponible !== null || cargandoInventario) return;
+    setCargandoInventario(true); setErrorDetalle(null);
+    try {
+      let items = [];
+      if (perfil?.tipo === "individual") {
+        const filas = await sb(`mercado_listings?select=id,carta,precio,imagen_url&perfil_id=eq.${session.user.id}&en_venta=eq.true`, session);
+        items = filas.map((f) => ({ tabla: "mercado_listings", id: f.id, nombre: f.carta, precio: f.precio, imagen_url: f.imagen_url }));
+      } else if (perfil?.tipo === "tienda") {
+        const tiendas = await sb(`tiendas?select=id&perfil_id=eq.${session.user.id}`, session);
+        const ids = tiendas.map((t) => t.id);
+        if (ids.length) {
+          const filtro = `tienda_id=in.(${ids.join(",")})`;
+          const [inv, sell] = await Promise.all([
+            sb(`inventario_tienda?select=id,carta,precio,imagen_url&${filtro}&en_venta=eq.true`, session),
+            sb(`sellado_tienda?select=id,producto,precio,imagen_url&${filtro}`, session),
+          ]);
+          items = [
+            ...inv.map((f) => ({ tabla: "inventario_tienda", id: f.id, nombre: f.carta, precio: f.precio, imagen_url: f.imagen_url })),
+            ...sell.map((f) => ({ tabla: "sellado_tienda", id: f.id, nombre: f.producto, precio: f.precio, imagen_url: f.imagen_url })),
+          ];
+        }
+      }
+      setInventarioDisponible(items);
+    } catch (e) { setErrorDetalle(e.message); } finally { setCargandoInventario(false); }
+  };
+
+  const toggleSeleccionado = (clave) => {
+    setSeleccionados((s) => {
+      const copia = new Set(s);
+      if (copia.has(clave)) copia.delete(clave); else copia.add(clave);
+      return copia;
+    });
+  };
+
+  const inventarioFiltrado = (inventarioDisponible || []).filter((it) => !buscarImportar.trim() || it.nombre.toLowerCase().includes(buscarImportar.trim().toLowerCase()));
+  // Ya importado a este evento (mismo origen): no lo repetimos en la lista para evitar duplicados.
+  const yaImportados = useMemo(() => new Set(ventas.filter((v) => v.origen_tabla && v.origen_id).map((v) => `${v.origen_tabla}:${v.origen_id}`)), [ventas]);
+  const inventarioParaMostrar = inventarioFiltrado.filter((it) => !yaImportados.has(`${it.tabla}:${it.id}`));
+
+  const importarSeleccionados = async () => {
+    const items = inventarioParaMostrar.filter((it) => seleccionados.has(`${it.tabla}:${it.id}`));
+    if (items.length === 0) { setErrorDetalle("Elige al menos un producto para importar."); return; }
+    setImportando(true); setErrorDetalle(null);
+    try {
+      const filas = await sbWrite("POST", "evento_ventas", items.map((it) => ({
+        evento_id: evento.id,
+        nombre: it.nombre,
+        imagen_url: it.imagen_url || null,
+        origen_tabla: it.tabla,
+        origen_id: it.id,
+        carpeta: carpetaImportar.trim() || null,
+        costo: 0,
+        precio_lista: it.precio || null,
+        cantidad: 1,
+        vendida: false,
+      })), session);
+      setVentas((v) => [...filas, ...v]);
+      setSeleccionados(new Set());
+      setOkDetalle(`Se importaron ${filas.length} producto(s) a tu inventario del evento.`);
+    } catch (e) { setErrorDetalle(e.message); } finally { setImportando(false); }
+  };
+
+  // ---- Agregar venta manual (ya vendida en el momento, o pendiente por vender) ----
+  const [mostrarAgregar, setMostrarAgregar] = useState(false);
+  const [cartaManualAgregar, setCartaManualAgregar] = useState(false);
+  const [tcgAgregar, setTcgAgregar] = useState("pokemon");
+  const vacioAgregar = { nombre: "", imagen_url: "", carta_ref: null, costo: "", precio_venta: "", cantidad: "1", dia: hoyISO(), carpeta: "", vendidaYa: true };
+  const [nuevaVenta, setNuevaVenta] = useState(vacioAgregar);
+  const [guardandoVenta, setGuardandoVenta] = useState(false);
+
+  const agregarVenta = async () => {
+    if (!nuevaVenta.nombre.trim()) { setErrorDetalle("Ponle un nombre a la pieza."); return; }
+    if (nuevaVenta.vendidaYa && !nuevaVenta.precio_venta) { setErrorDetalle("Pon el precio en el que la vendiste."); return; }
+    setGuardandoVenta(true); setErrorDetalle(null);
+    try {
+      const [fila] = await sbWrite("POST", "evento_ventas", [{
+        evento_id: evento.id,
+        nombre: nuevaVenta.nombre.trim(),
+        imagen_url: nuevaVenta.imagen_url || null,
+        carta_ref: nuevaVenta.carta_ref,
+        costo: Number(nuevaVenta.costo) || 0,
+        precio_venta: nuevaVenta.vendidaYa ? Number(nuevaVenta.precio_venta) : null,
+        precio_lista: !nuevaVenta.vendidaYa && nuevaVenta.precio_venta ? Number(nuevaVenta.precio_venta) : null,
+        cantidad: Number(nuevaVenta.cantidad) || 1,
+        dia: nuevaVenta.vendidaYa ? (nuevaVenta.dia || hoyISO()) : hoyISO(),
+        carpeta: nuevaVenta.carpeta.trim() || null,
+        vendida: nuevaVenta.vendidaYa,
+      }], session);
+      setVentas((v) => [fila, ...v]);
+      setNuevaVenta(vacioAgregar);
+      setMostrarAgregar(false);
+    } catch (e) { setErrorDetalle(e.message); } finally { setGuardandoVenta(false); }
+  };
+
+  // ---- Editar / marcar vendida / borrar una fila de venta ----
+  const [editandoId, setEditandoId] = useState(null);
+  const [edit, setEdit] = useState(null);
+  const [guardandoEdit, setGuardandoEdit] = useState(false);
+
+  const abrirEdit = (v) => {
+    setEditandoId(v.id);
+    setEdit({
+      costo: String(v.costo ?? 0),
+      precio_venta: v.precio_venta != null ? String(v.precio_venta) : "",
+      cantidad: String(v.cantidad ?? 1),
+      dia: v.dia || hoyISO(),
+      carpeta: v.carpeta || "",
+      vendida: v.vendida,
+    });
+  };
+
+  const guardarEdit = async () => {
+    if (edit.vendida && !edit.precio_venta) { setErrorDetalle("Pon el precio en el que se vendió."); return; }
+    setGuardandoEdit(true); setErrorDetalle(null);
+    try {
+      const cambios = {
+        costo: Number(edit.costo) || 0,
+        cantidad: Number(edit.cantidad) || 1,
+        carpeta: edit.carpeta.trim() || null,
+        vendida: edit.vendida,
+        dia: edit.vendida ? (edit.dia || hoyISO()) : (ventas.find((v) => v.id === editandoId)?.dia || hoyISO()),
+        precio_venta: edit.vendida ? Number(edit.precio_venta) : null,
+      };
+      const [fila] = await sbWrite("PATCH", `evento_ventas?id=eq.${editandoId}`, cambios, session);
+      setVentas((vs) => vs.map((v) => (v.id === fila.id ? fila : v)));
+      setEditandoId(null); setEdit(null);
+    } catch (e) { setErrorDetalle(e.message); } finally { setGuardandoEdit(false); }
+  };
+
+  const borrarVenta = async (v) => {
+    if (!window.confirm(`¿Quitar "${v.nombre}" de este evento?`)) return;
+    try {
+      await sbWrite("DELETE", `evento_ventas?id=eq.${v.id}`, {}, session);
+      setVentas((vs) => vs.filter((x) => x.id !== v.id));
+    } catch (e) { setErrorDetalle(e.message); }
+  };
+
+  // ---- Gastos ----
+  const [mostrarGasto, setMostrarGasto] = useState(false);
+  const vacioGasto = { tipo: "cede", descripcion: "", monto: "", dia: hoyISO() };
+  const [nuevoGasto, setNuevoGasto] = useState(vacioGasto);
+  const [guardandoGasto, setGuardandoGasto] = useState(false);
+
+  const agregarGasto = async () => {
+    if (!nuevoGasto.monto || Number(nuevoGasto.monto) <= 0) { setErrorDetalle("Pon el monto del gasto."); return; }
+    setGuardandoGasto(true); setErrorDetalle(null);
+    try {
+      const [fila] = await sbWrite("POST", "evento_gastos", [{
+        evento_id: evento.id,
+        tipo: nuevoGasto.tipo,
+        descripcion: nuevoGasto.descripcion.trim() || null,
+        monto: Number(nuevoGasto.monto),
+        dia: nuevoGasto.dia || null,
+      }], session);
+      setGastos((g) => [fila, ...g]);
+      setNuevoGasto(vacioGasto);
+      setMostrarGasto(false);
+    } catch (e) { setErrorDetalle(e.message); } finally { setGuardandoGasto(false); }
+  };
+
+  const borrarGasto = async (g) => {
+    if (!window.confirm("¿Borrar este gasto?")) return;
+    try {
+      await sbWrite("DELETE", `evento_gastos?id=eq.${g.id}`, {}, session);
+      setGastos((gs) => gs.filter((x) => x.id !== g.id));
+    } catch (e) { setErrorDetalle(e.message); }
+  };
+
+  // ---- Reporte en PDF (jsPDF se carga solo al generar el reporte, para no
+  // engordar el bundle principal de todos los usuarios que no usan esto) ----
+  const [generandoPdf, setGenerandoPdf] = useState(false);
+  const generarPdf = async () => {
+    setGenerandoPdf(true); setErrorDetalle(null);
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF();
+      const margen = 14;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      let y = 20;
+      const saltoSiNecesario = (alto = 7) => { if (y + alto > pageHeight - 16) { doc.addPage(); y = 20; } };
+      const titulo = (t) => { saltoSiNecesario(12); doc.setFontSize(12); doc.setTextColor(20); doc.text(t, margen, y); y += 7; doc.setFontSize(9); };
+
+      doc.setFontSize(16); doc.setTextColor(20);
+      doc.text(evento.nombre, margen, y); y += 7;
+      doc.setFontSize(10); doc.setTextColor(110);
+      const fechasTxt = `${fmtDia(evento.fecha_inicio)}${evento.fecha_fin && evento.fecha_fin !== evento.fecha_inicio ? ` – ${fmtDia(evento.fecha_fin)}` : ""}${evento.lugar ? ` · ${evento.lugar}` : ""}`;
+      doc.text(fechasTxt, margen, y); y += 10;
+      doc.setTextColor(20);
+
+      titulo("Resumen");
+      [
+        ["Ingresos", fmtMoneyEvento(resumen.ingresos)],
+        ["Costo de mercancia vendida", fmtMoneyEvento(resumen.costoVendido)],
+        ["Gastos operativos", fmtMoneyEvento(resumen.gastosTotal)],
+        ["Ganancia neta", fmtMoneyEvento(resumen.gananciaNeta)],
+        ["Piezas vendidas", String(resumen.piezasVendidas)],
+        ["Inventario sin vender (valor a costo)", fmtMoneyEvento(resumen.valorRestante)],
+      ].forEach(([label, val]) => {
+        saltoSiNecesario();
+        doc.text(label, margen, y);
+        doc.text(val, pageWidth - margen, y, { align: "right" });
+        y += 6;
+      });
+      y += 4;
+
+      if (porDia.length) {
+        titulo("Desglose por dia");
+        doc.text("Dia", margen, y); doc.text("Ingresos", margen + 55, y); doc.text("Costo", margen + 95, y); doc.text("Gastos", margen + 130, y); doc.text("Ganancia", pageWidth - margen, y, { align: "right" });
+        y += 2; doc.line(margen, y, pageWidth - margen, y); y += 5;
+        porDia.forEach((d) => {
+          saltoSiNecesario();
+          const gananciaDia = d.ingresos - d.costo - d.gastos;
+          doc.text(fmtDia(d.dia), margen, y);
+          doc.text(fmtMoneyEvento(d.ingresos), margen + 55, y);
+          doc.text(fmtMoneyEvento(d.costo), margen + 95, y);
+          doc.text(fmtMoneyEvento(d.gastos), margen + 130, y);
+          doc.text(fmtMoneyEvento(gananciaDia), pageWidth - margen, y, { align: "right" });
+          y += 6;
+        });
+        y += 4;
+      }
+
+      if (gastos.length) {
+        titulo("Gastos");
+        gastos.forEach((g) => {
+          saltoSiNecesario();
+          doc.text(`${TIPO_GASTO_EVENTO_LABEL[g.tipo] || g.tipo}${g.descripcion ? ` - ${g.descripcion}` : ""}`, margen, y);
+          doc.text(fmtMoneyEvento(g.monto), pageWidth - margen, y, { align: "right" });
+          y += 6;
+        });
+        y += 4;
+      }
+
+      if (resumen.vendidas.length) {
+        titulo("Ventas");
+        resumen.vendidas.forEach((v) => {
+          saltoSiNecesario();
+          const ganancia = (Number(v.precio_venta || 0) - Number(v.costo || 0)) * v.cantidad;
+          doc.text(`${v.nombre}${v.cantidad > 1 ? ` x${v.cantidad}` : ""}`, margen, y);
+          doc.text(fmtMoneyEvento(Number(v.precio_venta || 0) * v.cantidad), margen + 110, y);
+          doc.text(fmtMoneyEvento(ganancia), pageWidth - margen, y, { align: "right" });
+          y += 6;
+        });
+        y += 4;
+      }
+
+      if (resumen.pendientes.length) {
+        titulo("Inventario sin vender");
+        resumen.pendientes.forEach((v) => {
+          saltoSiNecesario();
+          doc.text(`${v.nombre}${v.cantidad > 1 ? ` x${v.cantidad}` : ""}${v.carpeta ? ` (${v.carpeta})` : ""}`, margen, y);
+          doc.text(fmtMoneyEvento(Number(v.costo || 0) * v.cantidad), pageWidth - margen, y, { align: "right" });
+          y += 6;
+        });
+      }
+
+      doc.save(`${evento.nombre.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-reporte.pdf`);
+    } catch (e) {
+      setErrorDetalle("No se pudo generar el PDF: " + e.message);
+    } finally {
+      setGenerandoPdf(false);
+    }
+  };
+
+  if (loadingDetalle) return <Loading label="Cargando el evento..." />;
+
+  const statCard = (label, valor, color) => (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3">
+      <p style={{ color: COLORS.muted }} className="text-[11px] uppercase font-semibold">{label}</p>
+      <p style={{ color: color || COLORS.text, fontFamily: "'Space Mono', monospace" }} className="text-lg font-bold mt-0.5">{valor}</p>
+    </div>
+  );
+
+  return (
+    <div>
+      <button onClick={onVolver} style={{ color: COLORS.muted }} className="text-sm mb-3 flex items-center gap-1">
+        <ChevronLeft size={16} /> Todos mis eventos
+      </button>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif" }} className="text-xl font-bold">{evento.nombre}</h2>
+        <Badge color={evento.estado === "cerrado" ? COLORS.muted : COLORS.azulPalido}>{evento.estado === "cerrado" ? "Cerrado" : "Activo"}</Badge>
+      </div>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+        {fmtDia(evento.fecha_inicio)}{evento.fecha_fin && evento.fecha_fin !== evento.fecha_inicio ? ` – ${fmtDia(evento.fecha_fin)}` : ""}{evento.lugar ? ` · ${evento.lugar}` : ""}
+      </p>
+
+      <div className="flex items-center gap-2 flex-wrap mb-6">
+        <button onClick={generarPdf} disabled={generandoPdf} style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1.5">
+          <Download size={14} /> {generandoPdf ? "Generando..." : "Descargar reporte PDF"}
+        </button>
+        <button onClick={cambiarEstado} disabled={cambiandoEstado} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-3 py-2 text-xs font-semibold">
+          {evento.estado === "cerrado" ? "Reabrir evento" : "Cerrar evento"}
+        </button>
+        <button onClick={borrarEvento} style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1">
+          <Trash2 size={13} /> Borrar evento
+        </button>
+      </div>
+
+      {errorDetalle && <div className="mb-4"><ErrorBox message={errorDetalle} /></div>}
+      {okDetalle && <p style={{ color: COLORS.azulPalido }} className="text-sm mb-4">{okDetalle}</p>}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-8">
+        {statCard("Ingresos", fmtMoneyEvento(resumen.ingresos), COLORS.azulClaro)}
+        {statCard("Costo vendido", fmtMoneyEvento(resumen.costoVendido))}
+        {statCard("Gastos", fmtMoneyEvento(resumen.gastosTotal))}
+        {statCard("Ganancia neta", fmtMoneyEvento(resumen.gananciaNeta), resumen.gananciaNeta >= 0 ? "#5FD98A" : "#E27070")}
+        {statCard("Sin vender (a costo)", fmtMoneyEvento(resumen.valorRestante))}
+      </div>
+
+      {/* ---- Inventario del evento (pendiente de vender) ---- */}
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+        <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase">📦 Inventario del evento ({resumen.pendientes.length})</h3>
+        <div className="flex gap-2">
+          <button onClick={abrirImportar} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+            <Layers size={13} /> Importar de mi inventario
+          </button>
+          <button onClick={() => { setNuevaVenta({ ...vacioAgregar, vendidaYa: false }); setMostrarAgregar(true); }} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+            + Agregar a mano
+          </button>
+        </div>
+      </div>
+
+      {mostrarImportar && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-xl p-4 mb-4">
+          {cargandoInventario ? (
+            <p style={{ color: COLORS.muted }} className="text-sm">Cargando tu inventario...</p>
+          ) : inventarioParaMostrar.length === 0 ? (
+            <p style={{ color: COLORS.muted }} className="text-sm">No encontramos más publicaciones activas para importar (o ya las importaste todas).</p>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 flex-wrap mb-3">
+                <input placeholder="Buscar en tu inventario..." value={buscarImportar} onChange={(e) => setBuscarImportar(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[160px]" />
+                <input list="carpetas-evento-datalist" placeholder="Carpeta (opcional, ej. Caja 1)" value={carpetaImportar} onChange={(e) => setCarpetaImportar(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[160px]" />
+              </div>
+              <div className="grid gap-1.5 max-h-80 overflow-y-auto mb-3">
+                {inventarioParaMostrar.map((it) => {
+                  const clave = `${it.tabla}:${it.id}`;
+                  const marcado = seleccionados.has(clave);
+                  return (
+                    <label key={clave} style={{ background: marcado ? `${COLORS.azulClaro}18` : "transparent", border: `1px solid ${marcado ? COLORS.azulClaro : COLORS.surface2}` }} className="rounded-lg p-2 flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={marcado} onChange={() => toggleSeleccionado(clave)} />
+                      {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
+                      <span className="text-sm flex-1 truncate">{it.nombre}</span>
+                      {it.precio != null && <span style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">${Number(it.precio).toLocaleString("es-MX")}</span>}
+                    </label>
+                  );
+                })}
+              </div>
+              <button onClick={importarSeleccionados} disabled={importando || seleccionados.size === 0} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro, opacity: seleccionados.size === 0 ? 0.5 : 1 }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+                {importando ? "Importando..." : `Importar ${seleccionados.size || ""} seleccionados`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      <datalist id="carpetas-evento-datalist">
+        {carpetasUsadas.map((c) => <option key={c} value={c} />)}
+      </datalist>
+
+      {mostrarAgregar && (
+        <FormVentaEvento
+          valor={nuevaVenta} onChange={setNuevaVenta} onGuardar={agregarVenta} onCancelar={() => setMostrarAgregar(false)}
+          guardando={guardandoVenta} inputStyle={inputStyle}
+          tcg={tcgAgregar} onTcg={setTcgAgregar} cartaManual={cartaManualAgregar} onCartaManual={setCartaManualAgregar}
+        />
+      )}
+
+      {resumen.pendientes.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm mb-8">Nada pendiente por vender todavía.</p>
+      ) : (
+        <div className="grid gap-2 mb-8">
+          {resumen.pendientes.map((v) => (
+            <FilaVentaEvento key={v.id} v={v} editando={editandoId === v.id} edit={edit} onEdit={() => abrirEdit(v)} onEditChange={setEdit}
+              onGuardarEdit={guardarEdit} onCancelarEdit={() => { setEditandoId(null); setEdit(null); }} guardandoEdit={guardandoEdit}
+              onBorrar={() => borrarVenta(v)} inputStyle={inputStyle} />
+          ))}
+        </div>
+      )}
+
+      {/* ---- Ventas registradas ---- */}
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase mb-3">✅ Ventas registradas ({resumen.vendidas.length})</h3>
+      {resumen.vendidas.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm mb-8">Todavía no registras ninguna venta.</p>
+      ) : (
+        <div className="grid gap-2 mb-8">
+          {resumen.vendidas.map((v) => (
+            <FilaVentaEvento key={v.id} v={v} editando={editandoId === v.id} edit={edit} onEdit={() => abrirEdit(v)} onEditChange={setEdit}
+              onGuardarEdit={guardarEdit} onCancelarEdit={() => { setEditandoId(null); setEdit(null); }} guardandoEdit={guardandoEdit}
+              onBorrar={() => borrarVenta(v)} inputStyle={inputStyle} />
+          ))}
+        </div>
+      )}
+
+      {/* ---- Gastos ---- */}
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+        <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase">🧾 Gastos ({fmtMoneyEvento(resumen.gastosTotal)})</h3>
+        <button onClick={() => setMostrarGasto((v) => !v)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+          {mostrarGasto ? "Cancelar" : "+ Agregar gasto"}
+        </button>
+      </div>
+
+      {mostrarGasto && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-4">
+          <select value={nuevoGasto.tipo} onChange={(e) => setNuevoGasto({ ...nuevoGasto, tipo: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+            {TIPO_GASTO_EVENTO_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+          <input placeholder="Descripción (opcional)" value={nuevoGasto.descripcion} onChange={(e) => setNuevoGasto({ ...nuevoGasto, descripcion: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm sm:col-span-2" />
+          <input type="number" placeholder="Monto" value={nuevoGasto.monto} onChange={(e) => setNuevoGasto({ ...nuevoGasto, monto: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <input type="date" value={nuevoGasto.dia} onChange={(e) => setNuevoGasto({ ...nuevoGasto, dia: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <button onClick={agregarGasto} disabled={guardandoGasto} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-4 w-fit px-4">
+            {guardandoGasto ? "Guardando..." : "Guardar gasto"}
+          </button>
+        </div>
+      )}
+
+      {gastos.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm mb-8">Sin gastos registrados.</p>
+      ) : (
+        <div className="grid gap-1.5 mb-8">
+          {gastos.map((g) => (
+            <div key={g.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-2.5 flex items-center justify-between gap-2">
+              <div className="text-sm">
+                <span className="font-semibold">{TIPO_GASTO_EVENTO_LABEL[g.tipo] || g.tipo}</span>
+                {g.descripcion && <span style={{ color: COLORS.muted }}> — {g.descripcion}</span>}
+                {g.dia && <span style={{ color: COLORS.muted }} className="text-xs"> · {fmtDia(g.dia)}</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold whitespace-nowrap">{fmtMoneyEvento(g.monto)}</span>
+                <button onClick={() => borrarGasto(g)} style={{ color: "#E27070" }}><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ---- Resumen por día ---- */}
+      {porDia.length > 0 && (
+        <>
+          <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase mb-3">📅 Resumen por día</h3>
+          <div className="overflow-x-auto mb-4">
+            <table className="w-full text-sm min-w-[480px]">
+              <thead>
+                <tr style={{ color: COLORS.muted }} className="text-xs uppercase text-left">
+                  <th className="pb-2 font-semibold">Día</th>
+                  <th className="pb-2 font-semibold">Ingresos</th>
+                  <th className="pb-2 font-semibold">Costo</th>
+                  <th className="pb-2 font-semibold">Gastos</th>
+                  <th className="pb-2 font-semibold text-right">Ganancia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {porDia.map((d) => {
+                  const ganancia = d.ingresos - d.costo - d.gastos;
+                  return (
+                    <tr key={d.dia} style={{ borderTop: `1px solid ${COLORS.surface2}` }}>
+                      <td className="py-2">{fmtDia(d.dia)}</td>
+                      <td className="py-2">{fmtMoneyEvento(d.ingresos)}</td>
+                      <td className="py-2">{fmtMoneyEvento(d.costo)}</td>
+                      <td className="py-2">{fmtMoneyEvento(d.gastos)}</td>
+                      <td style={{ color: ganancia >= 0 ? "#5FD98A" : "#E27070" }} className="py-2 text-right font-semibold">{fmtMoneyEvento(ganancia)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Formulario para agregar una pieza al evento (a mano): con buscador del
+// catálogo oficial (opcional, autocompleta nombre/imagen) o nombre libre.
+function FormVentaEvento({ valor, onChange, onGuardar, onCancelar, guardando, inputStyle, tcg, onTcg, cartaManual, onCartaManual }) {
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4 mb-4 grid gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-sm flex items-center gap-1.5">
+          <input type="checkbox" checked={valor.vendidaYa} onChange={(e) => onChange({ ...valor, vendidaYa: e.target.checked })} />
+          Ya se vendió
+        </label>
+      </div>
+
+      <select value={tcg} onChange={(e) => onTcg(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
+        {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+
+      {!cartaManual ? (
+        <>
+          <CardPickerUniversal tcg={tcg} onSelect={(c) => onChange({ ...valor, nombre: c.name || c.producto, imagen_url: c.imagen_url, carta_ref: { card_api_id: c.card_api_id, set_nombre: c.set_nombre, tcg } })} />
+          {valor.nombre && (
+            <div className="flex items-center gap-2">
+              {valor.imagen_url && <img src={valor.imagen_url} alt="" style={{ width: 40, height: 56, objectFit: "contain" }} />}
+              <Badge color={COLORS.azulPalido}>{valor.nombre}</Badge>
+              <button type="button" onClick={() => onChange({ ...valor, nombre: "", imagen_url: "", carta_ref: null })} style={{ color: COLORS.muted }} className="text-xs">Cambiar</button>
+            </div>
+          )}
+          <button type="button" onClick={() => onCartaManual(true)} style={{ color: COLORS.muted }} className="text-xs underline w-fit">¿No la encuentras? Escribirlo a mano</button>
+        </>
+      ) : (
+        <>
+          <input placeholder="Nombre de la carta/producto" value={valor.nombre} onChange={(e) => onChange({ ...valor, nombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <button type="button" onClick={() => onCartaManual(false)} style={{ color: COLORS.muted }} className="text-xs underline w-fit">Volver a buscar en el catálogo</button>
+        </>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <label className="text-xs" style={{ color: COLORS.muted }}>
+          Te costó
+          <input type="number" placeholder="0.00" value={valor.costo} onChange={(e) => onChange({ ...valor, costo: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+        </label>
+        <label className="text-xs" style={{ color: COLORS.muted }}>
+          {valor.vendidaYa ? "La vendiste en" : "Precio sugerido (opcional)"}
+          <input type="number" placeholder="0.00" value={valor.precio_venta} onChange={(e) => onChange({ ...valor, precio_venta: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+        </label>
+        <label className="text-xs" style={{ color: COLORS.muted }}>
+          Cantidad
+          <input type="number" min="1" value={valor.cantidad} onChange={(e) => onChange({ ...valor, cantidad: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+        </label>
+        {valor.vendidaYa && (
+          <label className="text-xs" style={{ color: COLORS.muted }}>
+            Día de venta
+            <input type="date" value={valor.dia} onChange={(e) => onChange({ ...valor, dia: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+          </label>
+        )}
+      </div>
+      <input list="carpetas-evento-datalist" placeholder="Carpeta (opcional, ej. Caja 1)" value={valor.carpeta} onChange={(e) => onChange({ ...valor, carpeta: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit" />
+
+      <div className="flex gap-2">
+        <button onClick={onGuardar} disabled={guardando} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+          {guardando ? "Guardando..." : "Guardar"}
+        </button>
+        <button onClick={onCancelar} style={{ color: COLORS.muted }} className="rounded-lg px-4 py-2 text-sm">Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// Una fila de venta (pendiente o ya vendida), con su propio modo de edición inline.
+function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdit, onCancelarEdit, guardandoEdit, onBorrar, inputStyle }) {
+  if (editando) {
+    return (
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-3 grid gap-2">
+        <p className="text-sm font-semibold">{v.nombre}</p>
+        <label className="text-sm flex items-center gap-1.5">
+          <input type="checkbox" checked={edit.vendida} onChange={(e) => onEditChange({ ...edit, vendida: e.target.checked })} />
+          Vendida
+        </label>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <label className="text-xs" style={{ color: COLORS.muted }}>
+            Te costó
+            <input type="number" value={edit.costo} onChange={(e) => onEditChange({ ...edit, costo: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+          </label>
+          {edit.vendida && (
+            <label className="text-xs" style={{ color: COLORS.muted }}>
+              La vendiste en
+              <input type="number" value={edit.precio_venta} onChange={(e) => onEditChange({ ...edit, precio_venta: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+            </label>
+          )}
+          <label className="text-xs" style={{ color: COLORS.muted }}>
+            Cantidad
+            <input type="number" min="1" value={edit.cantidad} onChange={(e) => onEditChange({ ...edit, cantidad: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+          </label>
+          {edit.vendida && (
+            <label className="text-xs" style={{ color: COLORS.muted }}>
+              Día de venta
+              <input type="date" value={edit.dia} onChange={(e) => onEditChange({ ...edit, dia: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+            </label>
+          )}
+        </div>
+        <input list="carpetas-evento-datalist" placeholder="Carpeta (opcional)" value={edit.carpeta} onChange={(e) => onEditChange({ ...edit, carpeta: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit" />
+        <div className="flex gap-2">
+          <button onClick={onGuardarEdit} disabled={guardandoEdit} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+            {guardandoEdit ? "Guardando..." : "Guardar"}
+          </button>
+          <button onClick={onCancelarEdit} style={{ color: COLORS.muted }} className="rounded-lg px-4 py-2 text-sm">Cancelar</button>
+        </div>
+      </div>
+    );
+  }
+
+  const gananciaFila = v.vendida ? (Number(v.precio_venta || 0) - Number(v.costo || 0)) * v.cantidad : null;
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 flex items-center gap-3 flex-wrap">
+      {v.imagen_url && <img src={v.imagen_url} alt="" style={{ width: 36, height: 50, objectFit: "contain" }} />}
+      <div className="flex-1 min-w-[140px]">
+        <p className="text-sm font-semibold">{v.nombre}{v.cantidad > 1 ? ` ×${v.cantidad}` : ""}</p>
+        <p style={{ color: COLORS.muted }} className="text-xs">
+          Costo {fmtMoneyEvento(v.costo)}{v.vendida ? ` · Vendida en ${fmtMoneyEvento(v.precio_venta)} · ${v.dia}` : v.precio_lista ? ` · Precio de lista ${fmtMoneyEvento(v.precio_lista)}` : ""}
+          {v.carpeta ? ` · 📁 ${v.carpeta}` : ""}
+        </p>
+      </div>
+      {v.vendida && <span style={{ color: gananciaFila >= 0 ? "#5FD98A" : "#E27070" }} className="text-sm font-semibold whitespace-nowrap">{fmtMoneyEvento(gananciaFila)}</span>}
+      <button onClick={onEdit} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-xs px-2 py-1 rounded-lg">
+        {v.vendida ? "Editar" : "Marcar vendida"}
+      </button>
+      <button onClick={onBorrar} style={{ color: "#E27070" }}><Trash2 size={14} /></button>
+    </div>
+  );
+}
+
 // ---- Siguiendo: tiendas/vendedores que sigo + sus publicaciones nuevas ----
 function SiguiendoView({ session, onVerPerfil, onVerTienda }) {
   const [seguidos, setSeguidos] = useState([]);
@@ -11914,6 +12736,7 @@ export default function EncuentraCartas() {
         ...(perfil?.tipo === "individual" ? [{ id: "myMarket", label: "Vender en el Mercado", icon: Tag }] : []),
         { id: "subastas", label: "Subastas", icon: Gavel },
         ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
+        ...(session ? [{ id: "modoEvento", label: "Modo Evento", icon: Calendar }] : []),
       ],
     },
     {
@@ -13103,6 +13926,7 @@ export default function EncuentraCartas() {
         )}
         {view === "siguiendo" && session && <SiguiendoView session={session} onVerPerfil={verPerfil} onVerTienda={verTiendaDesdePerfil} />}
         {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
+        {view === "modoEvento" && session && <ModoEventoView session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />}
         {view === "miCuenta" && session && (
           <MiCuentaView session={session} perfil={perfil} onGuardado={() => cargarOCrearPerfil(session)} onVerMiPerfil={() => verPerfil(session.user.id)} />
         )}
