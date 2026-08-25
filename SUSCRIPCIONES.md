@@ -3952,6 +3952,65 @@ nueva entrada de nav "Modo Evento" dentro de "Vender"), `lib/icons.jsx`
 (ícono `Download` nuevo, para el botón del PDF), y `jspdf` agregado a
 `package.json`.
 
+## 128. Cartas nuevas que no aparecen (ej. promos "First Partner") + publicar con foto propia cuando no está en el catálogo
+
+Se reportó que las cartas promo "First Partner" (de la era Mega Evolution,
+2026) no aparecían ni en el buscador de Pokémon ni en el catálogo. Causa
+real, confirmada por fuera del sandbox (la API de pokemontcg.io está
+bloqueada desde este entorno, así que se investigó por búsqueda web):
+**pokemontcg.io pasó a modo legado** -- su propio equipo movió el
+desarrollo activo a Scrydex (un producto de paga) y ya no agrega cartas ni
+sets nuevos. Cualquier set/promo que salga de ahora en adelante puede
+tardar mucho -- o no llegar nunca -- a pokemontcg.io, que es la fuente
+principal de `buscarCartasVisual` (el buscador al publicar) y de
+`obtenerErasYSetsPokemon`/`obtenerCartasDeSetPokemon` (la vista Catálogo).
+
+Arreglo aplicado al buscador (`lib/pokemonApi.js`): el respaldo en TCGdex
+(que sí sigue actualizándose activamente) ahora se intenta primero en
+inglés y, si no trae nada, en español (antes solo intentaba español) --
+`buscarCartasVisualTCGdexIdioma` + `buscarCartasVisualTCGdex`. Esto no
+garantiza que TCGdex ya tenga indexado cualquier set recién salido, pero
+amplía las probabilidades reales sin arriesgar nada (solo se prueba si
+pokemontcg.io ya conectó bien y de verdad no trajo nada). **Ojo:** la
+vista dedicada "Catálogo" (era → set → cartas, ver `CatalogoView`) sigue
+sin este respaldo -- fusionar dos taxonomías de sets distintas (la de
+pokemontcg.io y la de TCGdex) sin duplicar sets que ya están en ambas es
+un cambio bastante más grande y arriesgado, que no se intentó en esta
+pasada por no poder probarlo en vivo desde este sandbox (red bloqueada
+hacia ambas APIs). Sigue pendiente si hace falta.
+
+Además, se pidió explícitamente: que si de plano no se encuentra la carta
+específica, se pueda subir una foto propia "en su lugar" y que cuente
+como la carta ya elegida, permitiendo publicar. Esto **ya existía a
+medias** -- se podía escribir el nombre a mano (botón "¿No la
+encuentras? Escribirla manualmente") y subir una foto real más abajo
+(opcional, en una sección genérica separada), y esa foto sí terminaba
+siendo la imagen pública de la publicación (`miniaturaListing` en
+`theme.js` ya prefería `imagen_url || foto_real_url`) -- pero era fácil
+no darse cuenta de que ese camino existía o de que la foto sí "contaba"
+como la carta. Se mejoró la experiencia en los dos formularios donde se
+publica una carta suelta (`MyMarketPanel` para cuentas individuales,
+`MyStorePanel` para tiendas):
+
+- El cuadro de búsqueda (`CardPicker`) ahora muestra, dentro del mismo
+  "Sin resultados", un botón directo "✏️ Escribirla a mano y agregar tu
+  propia foto" (prop nueva `onNoEncontrada`, ver también
+  `CardPickerUniversal`) -- antes ese camino solo existía como un link
+  gris aparte, fácil de pasar por alto.
+- El bloque de "escribir a mano" ahora trae su propia foto integrada
+  ahí mismo (no hasta abajo del formulario, mezclada con otros campos):
+  en cuanto se sube, se ve una miniatura + insignia "Carta seleccionada",
+  igual que cuando sí se elige del catálogo -- para que se sienta como
+  una selección completa y no como un campo opcional cualquiera.
+- La foto de "frente" genérica de más abajo (que antes se mostraba
+  siempre) ya no se repite cuando se está en modo manual, para no tener
+  dos botones de subir foto a la vista pidiendo lo mismo.
+
+No se hizo obligatoria la foto para publicar (sigue el mismo criterio que
+ya tenía toda la app: las fotos nunca bloquean publicar, se pueden
+agregar después) -- el cambio es de claridad y descubribilidad, no de
+validación.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -3963,3 +4022,5 @@ nueva entrada de nav "Modo Evento" dentro de "Vender"), `lib/icons.jsx`
 - La búsqueda de "Armar mazo" hace match de nombre simple (contiene el texto) — si dos cartas distintas comparten parte del nombre (ej. "Pikachu" y "Pikachu VMAX"), puede haber falsos positivos leves; no ata el nombre a un ID exacto de la carta como sí hace el catálogo de TCGdex.
 - Deuda técnica pendiente: falta dividir el resto de `src/App.jsx` (los componentes de cada pantalla) en módulos más chicos — ver sección 34.
 - Extender el color de acento y la biografía a la página de detalle de tienda del Mercado (hoy solo aplica en "Perfil público").
+- La vista "Catálogo" (era → set → cartas) de Pokémon sigue sin respaldo de TCGdex -- solo se agregó al buscador de publicar (ver sección 128). Un set nuevo puede tardar en aparecer ahí aunque ya se pueda publicar con él a mano.
+- Evaluar migrar de pokemontcg.io (ahora legado, sin cartas/sets nuevos) a Scrydex (su sucesor oficial, de paga) si el catálogo automático se empieza a sentir viejo de verdad -- ver sección 128.

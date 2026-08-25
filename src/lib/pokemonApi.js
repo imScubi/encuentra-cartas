@@ -335,20 +335,27 @@ function mapearYOrdenarCartasPokemonTCG(cartas, numero) {
   });
 }
 
-// ---- Respaldo en TCGdex (español) para cuando pokemontcg.io no encuentra
-// nada -- pokemontcg.io solo cataloga el mercado de EE.UU./inglés, así que
+// ---- Respaldo en TCGdex para cuando pokemontcg.io no encuentra nada --
+// pokemontcg.io está en modo legado (su equipo movió el desarrollo activo a
+// Scrydex, un producto de paga -- ver https://pokemontcg.io/) y ya no recibe
+// cartas/sets nuevos, así que cualquier set reciente (promos "First Partner"
+// de 2026, o cualquier expansión que salga de aquí en adelante) puede
+// tardar mucho -- o no llegar nunca -- a su catálogo. TCGdex es un proyecto
+// comunitario que sigue actualizándose, y también cataloga mejor las
 // promos/premios de liga/staff en español (o cualquier variante regional)
-// casi nunca están ahí aunque sean cartas oficiales reales. TCGdex sí tiene
-// soporte de idioma español (`/v2/es/`) y mejor cobertura de promocionales
-// -- no hay garantía de que tenga TODAS (nadie tiene un catálogo 100%
-// completo de cada promo regional jamás impresa), pero amplía bastante las
-// probabilidades sin arriesgar nada: solo se intenta si pokemontcg.io ya
-// conectó bien y de verdad no trajo nada, nunca reemplaza esa búsqueda.
+// que pokemontcg.io casi nunca tiene aunque sean cartas oficiales reales.
+// No hay garantía de que tenga TODO (nadie tiene un catálogo 100% completo
+// de cada promo jamás impresa), pero amplía bastante las probabilidades sin
+// arriesgar nada: solo se intenta si pokemontcg.io ya conectó bien y de
+// verdad no trajo nada, nunca reemplaza esa búsqueda. Se prueba primero en
+// inglés (el idioma en el que sale un set nuevo primero, normalmente) y
+// luego en español si el inglés tampoco trajo nada -- así se cubren tanto
+// sets recién anunciados en EE.UU. como promos regionales en español.
 // No da precio de referencia (TCGdex no trae precio de mercado) -- se dice
 // "sin precio" en vez de inventar uno.
-async function buscarCartasVisualTCGdexES(texto, numero, limite, signal) {
+async function buscarCartasVisualTCGdexIdioma(idioma, texto, numero, limite, signal) {
   try {
-    const res = await fetch(`https://api.tcgdex.net/v2/es/cards?name=${encodeURIComponent(texto)}&pagination:itemsPerPage=${limite}`, { signal });
+    const res = await fetch(`https://api.tcgdex.net/v2/${idioma}/cards?name=${encodeURIComponent(texto)}&pagination:itemsPerPage=${limite}`, { signal });
     if (!res.ok) return [];
     const lista = await res.json();
     if (!Array.isArray(lista) || !lista.length) return [];
@@ -358,7 +365,7 @@ async function buscarCartasVisualTCGdexES(texto, numero, limite, signal) {
       : lista;
     const detalles = await Promise.all(
       ordenada.slice(0, limite).map((c) =>
-        fetch(`https://api.tcgdex.net/v2/es/cards/${c.id}`, { signal }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+        fetch(`https://api.tcgdex.net/v2/${idioma}/cards/${c.id}`, { signal }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
       )
     );
     return detalles.filter(Boolean).map((full) => {
@@ -378,6 +385,12 @@ async function buscarCartasVisualTCGdexES(texto, numero, limite, signal) {
     if (e?.name === "AbortError") throw e;
     return [];
   }
+}
+
+async function buscarCartasVisualTCGdex(texto, numero, limite, signal) {
+  const enIngles = await buscarCartasVisualTCGdexIdioma("en", texto, numero, limite, signal);
+  if (enIngles.length > 0) return enIngles;
+  return buscarCartasVisualTCGdexIdioma("es", texto, numero, limite, signal);
 }
 
 export async function buscarCartasVisual(texto, itemsPorCombo = 8, signal) {
@@ -420,12 +433,13 @@ export async function buscarCartasVisual(texto, itemsPorCombo = 8, signal) {
   // Solo es un error real (que se le avisa a quien busca) si NINGUNA
   // combinación logró siquiera conectarse -- si alguna sí conectó pero
   // ninguna trajo resultados, de verdad no existe esa carta EN pokemontcg.io
-  // (ver buscarCartasVisualTCGdexES: puede que sí exista como promo/premio/
-  // liga/staff en español, catalogada solo en TCGdex).
+  // (ver buscarCartasVisualTCGdex: puede que sí exista ahí -- un set nuevo
+  // que pokemontcg.io (legado) todavía no tiene, o una promo/premio/liga/
+  // staff en español catalogada solo en TCGdex).
   if (!algunaConectoBien) {
     throw ultimoError instanceof Error ? ultimoError : new Error("No se pudo conectar con el catálogo de Pokémon.");
   }
-  const deTCGdex = await buscarCartasVisualTCGdexES(restante || q, numero, itemsPorCombo, signal);
+  const deTCGdex = await buscarCartasVisualTCGdex(restante || q, numero, itemsPorCombo, signal);
   if (deTCGdex.length > 0) return deTCGdex;
   return [];
 }
