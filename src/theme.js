@@ -1,5 +1,5 @@
 export const FONTS = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Rajdhani:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Rye&family=Cabin:wght@400;500;600;700&display=swap');
 @keyframes drift { 0% { transform: translate(0,0); } 50% { transform: translate(-2%,3%); } 100% { transform: translate(0,0); } }
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
@@ -21,30 +21,36 @@ export const FONTS = `
 }
 /* Scrollbar a juego con el resto del diseño (por default el navegador pone
    la barra gris genérica, que desentona con el fondo oscuro) */
-* { scrollbar-width: thin; scrollbar-color: #4F7FD1 #0A1330; }
+* { scrollbar-width: thin; scrollbar-color: #6882AD #433324; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: #0A1330; }
-::-webkit-scrollbar-thumb { background: #4F7FD1; border-radius: 9999px; border: 2px solid #0A1330; }
-::-webkit-scrollbar-thumb:hover { background: #9EC0EE; }
+::-webkit-scrollbar-track { background: #433324; }
+::-webkit-scrollbar-thumb { background: #6882AD; border-radius: 9999px; border: 2px solid #433324; }
+::-webkit-scrollbar-thumb:hover { background: #A9C0E6; }
 `;
 
 // Tipos de cambio aproximados, solo para calcular un precio de referencia (no es una tasa en tiempo real)
 export const USD_TO_MXN = 18.5;
 export const EUR_TO_MXN = 20;
 
+// Paleta "cozy" (ver SUSCRIPCIONES.md, rediseño de agosto 2026): crema/café/
+// tan cálidos en vez del navy/azul tecnológico de antes, con la misma
+// pareja de azules de la hoja de marca (#2A4C91/#6882AD) como acento -- el
+// resto del código sigue leyendo COLORS.azul/azulClaro/etc. igual que
+// siempre, así que cambiar estos valores base ya recolorea toda la app sin
+// tocar cada uno de esos usos.
 export const COLORS = {
-  bg: "#050810", surface: "#0A1330", surface2: "#101A36",
-  azul: "#0B2A66", azulClaro: "#4F7FD1", azulMedio: "#1B4A9E",
-  azulPalido: "#9EC0EE", gold: "#FFD34D", violeta: "#8B5CF6",
-  text: "#F4F6FB", muted: "#8291B5",
+  bg: "#2E2216", surface: "#433324", surface2: "#4F3D2A",
+  azul: "#1F3A6E", azulClaro: "#6882AD", azulMedio: "#2A4C91",
+  azulPalido: "#A9C0E6", gold: "#D99A3D", violeta: "#9B6FA3",
+  text: "#F1E4D3", muted: "#A0876E",
   // Fijo siempre (no lo toca aplicarTema, ver más abajo): para texto legible
   // sobre botones/insignias con fondo claro o medio (azulPalido, azulClaro,
   // gold) sin importar el modo. Antes esos botones usaban COLORS.bg como
   // "el color oscuro de siempre" -- funcionaba de casualidad en modo noche
   // (donde bg sí es oscuro) pero en modo día bg es claro, así que el texto
   // se volvía casi invisible sobre esos mismos botones.
-  textoOscuro: "#0B1220",
-  fondoProfundo: "#070c1c",
+  textoOscuro: "#2C2116",
+  fondoProfundo: "#201709",
 };
 
 // ---- TCG (juego de cartas): Pokémon fue el primero en tener catálogo
@@ -254,8 +260,8 @@ export const miniaturaListing = (item) =>
 // en su punto más profundo -- antes era un oscuro fijo en todos los modos,
 // lo que hacía que el fondo animado se viera negro incluso en modo día.
 export const MODOS_COLOR = {
-  noche: { bg: "#08080B", surface: "#131318", surface2: "#1D1D24", text: "#F4F6FB", muted: "#8B93A8", fondoProfundo: "#070c1c" },
-  dia: { bg: "#F5F5F8", surface: "#FFFFFF", surface2: "#EAECF2", text: "#0B1220", muted: "#5B6472", fondoProfundo: "#D7DEEC" },
+  noche: { bg: "#2E2216", surface: "#433324", surface2: "#4F3D2A", text: "#F1E4D3", muted: "#A0876E", fondoProfundo: "#201709" },
+  dia: { bg: "#E0CEBA", surface: "#F6EEE1", surface2: "#E9DCC9", text: "#433324", muted: "#8A7568", fondoProfundo: "#D3BFA0" },
 };
 
 export const TIPOS_POKEMON_INFO = {
@@ -281,7 +287,7 @@ export const TIPOS_POKEMON_INFO = {
 };
 
 export const TIPOS_POKEMON_COLOR = {
-  default: { azul: "#0B2A66", azulClaro: "#4F7FD1", azulMedio: "#1B4A9E", azulPalido: "#9EC0EE" },
+  default: { azul: "#1F3A6E", azulClaro: "#6882AD", azulMedio: "#2A4C91", azulPalido: "#A9C0E6" },
   normal: { azul: "#6B6153", azulClaro: "#A79C87", azulMedio: "#8A7F6B", azulPalido: "#C9BFA9" },
   fuego: { azul: "#7A2000", azulClaro: "#FF7A3C", azulMedio: "#C1440E", azulPalido: "#FFB07A" },
   agua: { azul: "#08376B", azulClaro: "#4FA8D1", azulMedio: "#1470A8", azulPalido: "#8FD3EF" },
@@ -336,10 +342,18 @@ export function aplicarTema(modo, tipo) {
   // clara que el fondo.
   const tinteSuperficie = esDia ? t.azulPalido : t.azul;
   const tinteProfundo = esDia ? t.azulClaro : t.azulMedio;
+  // Estos porcentajes eran más altos (22/28/34%) cuando la base era el navy
+  // de antes -- mezclar un tinte de tipo (azul, o cualquiera de los 18
+  // colores de Pokémon) contra un navy casi no cambiaba el TONO, solo el
+  // valor, así que se notaba poco. Con la base cálida nueva (crema/café),
+  // esos mismos porcentajes sí cambian el tono de verdad -- el crema se
+  // volvía gris-azulado en vez de quedarse crema. Se bajan para que el
+  // tinte siga notándose (sigue siendo el mismo color) sin apagar la
+  // calidez de la base.
   Object.assign(COLORS, {
-    bg: mezclarHex(m.bg, tinteSuperficie, 0.22),
-    surface: mezclarHex(m.surface, tinteSuperficie, 0.28),
-    surface2: mezclarHex(m.surface2, tinteProfundo, 0.34),
+    bg: mezclarHex(m.bg, tinteSuperficie, 0.10),
+    surface: mezclarHex(m.surface, tinteSuperficie, 0.13),
+    surface2: mezclarHex(m.surface2, tinteProfundo, 0.16),
     text: m.text,
     muted: m.muted,
     fondoProfundo: m.fondoProfundo,
