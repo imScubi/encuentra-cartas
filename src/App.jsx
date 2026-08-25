@@ -1465,7 +1465,7 @@ function ReintentarImagen({ tcg, nombre, setNombre, onEncontrada }) {
   );
 }
 
-function CardPicker({ tcg = "pokemon", onSelect }) {
+function CardPicker({ tcg = "pokemon", onSelect, onNoEncontrada }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1540,7 +1540,14 @@ function CardPicker({ tcg = "pokemon", onSelect }) {
             <p style={{ color: COLORS.azulPalido }} className="text-xs p-2">No se pudo conectar con el catálogo. Espera un momento e intenta de nuevo.</p>
           )}
           {!loading && !error && results.length === 0 && (
-            <p style={{ color: COLORS.muted }} className="text-xs p-2">Sin resultados. Prueba con otro nombre, número o set.</p>
+            <div className="p-2">
+              <p style={{ color: COLORS.muted }} className="text-xs">Sin resultados. Prueba con otro nombre, número o set -- si es una carta muy nueva, puede que el catálogo todavía no la tenga.</p>
+              {onNoEncontrada && (
+                <button type="button" onClick={() => { onNoEncontrada(); setOpen(false); }} style={{ color: COLORS.azulPalido }} className="text-xs font-semibold mt-1.5">
+                  ✏️ Escribirla a mano y agregar tu propia foto
+                </button>
+              )}
+            </div>
           )}
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
             {results.map((c) => (
@@ -1842,9 +1849,9 @@ function TCGplayerPicker({ tcg = "pokemon", soloSellado = true, onSelect }) {
 // ---- Despachador único: elige el buscador correcto según el TCG (y si es
 // carta suelta o producto sellado) — así los formularios de publicar no
 // necesitan saber de dónde viene cada catálogo. ----
-function CardPickerUniversal({ tcg = "pokemon", soloSellado = false, onSelect }) {
+function CardPickerUniversal({ tcg = "pokemon", soloSellado = false, onSelect, onNoEncontrada }) {
   if (!soloSellado && TCG_CON_CATALOGO.includes(tcg)) {
-    return <CardPicker tcg={tcg} onSelect={onSelect} />;
+    return <CardPicker tcg={tcg} onSelect={onSelect} onNoEncontrada={onNoEncontrada} />;
   }
   return <TCGplayerPicker tcg={tcg} soloSellado={soloSellado} onSelect={onSelect} />;
 }
@@ -2175,7 +2182,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
             <div>
               {!cartaManual ? (
                 <>
-                  <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_ref_fuente: c.precio_ref_fuente, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
+                  <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_ref_fuente: c.precio_ref_fuente, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} onNoEncontrada={() => setCartaManual(true)} />
                   {nueva.card_api_id && (
                     <div className="flex items-center gap-3 mt-2">
                       {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
@@ -2191,14 +2198,23 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
                   </button>
                 </>
               ) : (
-                <>
+                <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 grid gap-2">
                   <input placeholder="Nombre de la carta" value={nueva.carta} onChange={(e) => setNueva({ ...nueva, carta: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full" />
-                  <input placeholder="Set / edición (opcional, ej. Prismatic Evolutions ES 006/131)" value={nueva.set_nombre} onChange={(e) => setNueva({ ...nueva, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-2" />
-                  <p style={{ color: COLORS.muted }} className="text-xs mt-1">No hay precio de referencia automático para cartas escritas a mano -- pon tú el precio. Sube una foto real más abajo para que se vea bien clara.</p>
-                  <button type="button" onClick={() => { setCartaManual(false); setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null }); }} style={{ color: COLORS.muted }} className="text-xs mt-2">
+                  <input placeholder="Set / edición (opcional, ej. Prismatic Evolutions ES 006/131)" value={nueva.set_nombre} onChange={(e) => setNueva({ ...nueva, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full" />
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto subida" : "📷 Sube una foto de tu carta"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
+                    {nueva.foto_real_url && (
+                      <div className="flex items-center gap-2">
+                        <img src={nueva.foto_real_url} alt={nueva.carta} style={{ width: 44, height: 62, objectFit: "cover" }} className="rounded" />
+                        <Badge color={COLORS.azulPalido}>Carta seleccionada</Badge>
+                      </div>
+                    )}
+                  </div>
+                  <p style={{ color: COLORS.muted }} className="text-xs">Esa foto se usa como la imagen de tu publicación (puedes agregarla después si no la tienes a la mano ahora -- no detiene la publicación). No hay precio de referencia automático para cartas escritas a mano -- pon tú el precio.</p>
+                  <button type="button" onClick={() => { setCartaManual(false); setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null }); }} style={{ color: COLORS.muted }} className="text-xs w-fit">
                     ← Volver a buscar en el catálogo
                   </button>
-                </>
+                </div>
               )}
             </div>
             <div>
@@ -2210,8 +2226,12 @@ function MyMarketPanel({ session, perfil, onIrAPlanes }) {
               <IdiomaSelector value={nueva.idioma} onChange={(v) => setNueva({ ...nueva, idioma: v })} />
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
-              {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+              {!cartaManual && (
+                <>
+                  <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
+                  {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+                </>
+              )}
               <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, atras: v }))} />
               {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
@@ -5465,7 +5485,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
                 precio_ref_mxn: c.precio_ref_mxn,
                 precio_ref_fuente: c.precio_ref_fuente,
                 precio: nuevaCarta.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : ""),
-              })} />
+              })} onNoEncontrada={() => setCartaManual(true)} />
               {nuevaCarta.card_api_id && (
                 <div className="flex items-center gap-3 mt-2">
                   {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
@@ -5485,13 +5505,23 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
               </button>
             </>
           ) : (
-            <>
+            <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 grid gap-2">
               <input placeholder="Nombre de la carta" value={nuevaCarta.carta} onChange={(e) => setNuevaCarta({ ...nuevaCarta, carta: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-full" />
-              <input placeholder="Set / edición (opcional)" value={nuevaCarta.set_nombre} onChange={(e) => setNuevaCarta({ ...nuevaCarta, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-full mt-2" />
-              <button type="button" onClick={() => { setCartaManual(false); setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null }); }} style={{ color: COLORS.muted }} className="text-xs mt-2">
+              <input placeholder="Set / edición (opcional)" value={nuevaCarta.set_nombre} onChange={(e) => setNuevaCarta({ ...nuevaCarta, set_nombre: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-full" />
+              <div className="flex items-center gap-2 flex-wrap">
+                <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Foto subida" : "📷 Sube una foto de tu carta"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFotoCarta((s) => ({ ...s, frente: v }))} />
+                {nuevaCarta.foto_real_url && (
+                  <div className="flex items-center gap-2">
+                    <img src={nuevaCarta.foto_real_url} alt={nuevaCarta.carta} style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />
+                    <Badge color={COLORS.azulPalido}>Carta seleccionada</Badge>
+                  </div>
+                )}
+              </div>
+              <p style={{ color: COLORS.muted }} className="text-xs">Esa foto se usa como la imagen de esta carta (puedes agregarla después si no la tienes a la mano ahora). No hay precio de referencia automático para cartas escritas a mano.</p>
+              <button type="button" onClick={() => { setCartaManual(false); setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null }); }} style={{ color: COLORS.muted }} className="text-xs w-fit">
                 ← Volver a buscar en el catálogo
               </button>
-            </>
+            </div>
           )}
         </div>
 
@@ -5507,8 +5537,12 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo }) {
           <IdiomaSelector value={nuevaCarta.idioma} onChange={(v) => setNuevaCarta({ ...nuevaCarta, idioma: v })} />
         </div>
         <div className="sm:col-span-6 flex items-center gap-2 flex-wrap">
-          <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFotoCarta((s) => ({ ...s, frente: v }))} />
-          {nuevaCarta.foto_real_url && <img src={nuevaCarta.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+          {!cartaManual && (
+            <>
+              <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFotoCarta((s) => ({ ...s, frente: v }))} />
+              {nuevaCarta.foto_real_url && <img src={nuevaCarta.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+            </>
+          )}
           <SubirFotoManual session={session} label={nuevaCarta.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_reverso_url: url })} onEstadoCambia={(v) => setSubiendoFotoCarta((s) => ({ ...s, atras: v }))} />
           {nuevaCarta.foto_real_reverso_url && <img src={nuevaCarta.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
         </div>
