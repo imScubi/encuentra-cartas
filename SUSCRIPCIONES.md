@@ -4222,6 +4222,40 @@ Dos reportes del dueño después del rediseño:
    reintento automático con refresh_token se dispare también en este
    caso y no solo cuando el status es 401.
 
+## 134. Fusión de Inicio y Mercado, botón Vender en el nav, y carrito flotante
+
+El dueño pidió unificar la página principal (antes "Buscar") y el Mercado
+en una sola pestaña "Inicio" (accesible dando clic al logo, que ya
+navegaba ahí), liberando el lugar del nav que ocupaba "Mercado" para un
+botón vistoso de "Vender", y bajar el carrito de un ícono discreto arriba
+a un botón flotante llamativo.
+
+- **Nav** (`navEsenciales`): se quitó la entrada `market`; `search` se
+  renombró a "Inicio" en la etiqueta (el id interno `search` no cambió,
+  para no tocar los ~30 lugares que ya navegan ahí). En su lugar hay un
+  botón "Vender" con gradiente dorado (mismo tratamiento visual que el
+  CTA del hero) que reutiliza la misma función `irAVender` que ya usaba
+  ese botón: sin sesión abre el modal de cuenta, con sesión manda a "Mi
+  tienda" o "Vender en el Mercado" según el tipo de cuenta.
+- **Vista "Inicio"**: cuando no hay texto de búsqueda, el bloque resumido
+  "🔥 Recién publicado" (10 tarjetas sin filtros) se reemplazó por el
+  contenido completo que antes vivía en la pestaña Mercado -- carrusel de
+  tiendas, tabs de tipo (Todo/Cartas/Sellado/Accesorios), panel de
+  filtros completo (precio, idioma, condición, zona, orden) y el grid
+  unificado de tienda+mercado. La vista `market` como tal se borró por
+  completo (nada más navegaba ahí salvo el botón "Ver Mercado", que
+  también se quitó por redundante).
+- **Carrito**: el ícono del nav se quitó; ahora es un botón circular fijo
+  abajo a la izquierda (no choca con el chat, que se ancla a la derecha),
+  con el mismo doble halo `ringPulse` que ya usaba el badge de Boost
+  (`theme.js`), pulsando cada ~1.8s para llamar la atención sin
+  interrumpir.
+- Verificado con Playwright en el dev server local (sin datos reales de
+  Supabase, que sigue bloqueado desde este sandbox): el nav fusionado
+  renderiza bien en escritorio y móvil, "Vender" abre el modal de cuenta
+  cuando no hay sesión, y el carrito flotante se ve correctamente en la
+  esquina inferior izquierda.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -4236,3 +4270,4 @@ Dos reportes del dueño después del rediseño:
 - La vista "Catálogo" (era → set → cartas) de Pokémon sigue sin respaldo de TCGdex -- solo se agregó al buscador de publicar (ver sección 128). Un set nuevo puede tardar en aparecer ahí aunque ya se pueda publicar con él a mano.
 - Evaluar migrar de pokemontcg.io (ahora legado, sin cartas/sets nuevos) a Scrydex (su sucesor oficial, de paga) si el catálogo automático se empieza a sentir viejo de verdad -- ver sección 128.
 - Falta poner `APITCG_API_KEY` en Vercel y confirmar que el piloto de apitcg.com funciona de verdad en producción (ver sección 129) -- y, si funciona bien, decidir si conviene volverla la fuente principal o migrar todo el catálogo (incluido producto sellado/TCGCSV) a ella.
+- Falta correr `071_carpetas_ubicacion.sql` en Supabase (ver sección 132) para que el color/zona/envío/punto de encuentro de las carpetas funcionen en producción -- sin la migración, crear una carpeta seguirá fallando al intentar guardar esas columnas.

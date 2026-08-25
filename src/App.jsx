@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Search, MapPin, Phone, Store, Sparkles, Package, ChevronLeft, ChevronRight,
-  User, Megaphone, Newspaper, ShoppingBag, ShoppingCart, X, Loader2, AlertCircle,
+  User, Megaphone, Newspaper, ShoppingCart, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
   ArrowUp, ArrowDown, Navigation, ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
   Gift, Gavel, Download,
@@ -12701,11 +12701,11 @@ export default function EncuentraCartas() {
   // Mercado y noticias, al entrar a esas pestañas (y también para la vitrina de inicio)
   useEffect(() => {
     const necesitaVitrina = view === "search" && !query.trim();
-    if ((view === "market" || necesitaVitrina) && market.length === 0) {
+    if (necesitaVitrina && market.length === 0) {
       setLoadingMarket(true);
       sb("mercado_listings?select=*,perfiles(nombre,whatsapp,facebook,plan,plan_vence,avatar_url),buzon_tienda:buzon_tienda_id(nombre)&en_venta=eq.true&order=created_at.desc").then((rows) => setMarket(conBoostPrimero(rows))).finally(() => setLoadingMarket(false));
     }
-    if (view === "market" && marketTiendas.length === 0) {
+    if (necesitaVitrina && marketTiendas.length === 0) {
       setLoadingMarketTiendas(true);
       sb("inventario_tienda?select=*,tiendas(nombre,zona,perfil_id,perfiles!perfil_id(plan,plan_vence,avatar_url))&en_venta=eq.true&order=created_at.desc")
         .then((rows) => setMarketTiendas(conBoostPrimero(rows)))
@@ -12945,12 +12945,18 @@ export default function EncuentraCartas() {
   // vive en el menú lateral, organizado por pestañas (ver navGrupos) para
   // que siga siendo fácil de encontrar sin ocupar espacio arriba.
   const navEsenciales = [
-    { id: "search", label: "Buscar", icon: Search },
-    { id: "market", label: "Mercado", icon: ShoppingBag },
+    { id: "search", label: "Inicio", icon: Search },
     { id: "directory", label: "Tiendas", icon: Store },
     { id: "catalogo", label: "Catálogo", icon: BookOpen },
     ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
   ];
+  // Antes "Mercado" ocupaba este lugar del nav -- se fusionó con Inicio (ver
+  // vista "search"), así que el espacio se usa para un CTA vistoso hacia
+  // Vender en vez de una pestaña más (mismo routing que el botón del hero).
+  const irAVender = () => {
+    if (!session) return setShowAccountModal(true);
+    setView(perfil?.tipo === "tienda" ? "myStore" : "myMarket");
+  };
   // El resto vive en el menú lateral (Drawer), agrupado en pestañas claras
   // (ver Drawer) para que nada se sienta "perdido" ni sature al usuario:
   // "Vender" (acciones de vendedor), "Comunidad" (torneos, mazos, noticias),
@@ -13043,19 +13049,14 @@ export default function EncuentraCartas() {
             )}
           </button>
           <nav className="relative flex flex-wrap gap-2 items-center">
+            <button onClick={irAVender}
+              style={{ background: `linear-gradient(90deg, ${COLORS.gold}, #FFB84D)`, color: COLORS.textoOscuro }}
+              className="px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap shadow-sm hover:brightness-105">
+              <Tag size={15} /> <span>Vender</span>
+            </button>
             {navEsenciales.map(navButton)}
 
             <NotificationBell session={session} onNavigate={setView} />
-
-            <button onClick={() => setView("carrito")} style={{ color: view === "carrito" ? COLORS.azulPalido : COLORS.muted }} className="relative p-2 rounded-lg">
-              <ShoppingCart size={18} />
-              {carrito.length > 0 && (
-                <span style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }}
-                  className="absolute -top-1 -right-1 rounded-full text-[10px] font-bold w-4 h-4 flex items-center justify-center">
-                  {carrito.length > 9 ? "9+" : carrito.length}
-                </span>
-              )}
-            </button>
 
             {/* Foto de perfil: acceso directo a "Mi cuenta" (o a crear cuenta si
                 no hay sesión) — separado del menú de tres líneas, que abre el resto
@@ -13125,6 +13126,26 @@ export default function EncuentraCartas() {
         <BuscarCartaModal session={session} onClose={() => setMostrarBuscarCarta(false)} onCreado={() => setBusquedasVersion((v) => v + 1)} />
       )}
 
+      {/* Carrito: antes era un ícono discreto arriba -- ahora es un botón
+          flotante grande abajo a la izquierda (no choca con el ChatModal,
+          que se ancla a la derecha) con un halo que pulsa cada cierto
+          tiempo para que no pase desapercibido. */}
+      <button onClick={() => setView("carrito")} aria-label="Carrito"
+        style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, boxShadow: "0 6px 20px rgba(0,0,0,0.4)" }}
+        className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-40 w-14 h-14 rounded-full flex items-center justify-center">
+        <span style={{ border: `2px solid ${COLORS.azulPalido}`, animation: "ringPulse 1.8s ease-out infinite" }}
+          className="absolute inset-0 rounded-full pointer-events-none" aria-hidden="true" />
+        <span style={{ border: `2px solid ${COLORS.azulPalido}`, animation: "ringPulse 1.8s ease-out .6s infinite" }}
+          className="absolute inset-0 rounded-full pointer-events-none" aria-hidden="true" />
+        <ShoppingCart size={24} />
+        {carrito.length > 0 && (
+          <span style={{ background: COLORS.gold, color: COLORS.textoOscuro, border: `2px solid ${COLORS.bg}` }}
+            className="absolute -top-1 -right-1 rounded-full text-xs font-bold w-5 h-5 flex items-center justify-center">
+            {carrito.length > 9 ? "9+" : carrito.length}
+          </span>
+        )}
+      </button>
+
       <main style={{ position: "relative", zIndex: 1 }} className="max-w-5xl mx-auto px-4 sm:px-8 py-10">
         {/* SEARCH */}
         {view === "search" && (
@@ -13186,11 +13207,7 @@ export default function EncuentraCartas() {
                 ))}
               </div>
 
-              <button type="button"
-                onClick={() => {
-                  if (!session) return setShowAccountModal(true);
-                  setView(perfil?.tipo === "tienda" ? "myStore" : "myMarket");
-                }}
+              <button type="button" onClick={irAVender}
                 style={{ background: `linear-gradient(90deg, ${COLORS.gold}, #FFB84D)`, color: COLORS.textoOscuro }}
                 className="w-full max-w-xl mx-auto mt-5 rounded-2xl px-6 py-4 flex items-center justify-center gap-2 font-bold text-base sm:text-lg shadow-lg hover:brightness-105 active:scale-[0.99] transition">
                 <Tag size={22} />
@@ -13237,56 +13254,137 @@ export default function EncuentraCartas() {
                   </div>
                 )}
 
-                {(loadingMarket || loadingInicio) && market.length === 0 && inicioTienda.length === 0 && (
-                  <SkeletonGrid />
-                )}
-
-                {(market.filter(pasaFiltroTcg).length > 0 || inicioTienda.filter(pasaFiltroTcg).length > 0) && (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 style={{ color: COLORS.azulClaro }} className="font-semibold text-sm uppercase">🔥 Recién publicado</h3>
-                      <button onClick={() => setView("market")} style={{ color: COLORS.azulPalido }} className="text-xs font-semibold">Ver Mercado</button>
-                    </div>
-                    <div className="columns-2 sm:columns-4 lg:columns-5 gap-3">
-                      {[...market.filter(pasaFiltroTcg).map((r) => ({ ...r, _esTienda: false })), ...inicioTienda.filter(pasaFiltroTcg).map((r) => ({ ...r, _esTienda: true }))]
-                        .sort((a, b) => {
-                          const da = estaDestacado(a) ? 1 : 0, db = estaDestacado(b) ? 1 : 0;
-                          if (da !== db) return db - da;
-                          const favoritos = perfil?.pokemon_favoritos;
-                          const fa = esCartaFavorita(a.carta, favoritos) ? 1 : 0, fb = esCartaFavorita(b.carta, favoritos) ? 1 : 0;
-                          if (fa !== fb) return fb - fa;
-                          return new Date(b.created_at) - new Date(a.created_at);
-                        })
-                        .slice(0, 10)
-                        .map((r) => (
-                          <button key={`${r._esTienda ? "t" : "m"}-${r.id}`}
-                            onClick={() => abrirDetalle(r.id, r._esTienda ? "inventario_tienda" : "mercado_listings")}
-                            style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}` }}
-                            className="text-left rounded-2xl overflow-hidden flex flex-col mb-3 break-inside-avoid transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
-                            <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
-                              {miniaturaListing(r) ? (
-                                <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-                              ) : (
-                                <Package size={28} color={COLORS.muted} />
-                              )}
-                            </div>
-                            <div className="p-2">
-                              <div className="flex items-center gap-1 flex-wrap mb-1">
-                                <Badge color={r._esTienda ? COLORS.azulPalido : COLORS.azulClaro}>{r._esTienda ? "Tienda" : "Mercado"}</Badge>
-                                {r.tipo !== "sellado" && <IdiomaBadge idioma={r.idioma} />}
-                                {r.tipo !== "sellado" && <EstadoCartaBadge condicion={r.condicion} />}
-                                {r.tipo !== "sellado" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
-                                {!r._esTienda && <BuzonBadge tienda={r.buzon_tienda} />}
-                                <BoostBadge item={r} />
-                              </div>
-                              <p className="text-xs font-semibold line-clamp-2">{r.carta}</p>
-                              <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="sm" />
-                            </div>
-                          </button>
-                        ))}
-                    </div>
+                <h3 style={{ color: COLORS.azulClaro }} className="font-semibold text-sm uppercase mb-3">🛒 Mercado</h3>
+                <TiendasAuroraCarrusel onAbrirTienda={openStore} />
+                <div className="flex gap-2 flex-wrap mb-3 items-center">
+                  {[{ id: "todos", label: "Todo" }, { id: "carta", label: "Cartas" }, { id: "sellado", label: "Sellado" }, { id: "accesorio", label: "Accesorios" }].map((t) => (
+                    <button key={t.id} onClick={() => setTipoMercadoTab(t.id)}
+                      style={{ background: tipoMercadoTab === t.id ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${tipoMercadoTab === t.id ? COLORS.azulPalido : COLORS.surface2}`, color: tipoMercadoTab === t.id ? COLORS.azulPalido : COLORS.muted }}
+                      className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                      {t.label}
+                    </button>
+                  ))}
+                  <button onClick={() => setFiltrosAbiertos((v) => !v)}
+                    style={{ background: filtrosActivos ? `${COLORS.gold}22` : "transparent", border: `1px solid ${filtrosActivos ? COLORS.gold : COLORS.surface2}`, color: filtrosActivos ? COLORS.gold : COLORS.muted }}
+                    className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+                    🔎 Filtros{filtrosActivos ? ` (${Object.values(filtros).filter(Boolean).length})` : ""}
+                  </button>
+                </div>
+                {filtrosAbiertos && (
+                  <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid sm:grid-cols-5 gap-2">
+                    <input placeholder="Precio mín." type="number" value={filtros.precioMin}
+                      onChange={(e) => setFiltros((f) => ({ ...f, precioMin: e.target.value }))}
+                      style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm" />
+                    <input placeholder="Precio máx." type="number" value={filtros.precioMax}
+                      onChange={(e) => setFiltros((f) => ({ ...f, precioMax: e.target.value }))}
+                      style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm" />
+                    <select value={filtros.idioma} onChange={(e) => setFiltros((f) => ({ ...f, idioma: e.target.value }))}
+                      style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
+                      <option value="">Idioma (cualquiera)</option>
+                      {IDIOMA_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                    </select>
+                    <select value={filtros.condicion} onChange={(e) => setFiltros((f) => ({ ...f, condicion: e.target.value }))}
+                      style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
+                      <option value="">Estado (cualquiera)</option>
+                      {CONDICION_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.key} · {o.label}</option>)}
+                    </select>
+                    <ZonaSelector incluirTodas value={filtros.zona}
+                      onChange={(v) => setFiltros((f) => ({ ...f, zona: v }))} />
+                    <select value={ordenResultados} onChange={(e) => setOrdenResultados(e.target.value)}
+                      style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
+                      <option value="">Ordenar por: relevancia</option>
+                      <option value="precio_asc">Precio: menor a mayor</option>
+                      <option value="precio_desc">Precio: mayor a menor</option>
+                    </select>
+                    {filtrosActivos && (
+                      <button onClick={() => setFiltros({ precioMin: "", precioMax: "", idioma: "", condicion: "", zona: "" })}
+                        style={{ color: COLORS.muted }} className="text-xs text-left sm:col-span-5">Limpiar filtros</button>
+                    )}
                   </div>
                 )}
+                {(() => {
+                  const loadingMercado = loadingMarket || loadingMarketTiendas;
+                  const mercadoCompleto = marketNormalizado(market, marketTiendas);
+                  const mercadoVisible = ordenarPorPrecio(mercadoCompleto.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltros));
+                  return (
+                    <>
+                      {loadingMercado && <SkeletonGrid />}
+                      {!loadingMercado && mercadoVisible.length === 0 && (
+                        <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
+                          {mercadoCompleto.length === 0
+                            ? "Todavía no hay publicaciones en el mercado. En cuanto alguien se registre como cuenta individual (o una tienda) publique una carta, aparecerá aquí automáticamente."
+                            : filtrosActivos
+                              ? "Nadie tiene algo así con esos filtros. Prueba quitando alguno."
+                              : "Nadie ha publicado nada así todavía en el Mercado."}
+                        </p>
+                      )}
+                      <div className="columns-2 sm:columns-3 lg:columns-4 gap-4">
+                        {mercadoVisible.map((r) => (
+                    <div key={`${r._esTienda ? "t" : "m"}-${r.id}`} onClick={() => abrirDetalle(r.id, r._tabla)} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
+                      <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
+                        {miniaturaListing(r) ? (
+                          <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                        ) : (
+                          <Package size={40} color={COLORS.muted} />
+                        )}
+                      </div>
+                      <div className="p-3 flex flex-col flex-1 gap-1">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <Badge color={r._esTienda ? COLORS.azulPalido : COLORS.azulClaro}>{r._esTienda ? "Tienda" : "Mercado"}</Badge>
+                          {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
+                          {r.tipo === "accesorio" && <Badge color={COLORS.gold}>Accesorio</Badge>}
+                          {r.tipo === "carta" && <IdiomaBadge idioma={r.idioma} />}
+                          {r.tipo === "carta" && <EstadoCartaBadge condicion={r.condicion} />}
+                          {r.tipo === "carta" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
+                          {!r._esTienda && <BuzonBadge tienda={r.buzon_tienda} />}
+                          <PlanBadge perfil={r.perfiles} />
+                          <BoostBadge item={r} />
+                        </div>
+                        <p className="font-semibold text-sm leading-snug line-clamp-2">{r.carta}</p>
+                        {r.tipo === "accesorio" ? (
+                          <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.descripcion || r.zona}</p>
+                        ) : (
+                          <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.set_nombre}{r.set_nombre && zonaDe(r) ? " · " : ""}{zonaDe(r)}</p>
+                        )}
+                        <div className="mt-1">
+                          <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="md" />
+                        </div>
+                        {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs -mt-1">ref. {r.precio_ref_fuente || "mercado"}: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
+                        {r._esTienda ? (
+                          <div className="flex items-center gap-2 mt-auto pt-2">
+                            <AvatarImg url={r._vendedorAvatar} size={20} />
+                            <p style={{ color: COLORS.muted }} className="text-xs truncate">{r._vendedorNombre}</p>
+                          </div>
+                        ) : (
+                          <button onClick={(e) => { e.stopPropagation(); verPerfil(r._vendedorId); }} className="flex items-center gap-2 mt-auto pt-2 hover:brightness-125">
+                            <AvatarImg url={r._vendedorAvatar} size={20} />
+                            <p style={{ color: COLORS.muted }} className="text-xs truncate">{r._vendedorNombre}</p>
+                          </button>
+                        )}
+                        <div className="flex gap-1 mt-2">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); abrirChat(r._vendedorId, r._vendedorNombre, `${r.carta} (${r.set_nombre})${r._esTienda ? ` en ${r._vendedorNombre}` : ""}`, r._vendedorWhatsapp, r._vendedorFacebook, r._vendedorAvatar); }}
+                            disabled={!r._vendedorId}
+                            style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r._vendedorId ? 1 : 0.4 }}
+                            className="text-xs px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 flex-1"
+                          >
+                            <MessageCircle size={12} /> Contactar
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: r._tabla, id: r.id, nombre: r.carta, precio: r.precio, imagen_url: miniaturaListing(r), contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r._vendedorId, vendedorNombre: r._vendedorNombre, vendedorAvatar: r._vendedorAvatar, vendedorWhatsapp: r._vendedorWhatsapp, vendedorFacebook: r._vendedorFacebook }); }}
+                            disabled={!r._vendedorId || r._vendedorId === session?.user?.id || enElCarrito(r._tabla, r.id)}
+                            style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: (!r._vendedorId || r._vendedorId === session?.user?.id) ? 0.3 : 1 }}
+                            className="text-xs px-2 py-1.5 rounded-lg flex items-center justify-center">
+                            {enElCarrito(r._tabla, r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             )}
 
@@ -13551,160 +13649,6 @@ export default function EncuentraCartas() {
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {/* MARKET */}
-        {view === "market" && (
-          <div>
-            <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-4">Mercado entre usuarios</h2>
-            <TiendasAuroraCarrusel onAbrirTienda={openStore} />
-            {/* Antes este filtro solo se podía cambiar desde el buscador de Inicio
-                -- aquí ya se aplicaba (pasaFiltroTcg) pero no había forma de verlo
-                ni tocarlo sin ir hasta allá. */}
-            <div className="flex flex-wrap items-center gap-1.5 mb-4">
-              <p style={{ color: COLORS.muted }} className="text-xs mr-1">TCG:</p>
-              {[{ key: "todos", label: "Todos" }, ...TCG_OPCIONES].map((o) => (
-                <button key={o.key} type="button" onClick={() => setTcgFiltro(o.key)}
-                  style={{
-                    background: tcgFiltro === o.key ? COLORS.surface2 : "transparent",
-                    border: `1px solid ${tcgFiltro === o.key ? COLORS.azulClaro : COLORS.surface2}`,
-                    color: tcgFiltro === o.key ? COLORS.azulClaro : COLORS.muted,
-                  }}
-                  className="px-3 py-1 rounded-full text-xs font-semibold">
-                  {o.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2 flex-wrap mb-3 items-center">
-              {[{ id: "todos", label: "Todo" }, { id: "carta", label: "Cartas" }, { id: "sellado", label: "Sellado" }, { id: "accesorio", label: "Accesorios" }].map((t) => (
-                <button key={t.id} onClick={() => setTipoMercadoTab(t.id)}
-                  style={{ background: tipoMercadoTab === t.id ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${tipoMercadoTab === t.id ? COLORS.azulPalido : COLORS.surface2}`, color: tipoMercadoTab === t.id ? COLORS.azulPalido : COLORS.muted }}
-                  className="rounded-lg px-3 py-1.5 text-xs font-semibold">
-                  {t.label}
-                </button>
-              ))}
-              <button onClick={() => setFiltrosAbiertos((v) => !v)}
-                style={{ background: filtrosActivos ? `${COLORS.gold}22` : "transparent", border: `1px solid ${filtrosActivos ? COLORS.gold : COLORS.surface2}`, color: filtrosActivos ? COLORS.gold : COLORS.muted }}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
-                🔎 Filtros{filtrosActivos ? ` (${Object.values(filtros).filter(Boolean).length})` : ""}
-              </button>
-            </div>
-            {filtrosAbiertos && (
-              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid sm:grid-cols-5 gap-2">
-                <input placeholder="Precio mín." type="number" value={filtros.precioMin}
-                  onChange={(e) => setFiltros((f) => ({ ...f, precioMin: e.target.value }))}
-                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm" />
-                <input placeholder="Precio máx." type="number" value={filtros.precioMax}
-                  onChange={(e) => setFiltros((f) => ({ ...f, precioMax: e.target.value }))}
-                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm" />
-                <select value={filtros.idioma} onChange={(e) => setFiltros((f) => ({ ...f, idioma: e.target.value }))}
-                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
-                  <option value="">Idioma (cualquiera)</option>
-                  {IDIOMA_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-                </select>
-                <select value={filtros.condicion} onChange={(e) => setFiltros((f) => ({ ...f, condicion: e.target.value }))}
-                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
-                  <option value="">Estado (cualquiera)</option>
-                  {CONDICION_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.key} · {o.label}</option>)}
-                </select>
-                <ZonaSelector incluirTodas value={filtros.zona}
-                  onChange={(v) => setFiltros((f) => ({ ...f, zona: v }))} />
-                <select value={ordenResultados} onChange={(e) => setOrdenResultados(e.target.value)}
-                  style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2 py-2 text-sm">
-                  <option value="">Ordenar por: relevancia</option>
-                  <option value="precio_asc">Precio: menor a mayor</option>
-                  <option value="precio_desc">Precio: mayor a menor</option>
-                </select>
-                {filtrosActivos && (
-                  <button onClick={() => setFiltros({ precioMin: "", precioMax: "", idioma: "", condicion: "", zona: "" })}
-                    style={{ color: COLORS.muted }} className="text-xs text-left sm:col-span-5">Limpiar filtros</button>
-                )}
-              </div>
-            )}
-            {(() => {
-              const loadingMercado = loadingMarket || loadingMarketTiendas;
-              const mercadoCompleto = marketNormalizado(market, marketTiendas);
-              const mercadoVisible = ordenarPorPrecio(mercadoCompleto.filter(pasaFiltroTcg).filter((r) => tipoMercadoTab === "todos" || r.tipo === tipoMercadoTab).filter(pasaFiltros));
-              return (
-                <>
-                  {loadingMercado && <SkeletonGrid />}
-                  {!loadingMercado && mercadoVisible.length === 0 && (
-                    <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
-                      {mercadoCompleto.length === 0
-                        ? "Todavía no hay publicaciones en el mercado. En cuanto alguien se registre como cuenta individual (o una tienda) publique una carta, aparecerá aquí automáticamente."
-                        : filtrosActivos
-                          ? "Nadie tiene algo así con esos filtros. Prueba quitando alguno."
-                          : "Nadie ha publicado nada así todavía en el Mercado."}
-                    </p>
-                  )}
-                  <div className="columns-2 sm:columns-3 lg:columns-4 gap-4">
-                    {mercadoVisible.map((r) => (
-                <div key={`${r._esTienda ? "t" : "m"}-${r.id}`} onClick={() => abrirDetalle(r.id, r._tabla)} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
-                  <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
-                    {miniaturaListing(r) ? (
-                      <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-                    ) : (
-                      <Package size={40} color={COLORS.muted} />
-                    )}
-                  </div>
-                  <div className="p-3 flex flex-col flex-1 gap-1">
-                    <div className="flex items-center gap-1 flex-wrap">
-                      <Badge color={r._esTienda ? COLORS.azulPalido : COLORS.azulClaro}>{r._esTienda ? "Tienda" : "Mercado"}</Badge>
-                      {r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}
-                      {r.tipo === "accesorio" && <Badge color={COLORS.gold}>Accesorio</Badge>}
-                      {r.tipo === "carta" && <IdiomaBadge idioma={r.idioma} />}
-                      {r.tipo === "carta" && <EstadoCartaBadge condicion={r.condicion} />}
-                      {r.tipo === "carta" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}
-                      {!r._esTienda && <BuzonBadge tienda={r.buzon_tienda} />}
-                      <PlanBadge perfil={r.perfiles} />
-                      <BoostBadge item={r} />
-                    </div>
-                    <p className="font-semibold text-sm leading-snug line-clamp-2">{r.carta}</p>
-                    {r.tipo === "accesorio" ? (
-                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.descripcion || r.zona}</p>
-                    ) : (
-                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{r.set_nombre}{r.set_nombre && zonaDe(r) ? " · " : ""}{zonaDe(r)}</p>
-                    )}
-                    <div className="mt-1">
-                      <PrecioConOferta precio={r.precio} precioAntes={r.precio_antes} size="md" />
-                    </div>
-                    {r.precio_ref_mxn && <p style={{ color: COLORS.muted }} className="text-xs -mt-1">ref. {r.precio_ref_fuente || "mercado"}: ~${Number(r.precio_ref_mxn).toLocaleString("es-MX")}</p>}
-                    {r._esTienda ? (
-                      <div className="flex items-center gap-2 mt-auto pt-2">
-                        <AvatarImg url={r._vendedorAvatar} size={20} />
-                        <p style={{ color: COLORS.muted }} className="text-xs truncate">{r._vendedorNombre}</p>
-                      </div>
-                    ) : (
-                      <button onClick={(e) => { e.stopPropagation(); verPerfil(r._vendedorId); }} className="flex items-center gap-2 mt-auto pt-2 hover:brightness-125">
-                        <AvatarImg url={r._vendedorAvatar} size={20} />
-                        <p style={{ color: COLORS.muted }} className="text-xs truncate">{r._vendedorNombre}</p>
-                      </button>
-                    )}
-                    <div className="flex gap-1 mt-2">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); abrirChat(r._vendedorId, r._vendedorNombre, `${r.carta} (${r.set_nombre})${r._esTienda ? ` en ${r._vendedorNombre}` : ""}`, r._vendedorWhatsapp, r._vendedorFacebook, r._vendedorAvatar); }}
-                        disabled={!r._vendedorId}
-                        style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55`, opacity: r._vendedorId ? 1 : 0.4 }}
-                        className="text-xs px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 flex-1"
-                      >
-                        <MessageCircle size={12} /> Contactar
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); agregarAlCarrito({ tabla: r._tabla, id: r.id, nombre: r.carta, precio: r.precio, imagen_url: miniaturaListing(r), contexto: `${r.carta} (${r.set_nombre})`, vendedorId: r._vendedorId, vendedorNombre: r._vendedorNombre, vendedorAvatar: r._vendedorAvatar, vendedorWhatsapp: r._vendedorWhatsapp, vendedorFacebook: r._vendedorFacebook }); }}
-                        disabled={!r._vendedorId || r._vendedorId === session?.user?.id || enElCarrito(r._tabla, r.id)}
-                        style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55`, opacity: (!r._vendedorId || r._vendedorId === session?.user?.id) ? 0.3 : 1 }}
-                        className="text-xs px-2 py-1.5 rounded-lg flex items-center justify-center">
-                        {enElCarrito(r._tabla, r.id) ? <Check size={12} /> : <ShoppingCart size={12} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                    ))}
-                  </div>
-                </>
-              );
-            })()}
           </div>
         )}
 
