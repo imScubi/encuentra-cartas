@@ -1893,6 +1893,10 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
   const [seleccionadas, setSeleccionadas] = useState(new Set());
   const [duplicandoSeleccion, setDuplicandoSeleccion] = useState(false);
   const [borrandoSeleccion, setBorrandoSeleccion] = useState(false);
+  // Las cartas de una carpeta "solo exhibición" (en_venta=false) se separan
+  // de "Tus publicaciones" -- si no, estorban constantemente al revisar o
+  // gestionar el inventario que sí está en venta. Colapsadas por default.
+  const [mostrarExhibicion, setMostrarExhibicion] = useState(false);
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
@@ -2080,6 +2084,55 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
   };
 
   if (loading) return <Loading label="Cargando tus publicaciones..." />;
+
+  const publicacionesVenta = publicaciones.filter((p) => p.en_venta !== false);
+  const publicacionesExhibicion = publicaciones.filter((p) => p.en_venta === false);
+
+  const filaPublicacion = (item) => (
+    <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${seleccionadas.has(item.id) ? COLORS.azulPalido : estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
+      <div className="flex items-center gap-3">
+        <input type="checkbox" checked={seleccionadas.has(item.id)} onChange={() => toggleSeleccion(item.id)} className="shrink-0" />
+        {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-medium text-sm">{item.carta}</p>
+            <Badge color={item.tipo === "sellado" ? COLORS.azulClaro : item.tipo === "accesorio" ? COLORS.gold : COLORS.azulPalido}>
+              {item.tipo === "sellado" ? "Sellado" : item.tipo === "accesorio" ? "Accesorio" : "Carta"}
+            </Badge>
+            {item.tipo === "carta" && <IdiomaBadge idioma={item.idioma} />}
+            {item.tipo === "carta" && <EstadoCartaBadge condicion={item.condicion} />}
+            {item.tipo === "carta" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />}
+            <BuzonBadge tienda={item.buzon_tienda} />
+            <BoostBadge item={item} />
+          </div>
+          {item.tipo === "accesorio" ? (
+            <p style={{ color: COLORS.muted }} className="text-xs truncate">{item.etiquetas?.join(", ")}{item.etiquetas?.length ? " · " : ""}{item.zona}</p>
+          ) : (
+            <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.zona}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-24" title="Precio" />
+        <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
+        <input type="number" min="1" defaultValue={item.cantidad} onBlur={(e) => actualizar(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-16" title="Cantidad disponible" />
+      </div>
+
+      <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="flex flex-wrap items-center gap-2 pt-2.5">
+        {item.tipo !== "accesorio" && !item.imagen_url && <ReintentarImagen tcg={item.tcg} nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
+        {item.tipo !== "accesorio" && (
+          <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
+        )}
+        <SubirFotoManual session={session} label={item.foto_real_url ? (item.tipo === "accesorio" ? "Cambiar frente" : "Cambiar foto real (frente)") : (item.tipo === "accesorio" ? "📷 Foto de frente" : "📷 Foto real (frente)")} onSubido={async (url) => { await actualizar(item.id, "foto_real_url", url); cargar(); }} />
+        <SubirFotoManual session={session} label={item.foto_real_reverso_url ? (item.tipo === "accesorio" ? "Cambiar atrás" : "Cambiar foto real (atrás)") : (item.tipo === "accesorio" ? "📷 Foto de atrás" : "📷 Foto real (atrás)")} onSubido={async (url) => { await actualizar(item.id, "foto_real_reverso_url", url); cargar(); }} />
+        <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
+        <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} tipoItem={item.tipo} onVendida={cargar} />
+        <button onClick={() => duplicar(item)} title="Precarga el formulario de arriba con estos datos, para publicar otra copia rápido" style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">Duplicar</button>
+        <button onClick={() => borrar(item.id)} style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">Borrar</button>
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -2305,53 +2358,19 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
         )}
       </div>
       <div className="grid gap-2">
-        {publicaciones.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has publicado nada en el mercado.</p>}
-        {publicaciones.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${seleccionadas.has(item.id) ? COLORS.azulPalido : estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
-            <div className="flex items-center gap-3">
-              <input type="checkbox" checked={seleccionadas.has(item.id)} onChange={() => toggleSeleccion(item.id)} className="shrink-0" />
-              {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-medium text-sm">{item.carta}</p>
-                  <Badge color={item.tipo === "sellado" ? COLORS.azulClaro : item.tipo === "accesorio" ? COLORS.gold : COLORS.azulPalido}>
-                    {item.tipo === "sellado" ? "Sellado" : item.tipo === "accesorio" ? "Accesorio" : "Carta"}
-                  </Badge>
-                  {item.tipo === "carta" && <IdiomaBadge idioma={item.idioma} />}
-                  {item.tipo === "carta" && <EstadoCartaBadge condicion={item.condicion} />}
-                  {item.tipo === "carta" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />}
-                  <BuzonBadge tienda={item.buzon_tienda} />
-                  <BoostBadge item={item} />
-                </div>
-                {item.tipo === "accesorio" ? (
-                  <p style={{ color: COLORS.muted }} className="text-xs truncate">{item.etiquetas?.join(", ")}{item.etiquetas?.length ? " · " : ""}{item.zona}</p>
-                ) : (
-                  <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre} · {item.zona}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <input type="number" defaultValue={item.precio} onBlur={(e) => actualizar(item.id, "precio", e.target.value)} style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-24" title="Precio" />
-              <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizar(item.id, "precio_antes", e.target.value)} style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
-              <input type="number" min="1" defaultValue={item.cantidad} onBlur={(e) => actualizar(item.id, "cantidad", e.target.value)} style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-16" title="Cantidad disponible" />
-            </div>
-
-            <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="flex flex-wrap items-center gap-2 pt-2.5">
-              {item.tipo !== "accesorio" && !item.imagen_url && <ReintentarImagen tcg={item.tcg} nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />}
-              {item.tipo !== "accesorio" && (
-                <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizar(item.id, "imagen_url", url); cargar(); }} />
-              )}
-              <SubirFotoManual session={session} label={item.foto_real_url ? (item.tipo === "accesorio" ? "Cambiar frente" : "Cambiar foto real (frente)") : (item.tipo === "accesorio" ? "📷 Foto de frente" : "📷 Foto real (frente)")} onSubido={async (url) => { await actualizar(item.id, "foto_real_url", url); cargar(); }} />
-              <SubirFotoManual session={session} label={item.foto_real_reverso_url ? (item.tipo === "accesorio" ? "Cambiar atrás" : "Cambiar foto real (atrás)") : (item.tipo === "accesorio" ? "📷 Foto de atrás" : "📷 Foto real (atrás)")} onSubido={async (url) => { await actualizar(item.id, "foto_real_reverso_url", url); cargar(); }} />
-              <BoostButton session={session} tabla="mercado_listings" item={item} onBoosted={cargar} />
-              <MarcarVendidaBoton session={session} tabla="mercado_listings" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} tipoItem={item.tipo} onVendida={cargar} />
-              <button onClick={() => duplicar(item)} title="Precarga el formulario de arriba con estos datos, para publicar otra copia rápido" style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">Duplicar</button>
-              <button onClick={() => borrar(item.id)} style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">Borrar</button>
-            </div>
-          </div>
-        ))}
+        {publicacionesVenta.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has publicado nada en el mercado.</p>}
+        {publicacionesVenta.map(filaPublicacion)}
       </div>
+
+      {publicacionesExhibicion.length > 0 && (
+        <div className="mt-4">
+          <button onClick={() => setMostrarExhibicion((v) => !v)} style={{ color: COLORS.violeta }} className="text-xs font-semibold flex items-center gap-1 mb-2">
+            {mostrarExhibicion ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            🖼️ En exhibición ({publicacionesExhibicion.length})
+          </button>
+          {mostrarExhibicion && <div className="grid gap-2">{publicacionesExhibicion.map(filaPublicacion)}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -5266,6 +5285,10 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
   const [seleccionadasSellado, setSeleccionadasSellado] = useState(new Set());
   const [duplicandoSellado, setDuplicandoSellado] = useState(false);
   const [borrandoSellado, setBorrandoSellado] = useState(false);
+  // Las cartas de una carpeta "solo exhibición" (en_venta=false) se separan
+  // de "Cartas sueltas" -- si no, estorban constantemente al revisar o
+  // gestionar el inventario que sí está en venta. Colapsadas por default.
+  const [mostrarExhibicionCartas, setMostrarExhibicionCartas] = useState(false);
   const [misSorteos, setMisSorteos] = useState([]);
   const [plantillaSorteo, setPlantillaSorteo] = useState(null);
   const [sorteoFormKey, setSorteoFormKey] = useState(0);
@@ -5606,6 +5629,48 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
     );
   }
 
+  const inventarioVenta = inventario.filter((i) => i.en_venta !== false);
+  const inventarioExhibicion = inventario.filter((i) => i.en_venta === false);
+
+  const filaCarta = (item) => (
+    <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${seleccionadasCartas.has(item.id) ? COLORS.azulPalido : estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
+      <div className="flex items-center gap-3">
+        <input type="checkbox" checked={seleccionadasCartas.has(item.id)} onChange={() => toggleSeleccionCarta(item.id)} className="shrink-0" />
+        {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-medium text-sm">{item.carta}</p>
+            <IdiomaBadge idioma={item.idioma} />
+            <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />
+            <EstadoCartaBadge condicion={item.condicion} />
+            <BoostBadge item={item} />
+          </div>
+          <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarCarta(item.id, "precio", e.target.value)}
+          style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-24" title="Precio" />
+        <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizarCarta(item.id, "precio_antes", e.target.value)}
+          style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
+        <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarCarta(item.id, "cantidad", e.target.value)}
+          style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-16" title="Cantidad" />
+      </div>
+
+      <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="flex flex-wrap items-center gap-2 pt-2.5">
+        {!item.imagen_url && <ReintentarImagen tcg={item.tcg} nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />}
+        <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />
+        <SubirFotoManual session={session} label={item.foto_real_url ? "Cambiar foto real (frente)" : "📷 Foto real (frente)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_url", url); cargar(); }} />
+        <SubirFotoManual session={session} label={item.foto_real_reverso_url ? "Cambiar foto real (atrás)" : "📷 Foto real (atrás)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_reverso_url", url); cargar(); }} />
+        <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
+        <MarcarVendidaBoton session={session} tabla="inventario_tienda" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} onVendida={cargar} />
+        <button onClick={() => duplicarCarta(item)} title="Precarga el formulario de arriba con estos datos, para agregar otra copia rápido" style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">Duplicar</button>
+        <button onClick={() => borrarCarta(item.id)} style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">Borrar</button>
+      </div>
+    </div>
+  );
+
   return (
     <div>
       <div className="flex items-center gap-2 flex-wrap mb-4">
@@ -5896,46 +5961,19 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
         </button>
       </div>
       <div className="grid gap-2 mb-8">
-        {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
-        {inventario.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${seleccionadasCartas.has(item.id) ? COLORS.azulPalido : estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
-            <div className="flex items-center gap-3">
-              <input type="checkbox" checked={seleccionadasCartas.has(item.id)} onChange={() => toggleSeleccionCarta(item.id)} className="shrink-0" />
-              {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-medium text-sm">{item.carta}</p>
-                  <IdiomaBadge idioma={item.idioma} />
-                  <GradeoBadge gradeada={item.gradeada} grado_empresa={item.grado_empresa} grado_empresa_otro={item.grado_empresa_otro} grado_calificacion={item.grado_calificacion} />
-                  <EstadoCartaBadge condicion={item.condicion} />
-                  <BoostBadge item={item} />
-                </div>
-                <p style={{ color: COLORS.muted }} className="text-xs">{item.set_nombre}</p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <input type="number" defaultValue={item.precio} onBlur={(e) => actualizarCarta(item.id, "precio", e.target.value)}
-                style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-24" title="Precio" />
-              <input type="number" defaultValue={item.precio_antes || ""} onBlur={(e) => actualizarCarta(item.id, "precio_antes", e.target.value)}
-                style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-24" title="Precio antes (oferta, deja vacío para quitarla)" placeholder="Antes" />
-              <input type="number" defaultValue={item.cantidad} onBlur={(e) => actualizarCarta(item.id, "cantidad", e.target.value)}
-                style={inputStyle} className="rounded-lg px-2 py-1.5 text-sm w-16" title="Cantidad" />
-            </div>
-
-            <div style={{ borderTop: `1px solid ${COLORS.surface2}` }} className="flex flex-wrap items-center gap-2 pt-2.5">
-              {!item.imagen_url && <ReintentarImagen tcg={item.tcg} nombre={item.carta} setNombre={item.set_nombre} onEncontrada={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />}
-              <SubirFotoManual session={session} label={item.imagen_url ? "Cambiar foto" : "📷 Sin foto"} onSubido={async (url) => { await actualizarCarta(item.id, "imagen_url", url); cargar(); }} />
-              <SubirFotoManual session={session} label={item.foto_real_url ? "Cambiar foto real (frente)" : "📷 Foto real (frente)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_url", url); cargar(); }} />
-              <SubirFotoManual session={session} label={item.foto_real_reverso_url ? "Cambiar foto real (atrás)" : "📷 Foto real (atrás)"} onSubido={async (url) => { await actualizarCarta(item.id, "foto_real_reverso_url", url); cargar(); }} />
-              <BoostButton session={session} tabla="inventario_tienda" item={item} onBoosted={cargar} />
-              <MarcarVendidaBoton session={session} tabla="inventario_tienda" itemId={item.id} descripcion={`${item.carta}${item.set_nombre ? ` (${item.set_nombre})` : ""}`} precio={item.precio} onVendida={cargar} />
-              <button onClick={() => duplicarCarta(item)} title="Precarga el formulario de arriba con estos datos, para agregar otra copia rápido" style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">Duplicar</button>
-              <button onClick={() => borrarCarta(item.id)} style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">Borrar</button>
-            </div>
-          </div>
-        ))}
+        {inventarioVenta.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
+        {inventarioVenta.map(filaCarta)}
       </div>
+
+      {inventarioExhibicion.length > 0 && (
+        <div className="mb-8 -mt-4">
+          <button onClick={() => setMostrarExhibicionCartas((v) => !v)} style={{ color: COLORS.violeta }} className="text-xs font-semibold flex items-center gap-1 mb-2">
+            {mostrarExhibicionCartas ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            🖼️ En exhibición ({inventarioExhibicion.length})
+          </button>
+          {mostrarExhibicionCartas && <div className="grid gap-2">{inventarioExhibicion.map(filaCarta)}</div>}
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <h3 style={{ color: COLORS.azulClaro }} className="font-semibold text-sm uppercase">Producto sellado</h3>
