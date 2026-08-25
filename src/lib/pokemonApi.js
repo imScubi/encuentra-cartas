@@ -920,6 +920,15 @@ async function obtenerSetsApiTCG(slug, signal) {
 // los resultados cuyo `localId` empiece con ese número se ordenan primero
 // (apitcg.com no tiene un filtro parcial de número -- su `code` exige el
 // formato completo, ej. "038/147", que nadie escribe a mano).
+//
+// La búsqueda por nombre siempre pide 100 (el máximo que permite apitcg.com
+// por consulta) -- un Pokémon con muchas reimpresiones (Charmander tiene
+// 74 en el catálogo) fácil se pasa de los 8-24 que se mostraban antes: si
+// el número que se busca no estaba dentro de ese lote chico, el orden por
+// número no lo podía rescatar porque ni siquiera había llegado. Pedir el
+// máximo de una vez también es lo que permite mostrar "la lista completa"
+// cuando se busca solo por nombre, sin número (nunca se recorta a
+// `limite` en ese caso -- ver más abajo).
 async function buscarCartasVisualApiTCG(tcg, texto, limite, signal) {
   const slug = TCG_SLUG_APITCG[tcg];
   if (!slug) return [];
@@ -929,11 +938,11 @@ async function buscarCartasVisualApiTCG(tcg, texto, limite, signal) {
   if (nombreBusqueda) {
     try {
       const porNombre = await pedirProductosApiTCG(
-        new URLSearchParams({ tcg: slug, type: "card", name: nombreBusqueda, limit: String(numero ? Math.max(limite, 24) : limite) }),
+        new URLSearchParams({ tcg: slug, type: "card", name: nombreBusqueda, limit: "100" }),
         signal
       );
       if (porNombre.length > 0) {
-        if (!numero) return porNombre.slice(0, limite);
+        if (!numero) return porNombre; // "la lista completa" que se pidió -- no se recorta
         const numLower = numero.toLowerCase();
         const ordenado = [...porNombre].sort((a, b) => {
           const aMatch = a.localId?.toLowerCase().startsWith(numLower) ? 1 : 0;
@@ -995,7 +1004,7 @@ export async function buscarCartasCatalogo(tcg, texto, signal) {
   const enCache = _cacheBusqueda.get(clave);
   if (enCache && Date.now() - enCache.ts < CACHE_BUSQUEDA_TTL_MS) return enCache.resultado;
 
-  let resultado = await buscarCartasVisualApiTCG(tcg, texto, tcg === "pokemon" ? 8 : 24, signal);
+  let resultado = await buscarCartasVisualApiTCG(tcg, texto, 24, signal);
   let fuentePrincipalFallo = false;
 
   if (resultado.length === 0) {
