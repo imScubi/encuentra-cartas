@@ -4256,6 +4256,41 @@ a un botón flotante llamativo.
   cuando no hay sesión, y el carrito flotante se ve correctamente en la
   esquina inferior izquierda.
 
+## 135. Fix: publicar/borrar una carta "reiniciaba" toda la pantalla de vender + grid 3×3 en carpetas + selección múltiple en Tus publicaciones/Cartas sueltas
+
+El dueño probó el rediseño de Carpetas (sección 132) y reportó tres cosas:
+
+1. **El bug más molesto**: publicar o borrar una carta (dentro o fuera de
+   una carpeta) hacía que la pantalla de "Vender" se sintiera como si se
+   recargara de cero, y en particular, agregar una carta dentro de una
+   carpeta cerraba el modal de esa carpeta de golpe. Causa real: el
+   `cargar()` de `MyMarketPanel` y `MyStorePanel` (las funciones que
+   recargan "Tus publicaciones"/"Mi tienda" después de cualquier acción)
+   ponían `loading=true` en CADA llamada, no solo en la carga inicial --
+   y como ambos paneles tienen un `if (loading) return <Loading .../>`
+   al principio de su render, cualquier acción de fondo (agregar, borrar,
+   el `onPublicado` de una carpeta, subir una foto, marcar vendida, etc.)
+   desmontaba TODO el panel un instante, incluyendo el modal de detalle
+   de la carpeta que estuviera abierto -- exactamente el mismo bug que ya
+   se había corregido dentro de `CarpetasPanel` en la sección 132, pero
+   sin haberse propagado a sus dos componentes padre. Se aplicó el mismo
+   arreglo (una ref `primeraCargaHecha` que solo deja bloquear la
+   pantalla completa en la primera carga) en el `cargar()` de
+   `MyMarketPanel` y de `MyStorePanel`.
+2. **Grid 3×3 dentro de una carpeta**: la lista de cartas del modal de
+   detalle de una carpeta pasó de una fila por carta a una cuadrícula de
+   3 columnas (imagen + nombre + precio, checkbox superpuesto en la
+   esquina) -- más parecida a hojear un álbum.
+3. **Selección múltiple en "Tus publicaciones" y "Cartas sueltas"/
+   "Producto sellado"**: mismo patrón que ya existía dentro de una
+   carpeta -- checkbox por fila y una barra de "Duplicar"/"Borrar" que
+   aparece en cuanto hay algo seleccionado, para editar varias
+   publicaciones de un jalón en vez de una por una. Se mantuvo el
+   formato de fila (no cuadrícula) en estas dos listas porque cada fila
+   ya trae controles de edición en vivo (precio, fotos, boost, marcar
+   vendida) que no caben bien en una tarjeta de cuadrícula compacta --
+   si se prefiere también en cuadrícula ahí, es un ajuste aparte.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

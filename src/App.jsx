@@ -1890,6 +1890,10 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
   // habría creado y esa foto llegaría tarde a un formulario ya reiniciado.
   const [subiendoFoto, setSubiendoFoto] = useState({ frente: false, atras: false });
 
+  const [seleccionadas, setSeleccionadas] = useState(new Set());
+  const [duplicandoSeleccion, setDuplicandoSeleccion] = useState(false);
+  const [borrandoSeleccion, setBorrandoSeleccion] = useState(false);
+
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
   // Guarda la preferencia de buzón por default (perfiles.buzon_default_tienda_id)
@@ -1903,12 +1907,18 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
     } catch (e) { setError(e.message); } finally { setGuardandoBuzonDefault(false); }
   };
 
+  // Solo bloquea toda la pantalla con el spinner en la carga inicial -- las
+  // recargas de fondo que disparan publicar/borrar una carta (o el
+  // onPublicado de una carpeta) no deben desmontar el resto del panel
+  // (ej. el modal de detalle de una carpeta abierta).
+  const primeraCargaHecha = useRef(false);
   const cargar = () => {
-    setLoading(true); setError(null);
+    if (!primeraCargaHecha.current) setLoading(true);
+    setError(null);
     sb(`mercado_listings?select=*,buzon_tienda:buzon_tienda_id(nombre)&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
       .then(setPublicaciones)
       .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); primeraCargaHecha.current = true; });
   };
 
   useEffect(() => { cargar(); }, []);
@@ -2033,6 +2043,40 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
       etiquetas: item.etiquetas ? item.etiquetas.join(", ") : "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // ---- Selección múltiple sobre "Tus publicaciones": duplicar o borrar
+  // varias de un jalón en vez de una por una. Mismo patrón que el detalle
+  // de una carpeta (CarpetasPanel). ----
+  const toggleSeleccion = (id) => {
+    setSeleccionadas((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const duplicarSeleccionadas = async () => {
+    if (!seleccionadas.size) return;
+    setDuplicandoSeleccion(true); setError(null);
+    try {
+      const copias = publicaciones.filter((p) => seleccionadas.has(p.id)).map(({ id, created_at, ...resto }) => resto);
+      await sbWrite("POST", "mercado_listings", copias, session);
+      setSeleccionadas(new Set());
+      cargar();
+    } catch (e) { setError(e.message); } finally { setDuplicandoSeleccion(false); }
+  };
+
+  const borrarSeleccionadas = async () => {
+    if (!seleccionadas.size) return;
+    const n = seleccionadas.size;
+    if (!window.confirm(`¿Borrar ${n} publicación${n === 1 ? "" : "es"} seleccionada${n === 1 ? "" : "s"}? Esta acción no se puede deshacer.`)) return;
+    setBorrandoSeleccion(true); setError(null);
+    try {
+      await sbWrite("DELETE", `mercado_listings?id=in.(${[...seleccionadas].join(",")})`, {}, session);
+      setSeleccionadas(new Set());
+      cargar();
+    } catch (e) { setError(e.message); } finally { setBorrandoSeleccion(false); }
   };
 
   if (loading) return <Loading label="Cargando tus publicaciones..." />;
@@ -2244,12 +2288,28 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
         {!alLimite && <ChecklistPublicacion campos={campos} />}
       </div>
 
-      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Tus publicaciones</h3>
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase">Tus publicaciones</h3>
+        {seleccionadas.size > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ color: COLORS.muted }} className="text-xs">{seleccionadas.size} seleccionada{seleccionadas.size === 1 ? "" : "s"}</span>
+            <button onClick={duplicarSeleccionadas} disabled={duplicandoSeleccion}
+              style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+              {duplicandoSeleccion ? "Duplicando..." : "Duplicar"}
+            </button>
+            <button onClick={borrarSeleccionadas} disabled={borrandoSeleccion}
+              style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+              {borrandoSeleccion ? "Borrando..." : "Borrar"}
+            </button>
+          </div>
+        )}
+      </div>
       <div className="grid gap-2">
         {publicaciones.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has publicado nada en el mercado.</p>}
         {publicaciones.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${seleccionadas.has(item.id) ? COLORS.azulPalido : estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
             <div className="flex items-center gap-3">
+              <input type="checkbox" checked={seleccionadas.has(item.id)} onChange={() => toggleSeleccion(item.id)} className="shrink-0" />
               {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -4940,16 +5000,21 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
               {cargandoCards ? <Loading label="Cargando cartas..." /> : cardsCarpeta.length === 0 ? (
                 <p style={{ color: COLORS.muted }} className="text-sm">Esta carpeta todavía no tiene cartas.</p>
               ) : (
-                <div className="grid gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {cardsCarpeta.map((item) => (
                     <label key={item.id} style={{ background: COLORS.bg, border: `1px solid ${seleccionadas.has(item.id) ? COLORS.azulPalido : COLORS.surface2}` }}
-                      className="rounded-lg p-2 flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={seleccionadas.has(item.id)} onChange={() => toggleSeleccionCarta(item.id)} />
-                      {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta || item.producto} style={{ width: 36, height: 50, objectFit: "contain" }} />}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{item.carta || item.producto}</p>
-                        <p style={{ color: COLORS.muted }} className="text-xs">
-                          ${Number(item.precio).toLocaleString("es-MX")}{item.cantidad > 1 ? ` · ${item.cantidad} disponibles` : ""}
+                      className="relative rounded-lg overflow-hidden cursor-pointer flex flex-col">
+                      <input type="checkbox" checked={seleccionadas.has(item.id)} onChange={() => toggleSeleccionCarta(item.id)}
+                        className="absolute top-1.5 left-1.5 z-10 w-4 h-4" />
+                      <div style={{ background: COLORS.surface2, aspectRatio: "3/4" }} className="flex items-center justify-center">
+                        {miniaturaListing(item) ? (
+                          <img src={miniaturaListing(item)} alt={item.carta || item.producto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                        ) : <Package size={20} color={COLORS.muted} />}
+                      </div>
+                      <div className="p-1.5">
+                        <p className="text-[11px] font-semibold truncate">{item.carta || item.producto}</p>
+                        <p style={{ color: COLORS.muted }} className="text-[11px]">
+                          ${Number(item.precio).toLocaleString("es-MX")}{item.cantidad > 1 ? ` · ${item.cantidad}` : ""}
                         </p>
                       </div>
                     </label>
@@ -5195,6 +5260,12 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
+  const [seleccionadasCartas, setSeleccionadasCartas] = useState(new Set());
+  const [duplicandoCartas, setDuplicandoCartas] = useState(false);
+  const [borrandoCartas, setBorrandoCartas] = useState(false);
+  const [seleccionadasSellado, setSeleccionadasSellado] = useState(new Set());
+  const [duplicandoSellado, setDuplicandoSellado] = useState(false);
+  const [borrandoSellado, setBorrandoSellado] = useState(false);
   const [misSorteos, setMisSorteos] = useState([]);
   const [plantillaSorteo, setPlantillaSorteo] = useState(null);
   const [sorteoFormKey, setSorteoFormKey] = useState(0);
@@ -5215,8 +5286,14 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
     }
   };
 
+  // Solo bloquea toda la pantalla con el spinner en la carga inicial -- las
+  // recargas de fondo (agregar/borrar una carta, guardar datos de la
+  // tienda, el onPublicado de una carpeta) no deben desmontar el resto
+  // del panel (ej. el modal de detalle de una carpeta abierta).
+  const primeraCargaHecha = useRef(false);
   const cargar = () => {
-    setLoading(true); setError(null);
+    if (!primeraCargaHecha.current) setLoading(true);
+    setError(null);
     sb(`tiendas?select=*&perfil_id=eq.${session.user.id}&order=nombre.asc`, session)
       .then(async (rows) => {
         setMisTiendas(rows);
@@ -5230,7 +5307,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
         }
       })
       .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); primeraCargaHecha.current = true; });
   };
 
   useEffect(() => { cargar(); }, []);
@@ -5360,6 +5437,39 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // ---- Selección múltiple sobre "Cartas sueltas": duplicar o borrar
+  // varias de un jalón en vez de una por una. ----
+  const toggleSeleccionCarta = (id) => {
+    setSeleccionadasCartas((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const duplicarCartasSeleccionadas = async () => {
+    if (!seleccionadasCartas.size) return;
+    setDuplicandoCartas(true); setError(null);
+    try {
+      const copias = inventario.filter((i) => seleccionadasCartas.has(i.id)).map(({ id, created_at, ...resto }) => resto);
+      await sbWrite("POST", "inventario_tienda", copias, session);
+      setSeleccionadasCartas(new Set());
+      cargar();
+    } catch (e) { setError(e.message); } finally { setDuplicandoCartas(false); }
+  };
+
+  const borrarCartasSeleccionadas = async () => {
+    if (!seleccionadasCartas.size) return;
+    const n = seleccionadasCartas.size;
+    if (!window.confirm(`¿Borrar ${n} carta${n === 1 ? "" : "s"} seleccionada${n === 1 ? "" : "s"}? Esta acción no se puede deshacer.`)) return;
+    setBorrandoCartas(true); setError(null);
+    try {
+      await sbWrite("DELETE", `inventario_tienda?id=in.(${[...seleccionadasCartas].join(",")})`, {}, session);
+      setSeleccionadasCartas(new Set());
+      cargar();
+    } catch (e) { setError(e.message); } finally { setBorrandoCartas(false); }
+  };
+
   const agregarSellado = async () => {
     if (!nuevoSellado.producto || !nuevoSellado.precio) return;
     if (alLimite) { setError(`Alcanzaste el límite de ${planDe(perfil).limiteCartas} publicaciones de tu plan. Mejora a Diamante o Aurora para inventario ilimitado.`); return; }
@@ -5382,6 +5492,37 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
 
   const borrarSellado = async (id) => {
     try { await sbWrite("DELETE", `sellado_tienda?id=eq.${id}`, {}, session); cargar(); } catch (e) { setError(e.message); }
+  };
+
+  const toggleSeleccionSellado = (id) => {
+    setSeleccionadasSellado((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const duplicarSelladoSeleccionado = async () => {
+    if (!seleccionadasSellado.size) return;
+    setDuplicandoSellado(true); setError(null);
+    try {
+      const copias = sellado.filter((s) => seleccionadasSellado.has(s.id)).map(({ id, created_at, ...resto }) => resto);
+      await sbWrite("POST", "sellado_tienda", copias, session);
+      setSeleccionadasSellado(new Set());
+      cargar();
+    } catch (e) { setError(e.message); } finally { setDuplicandoSellado(false); }
+  };
+
+  const borrarSelladoSeleccionado = async () => {
+    if (!seleccionadasSellado.size) return;
+    const n = seleccionadasSellado.size;
+    if (!window.confirm(`¿Borrar ${n} producto${n === 1 ? "" : "s"} seleccionado${n === 1 ? "" : "s"}? Esta acción no se puede deshacer.`)) return;
+    setBorrandoSellado(true); setError(null);
+    try {
+      await sbWrite("DELETE", `sellado_tienda?id=in.(${[...seleccionadasSellado].join(",")})`, {}, session);
+      setSeleccionadasSellado(new Set());
+      cargar();
+    } catch (e) { setError(e.message); } finally { setBorrandoSellado(false); }
   };
 
   const actualizarSellado = async (id, campo, valor) => {
@@ -5645,7 +5786,22 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
         </div>
       )}
 
-      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Cartas sueltas</h3>
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase">Cartas sueltas</h3>
+        {seleccionadasCartas.size > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ color: COLORS.muted }} className="text-xs">{seleccionadasCartas.size} seleccionada{seleccionadasCartas.size === 1 ? "" : "s"}</span>
+            <button onClick={duplicarCartasSeleccionadas} disabled={duplicandoCartas}
+              style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+              {duplicandoCartas ? "Duplicando..." : "Duplicar"}
+            </button>
+            <button onClick={borrarCartasSeleccionadas} disabled={borrandoCartas}
+              style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+              {borrandoCartas ? "Borrando..." : "Borrar"}
+            </button>
+          </div>
+        )}
+      </div>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-6">
         <select value={nuevaCarta.tcg} onChange={(e) => setNuevaCarta({ ...nuevaCarta, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1">
           {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
@@ -5742,8 +5898,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
       <div className="grid gap-2 mb-8">
         {inventario.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado cartas.</p>}
         {inventario.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${seleccionadasCartas.has(item.id) ? COLORS.azulPalido : estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
             <div className="flex items-center gap-3">
+              <input type="checkbox" checked={seleccionadasCartas.has(item.id)} onChange={() => toggleSeleccionCarta(item.id)} className="shrink-0" />
               {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -5780,7 +5937,22 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
         ))}
       </div>
 
-      <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Producto sellado</h3>
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <h3 style={{ color: COLORS.azulClaro }} className="font-semibold text-sm uppercase">Producto sellado</h3>
+        {seleccionadasSellado.size > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ color: COLORS.muted }} className="text-xs">{seleccionadasSellado.size} seleccionado{seleccionadasSellado.size === 1 ? "" : "s"}</span>
+            <button onClick={duplicarSelladoSeleccionado} disabled={duplicandoSellado}
+              style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+              {duplicandoSellado ? "Duplicando..." : "Duplicar"}
+            </button>
+            <button onClick={borrarSelladoSeleccionado} disabled={borrandoSellado}
+              style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+              {borrandoSellado ? "Borrando..." : "Borrar"}
+            </button>
+          </div>
+        )}
+      </div>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2">
         <select value={nuevoSellado.tcg} onChange={(e) => setNuevoSellado({ ...nuevoSellado, tcg: e.target.value, producto: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
           {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
@@ -5832,8 +6004,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
       <div className="grid gap-2">
         {sellado.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has agregado producto sellado.</p>}
         {sellado.map((item) => (
-          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
+          <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${seleccionadasSellado.has(item.id) ? COLORS.azulPalido : estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
             <div className="flex items-center gap-3">
+              <input type="checkbox" checked={seleccionadasSellado.has(item.id)} onChange={() => toggleSeleccionSellado(item.id)} className="shrink-0" />
               {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 44, height: 62, objectFit: "contain" }} />}
               <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.producto}</p>
