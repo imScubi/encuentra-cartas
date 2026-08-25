@@ -908,17 +908,43 @@ async function obtenerSetsApiTCG(slug, signal) {
 // busca en la lista de sets ya cacheada y, si hay coincidencia, se piden
 // las cartas de ese set. Cubre los dos hábitos de búsqueda que ya soporta
 // el resto de la app (nombre de carta, o carta + set juntos).
+//
+// A diferencia de pokemontcg.io (que entiende "number:038" como filtro
+// propio), el `?name=` de apitcg.com busca contra el nombre del producto
+// tal cual -- "Charmander" ahí, nunca "Charmander 038" (el número vive
+// aparte, en `attributes.Number`/`code`). Mandar el texto completo cuando
+// trae un número pegado (ej. "Charmander 038") no encontraba nada aunque
+// la carta sí existiera, y se caía sin necesidad a las fuentes viejas. Por
+// eso se separa el número igual que ya hace `extraerNumeroDeTexto` para
+// pokemontcg.io: se busca solo por el nombre, y si además había un número,
+// los resultados cuyo `localId` empiece con ese número se ordenan primero
+// (apitcg.com no tiene un filtro parcial de número -- su `code` exige el
+// formato completo, ej. "038/147", que nadie escribe a mano).
 async function buscarCartasVisualApiTCG(tcg, texto, limite, signal) {
   const slug = TCG_SLUG_APITCG[tcg];
   if (!slug) return [];
-  try {
-    const porNombre = await pedirProductosApiTCG(
-      new URLSearchParams({ tcg: slug, type: "card", name: texto, limit: String(limite) }),
-      signal
-    );
-    if (porNombre.length > 0) return porNombre;
-  } catch (e) {
-    if (e?.name === "AbortError") throw e;
+  const { restante, numero } = extraerNumeroDeTexto(texto);
+  const nombreBusqueda = (restante || texto || "").trim();
+
+  if (nombreBusqueda) {
+    try {
+      const porNombre = await pedirProductosApiTCG(
+        new URLSearchParams({ tcg: slug, type: "card", name: nombreBusqueda, limit: String(numero ? Math.max(limite, 24) : limite) }),
+        signal
+      );
+      if (porNombre.length > 0) {
+        if (!numero) return porNombre.slice(0, limite);
+        const numLower = numero.toLowerCase();
+        const ordenado = [...porNombre].sort((a, b) => {
+          const aMatch = a.localId?.toLowerCase().startsWith(numLower) ? 1 : 0;
+          const bMatch = b.localId?.toLowerCase().startsWith(numLower) ? 1 : 0;
+          return bMatch - aMatch;
+        });
+        return ordenado.slice(0, limite);
+      }
+    } catch (e) {
+      if (e?.name === "AbortError") throw e;
+    }
   }
 
   try {
