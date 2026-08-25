@@ -4291,6 +4291,20 @@ El dueño probó el rediseño de Carpetas (sección 132) y reportó tres cosas:
    vendida) que no caben bien en una tarjeta de cuadrícula compacta --
    si se prefiere también en cuadrícula ahí, es un ajuste aparte.
 
+## 136. Separar las cartas de exhibición de las de venta en Tus publicaciones/Cartas sueltas
+
+El dueño reportó que, al revisar o gestionar su inventario, las cartas
+que solo están en exhibición (carpetas marcadas "🖼️ Solo exhibición",
+`en_venta=false`) se mezclaban con las que sí están a la venta y
+estorbaban constantemente. "Tus publicaciones" (Mercado) y "Cartas
+sueltas" (tienda) ahora filtran por `en_venta` y muestran dos grupos:
+la lista principal (en venta, como siempre) y, debajo, una sección
+colapsada por default "🖼️ En exhibición (N)" que solo se despliega si
+se le da clic -- misma fila/controles que la lista principal (incluida
+la selección múltiple), solo separada para que no estorbe. No aplica a
+"Producto sellado" porque ese tipo de publicación no se agrupa en
+carpetas ni tiene el concepto de exhibición.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
