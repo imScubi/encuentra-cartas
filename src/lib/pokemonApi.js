@@ -865,6 +865,17 @@ const TCG_SLUG_APITCG = {
   hololive: "hololive", riftbound: "riftbound",
 };
 
+// apitcg.com da attributes.Description con HTML ligero (<em>, <strong>,
+// <br> -- "así lo publica la fuente"). No hay ningún sanitizador de HTML
+// en el repo, así que en vez de arriesgar un dangerouslySetInnerHTML se
+// limpia a texto plano (<br> -> salto de línea, el resto de etiquetas se
+// quitan) antes de guardarlo o mostrarlo.
+function limpiarHtmlLigero(texto) {
+  if (!texto) return null;
+  const limpio = texto.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\r\n/g, "\n").trim();
+  return limpio || null;
+}
+
 function mapearProductoApiTCG(p) {
   const precio = p?.markets?.tcgplayer?.prices?.market ?? p?.markets?.tcgplayer?.prices?.mid ?? p?.markets?.tcgplayer?.prices?.low ?? null;
   return {
@@ -876,6 +887,11 @@ function mapearProductoApiTCG(p) {
     image: p.images?.[0]?.large || p.images?.[0]?.medium || p.images?.[0]?.small || null,
     precioRefMxn: precio != null ? Math.round(Number(precio) * USD_TO_MXN) : null,
     precioRefFuente: precio != null ? "TCGplayer" : null,
+    // attributes.Artist/Description: no todos los juegos ni todas las
+    // cartas los traen (ver la doc de apitcg.com) -- quedan null cuando
+    // no vienen, en vez de forzar algo.
+    artista: p.attributes?.Artist || null,
+    descripcionApi: limpiarHtmlLigero(p.attributes?.Description),
   };
 }
 
@@ -908,6 +924,16 @@ async function obtenerSetsApiTCG(slug, signal) {
     if (e?.name === "AbortError") throw e;
     return [];
   }
+}
+
+// Sets de un TCG para el selector visual (logos de set) -- resuelve el
+// slug de apitcg.com internamente, como el resto de las funciones
+// exportadas de este archivo (reciben la clave interna del TCG, no el
+// slug). Cada set trae `.logo` cuando apitcg.com lo tiene (no todos).
+export async function obtenerSetsVisualesApiTCG(tcg, signal) {
+  const slug = TCG_SLUG_APITCG[tcg];
+  if (!slug) return [];
+  return obtenerSetsApiTCG(slug, signal);
 }
 
 // Busca por nombre de carta primero (ej. "Charmander") -- si no trae nada,
@@ -980,6 +1006,39 @@ async function buscarCartasVisualApiTCG(tcg, texto, limite, signal) {
       )
     );
     return porSet.flat().slice(0, limite);
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return [];
+  }
+}
+
+// Producto sellado por nombre (ej. "Booster Box") -- mismo endpoint que
+// las cartas sueltas pero con type=sealed, sin el parseo de número (el
+// sellado no trae attributes.Number).
+export async function buscarSelladoVisualApiTCG(tcg, texto, limite, signal) {
+  const slug = TCG_SLUG_APITCG[tcg];
+  const nombreBusqueda = (texto || "").trim();
+  if (!slug || !nombreBusqueda) return [];
+  try {
+    return await pedirProductosApiTCG(
+      new URLSearchParams({ tcg: slug, type: "sealed", name: nombreBusqueda, limit: String(limite) }),
+      signal
+    );
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return [];
+  }
+}
+
+// Producto sellado dentro de un set ya elegido (modo "buscar por set" del
+// selector visual) -- texto opcional para refinar dentro de ese set.
+export async function buscarSelladoDeSetApiTCG(tcg, setId, texto, limite, signal) {
+  const slug = TCG_SLUG_APITCG[tcg];
+  if (!slug || !setId) return [];
+  try {
+    const params = { tcg: slug, type: "sealed", set: setId, limit: String(limite) };
+    if (texto && texto.trim()) params.name = texto.trim();
+    return await pedirProductosApiTCG(new URLSearchParams(params), signal);
   } catch (e) {
     if (e?.name === "AbortError") throw e;
     return [];

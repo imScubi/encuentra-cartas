@@ -64,9 +64,10 @@ export const COLORS = {
 // lib/pokemonApi.js y sección 138 de SUSCRIPCIONES.md) -- a diferencia
 // de los 5 originales, no tienen ninguna fuente propia aparte (Scryfall,
 // YGOPRODeck, etc.), así que apitcg.com es su único catálogo, sin
-// respaldo si llegara a fallar. Producto sellado sigue sin catálogo
-// propio para estos (mismo caso que ya tenía One Piece) -- usa
-// TCGplayerPicker con lo que TCGCSV ya tenga, si acaso.
+// respaldo si llegara a fallar. Producto sellado usa el mismo apitcg.com
+// para los 13 TCG (SelladoPickerVisual, ver sección 139+ de
+// SUSCRIPCIONES.md) -- TCGplayerPicker/TCGCSV queda como respaldo manual
+// si apitcg.com no trae aún un producto en particular.
 export const TCG_OPCIONES = [
   { key: "pokemon", label: "Pokémon" },
   { key: "yugioh", label: "Yu-Gi-Oh!" },
@@ -86,12 +87,12 @@ export const TCG_LABEL = Object.fromEntries(TCG_OPCIONES.map((o) => [o.key, o.la
 // TCG con buscador de texto libre (una sola caja, contra todo el catálogo):
 // Pokémon (pokemontcg.io), Magic (Scryfall), Yu-Gi-Oh (YGOPRODeck) y Lorcana
 // (lorcana-api.com) tienen además su propia fuente aparte de apitcg.com; los
-// 8 nuevos (y One Piece) dependen solo de apitcg.com -- One Piece se quedó
-// fuera de esta lista históricamente (usa TCGplayerPicker) y no se movió
-// para no arriesgar ese flujo ya en uso, pero los 8 nuevos sí entran aquí
-// desde el principio porque apitcg.com ya es su único catálogo real.
+// 9 restantes (incluido One Piece) dependen solo de apitcg.com -- One Piece
+// ya tenía apitcg.com como fuente en TCG_SLUG_APITCG desde antes, solo le
+// faltaba entrar aquí para usar el buscador visual (CardPicker) en vez del
+// TCGplayerPicker de texto que usaba por descuido.
 export const TCG_CON_CATALOGO = [
-  "pokemon", "magic", "yugioh", "lorcana",
+  "pokemon", "magic", "yugioh", "lorcana", "onepiece",
   "vanguard", "digimon", "dbfusionworld", "dbmasters", "fleshblood", "gundam", "hololive", "riftbound",
 ];
 
