@@ -7882,6 +7882,26 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
 
   const carpetasUsadas = useMemo(() => [...new Set(ventas.map((v) => v.carpeta).filter(Boolean))], [ventas]);
 
+  // Agrupa lo pendiente por vender por su etiqueta de carpeta (la misma que
+  // se llena solo al importar una carpeta completa, o que se escribe a mano
+  // al agregar/editar una pieza) para poder desplegarla como grid horizontal.
+  const agruparPorCarpeta = (items) => {
+    const mapa = new Map();
+    const sinCarpeta = [];
+    for (const v of items) {
+      const nombre = (v.carpeta || "").trim();
+      if (nombre) {
+        if (!mapa.has(nombre)) mapa.set(nombre, []);
+        mapa.get(nombre).push(v);
+      } else {
+        sinCarpeta.push(v);
+      }
+    }
+    const grupos = Array.from(mapa.entries()).map(([nombre, items]) => ({ nombre, items })).sort((a, b) => a.nombre.localeCompare(b.nombre));
+    return { grupos, sinCarpeta };
+  };
+  const pendientesAgrupados = useMemo(() => agruparPorCarpeta(resumen.pendientes), [resumen.pendientes]);
+
   const fmtDia = (d) => (!d || d === "Sin fecha" ? "Sin fecha" : new Date(d + "T00:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" }));
 
   // ---- Cerrar/reabrir/borrar el evento ----
@@ -8022,6 +8042,8 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
       })), session);
       setVentas((v) => [...filas, ...v]);
       setSeleccionados(new Set());
+      const nombresImportados = [...new Set(items.map((it) => it.carpeta_id && carpetasMapa[it.carpeta_id]?.nombre).filter(Boolean))];
+      if (nombresImportados.length) setCarpetasPendientesAbiertas((s) => new Set([...s, ...nombresImportados]));
       setOkDetalle(`Se importaron ${filas.length} producto(s) a tu inventario del evento.`);
     } catch (e) { setErrorDetalle(e.message); } finally { setImportando(false); }
   };
@@ -8099,6 +8121,17 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const [editandoId, setEditandoId] = useState(null);
   const [edit, setEdit] = useState(null);
   const [guardandoEdit, setGuardandoEdit] = useState(false);
+  // Carpetas del inventario del evento que están desplegadas como grid
+  // horizontal (una entrada por nombre de carpeta -- varias pueden estar
+  // abiertas a la vez).
+  const [carpetasPendientesAbiertas, setCarpetasPendientesAbiertas] = useState(new Set());
+  const toggleCarpetaPendienteAbierta = (nombre) => {
+    setCarpetasPendientesAbiertas((s) => {
+      const copia = new Set(s);
+      if (copia.has(nombre)) copia.delete(nombre); else copia.add(nombre);
+      return copia;
+    });
+  };
 
   const abrirEdit = (v) => {
     setEditandoId(v.id);
@@ -8469,12 +8502,43 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
       {resumen.pendientes.length === 0 ? (
         <p style={{ color: COLORS.muted }} className="text-sm mb-8">Nada pendiente por vender todavía.</p>
       ) : (
-        <div className="grid gap-2 mb-8">
-          {resumen.pendientes.map((v) => (
-            <FilaVentaEvento key={v.id} v={v} editando={editandoId === v.id} edit={edit} onEdit={() => abrirEdit(v)} onEditChange={setEdit}
-              onGuardarEdit={guardarEdit} onCancelarEdit={() => { setEditandoId(null); setEdit(null); }} guardandoEdit={guardandoEdit}
-              onBorrar={() => borrarVenta(v)} inputStyle={inputStyle} />
-          ))}
+        <div className="mb-8">
+          {pendientesAgrupados.grupos.map((grupo) => {
+            const abierta = carpetasPendientesAbiertas.has(grupo.nombre);
+            const editandoAqui = grupo.items.find((v) => v.id === editandoId);
+            return (
+              <div key={grupo.nombre} className="mb-3">
+                <button onClick={() => toggleCarpetaPendienteAbierta(grupo.nombre)} className="flex items-center gap-2 mb-2">
+                  {abierta ? <ChevronUp size={16} style={{ color: COLORS.muted }} /> : <ChevronDown size={16} style={{ color: COLORS.muted }} />}
+                  <span className="text-sm font-semibold">📁 {grupo.nombre}</span>
+                  <span style={{ color: COLORS.muted }} className="text-xs">({grupo.items.length})</span>
+                </button>
+                {abierta && (
+                  <>
+                    <div className="grid grid-flow-col grid-rows-3 auto-cols-max gap-2 overflow-x-auto pb-2 mb-2">
+                      {grupo.items.map((v) => (
+                        <TarjetaVentaEventoGrid key={v.id} v={v} onEditar={() => abrirEdit(v)} onBorrar={() => borrarVenta(v)} />
+                      ))}
+                    </div>
+                    {editandoAqui && (
+                      <FilaVentaEvento v={editandoAqui} editando edit={edit} onEdit={() => {}} onEditChange={setEdit}
+                        onGuardarEdit={guardarEdit} onCancelarEdit={() => { setEditandoId(null); setEdit(null); }} guardandoEdit={guardandoEdit}
+                        onBorrar={() => {}} inputStyle={inputStyle} />
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
+          {pendientesAgrupados.sinCarpeta.length > 0 && (
+            <div className="grid gap-2">
+              {pendientesAgrupados.sinCarpeta.map((v) => (
+                <FilaVentaEvento key={v.id} v={v} editando={editandoId === v.id} edit={edit} onEdit={() => abrirEdit(v)} onEditChange={setEdit}
+                  onGuardarEdit={guardarEdit} onCancelarEdit={() => { setEditandoId(null); setEdit(null); }} guardandoEdit={guardandoEdit}
+                  onBorrar={() => borrarVenta(v)} inputStyle={inputStyle} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -8746,6 +8810,25 @@ function FormVentaEvento({ valor, onChange, onGuardar, onCancelar, guardando, in
 }
 
 // Una fila de venta (pendiente o ya vendida), con su propio modo de edición inline.
+// Tarjeta compacta para el grid horizontal de una carpeta desplegada en el
+// inventario del evento -- pensada para vivir dentro de una fila de 3 de
+// alto con scroll lateral, no para ocupar el ancho completo como FilaVentaEvento.
+function TarjetaVentaEventoGrid({ v, onEditar, onBorrar }) {
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}`, width: 104 }} className="rounded-lg p-2 flex flex-col items-center gap-1">
+      <div style={{ width: 84, height: 112, background: COLORS.bg, borderRadius: 8, overflow: "hidden" }} className="flex items-center justify-center">
+        {v.imagen_url ? <img src={v.imagen_url} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Package size={22} style={{ color: COLORS.muted }} />}
+      </div>
+      <p className="text-[11px] text-center line-clamp-2 leading-tight" style={{ minHeight: 28 }}>{v.nombre}</p>
+      {v.cantidad > 1 && <p style={{ color: COLORS.muted }} className="text-[10px] -mt-1">×{v.cantidad}</p>}
+      <div className="flex gap-1">
+        <button onClick={onEditar} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-[10px] px-1.5 py-0.5 rounded font-semibold">Vender</button>
+        <button onClick={onBorrar} style={{ color: "#E27070" }} className="p-0.5"><Trash2 size={12} /></button>
+      </div>
+    </div>
+  );
+}
+
 function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdit, onCancelarEdit, guardandoEdit, onBorrar, inputStyle }) {
   if (editando) {
     return (

@@ -4482,6 +4482,22 @@ importar: cada pieza importada guarda automáticamente el nombre de su
 carpeta real (o queda sin carpeta) en el registro de la venta del
 evento, en vez de depender de que el usuario tecleara algo.
 
+## 141. Inventario del evento agrupado por carpeta: grid horizontal de 3 de alto
+
+Complemento directo de la sección 140: ahora que importar una carpeta
+completa le pone a cada pieza el nombre real de su carpeta, el
+"📦 Inventario del evento (pendiente de vender)" agrupa automáticamente
+por esa etiqueta -- cada carpeta (con piezas importadas o agregadas a
+mano con el mismo nombre) aparece como una sección plegable
+("📁 Nombre (N)"), y al desplegarla se ve un grid de 3 cartas de alto
+con scroll horizontal (`grid-flow-col grid-rows-3`, no una lista
+vertical) -- se puede tener varias carpetas desplegadas a la vez, cada
+una con su propio scroll lateral. Cada tarjeta tiene un botón "Vender"
+que abre el mismo formulario de edición de siempre (venta/intercambio/
+método de pago) justo debajo del grid, y un botón de borrar. Al
+importar una carpeta se despliega sola automáticamente. Lo que no tiene
+carpeta se sigue mostrando como lista normal, sin cambios.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
