@@ -1583,7 +1583,7 @@ function CardPicker({ tcg = "pokemon", onSelect, onNoEncontrada }) {
 // vez de un modal centrado que tapa toda la pantalla: se puede seguir viendo
 // y navegando el resto de la web mientras el chat sigue abierto. Se puede
 // minimizar (queda solo la barra con el nombre) o cerrar del todo.
-function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, otherFacebook, otherAvatar, onClose }) {
+function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, otherFacebook, otherAvatar, onClose, onLeido }) {
   const [mensajes, setMensajes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
@@ -1618,6 +1618,15 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
           setMensajes(de_nuevo);
         } else {
           setMensajes(rows);
+          // Abrir esta conversación ya cuenta como "leído" -- marca los
+          // mensajes que me mandaron y todavía no había visto, y avisa al
+          // botón flotante de chats para que baje su numerito.
+          const hayNoLeidos = rows.some((m) => m.de_perfil_id === otherId && m.para_perfil_id === uid && !m.leido);
+          if (hayNoLeidos) {
+            sbWrite("PATCH", `mensajes?de_perfil_id=eq.${otherId}&para_perfil_id=eq.${uid}&contexto=eq.${encodeURIComponent(contexto)}&leido=eq.false`, { leido: true }, session)
+              .then(() => onLeido?.())
+              .catch(() => {});
+          }
         }
       })
       .catch((e) => setError(e.message))
@@ -12562,6 +12571,17 @@ function guardarNotisLeidas(set) {
   try { localStorage.setItem(NOTIS_LEIDAS_KEY, JSON.stringify([...set])); } catch {}
 }
 
+// Ícono del botón flotante de notificaciones -- de momento la campana
+// genérica de siempre. Más adelante el dueño va a dar íconos por TCG
+// (pokebola, ojo del milenio de Yu-Gi-Oh, maná de Magic, etc.) para que
+// cambie según el tema elegido en Apariencia -- cuando existan, este es el
+// único lugar que hay que tocar: mapear la llave de tema (TEMA_TIPO_KEY o
+// una nueva) a la URL de la imagen y usar <img> en vez de <Bell> cuando
+// haya una.
+function IconoNotificacionFlotante({ size }) {
+  return <Bell size={size} />;
+}
+
 function NotificationBell({ session, onNavigate }) {
   const [abierto, setAbierto] = useState(false);
   const [notis, setNotis] = useState([]);
@@ -12668,11 +12688,18 @@ function NotificationBell({ session, onNavigate }) {
 
   return (
     <>
-      <button ref={btnRef} onClick={abrir} style={{ color: COLORS.muted }} className="relative p-2 rounded-lg">
-        <Bell size={18} />
+      {/* Antes vivía como ícono discreto arriba del header -- ahora es un
+          botón flotante en la esquina superior derecha (debajo del header
+          para no encimarse con el avatar/menú que ya viven ahí), mismo
+          criterio que el carrito y los chats abajo: que no dependa de
+          encontrar un ícono chico entre otros. */}
+      <button ref={btnRef} onClick={abrir} aria-label="Notificaciones"
+        style={{ background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.azulClaro}55`, boxShadow: "0 6px 20px rgba(0,0,0,0.35)" }}
+        className="fixed top-20 right-4 sm:top-24 sm:right-6 z-40 w-11 h-11 rounded-full flex items-center justify-center">
+        <IconoNotificacionFlotante size={19} />
         {noLeidas > 0 && (
-          <span style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }}
-            className="absolute -top-1 -right-1 rounded-full text-[10px] font-bold w-4 h-4 flex items-center justify-center">
+          <span style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, border: `2px solid ${COLORS.bg}` }}
+            className="absolute -top-1 -right-1 rounded-full text-[10px] font-bold w-5 h-5 flex items-center justify-center">
             {noLeidas > 9 ? "9+" : noLeidas}
           </span>
         )}
@@ -13942,6 +13969,20 @@ export default function EncuentraCartas() {
   const [papelera, setPapelera] = useState([]);
   const [loadingPapelera, setLoadingPapelera] = useState(false);
 
+  // Numerito del botón flotante de chats -- independiente de haber
+  // visitado la bandeja alguna vez (cargarInbox solo corre al entrar a
+  // "inbox"), así que se carga aparte desde que hay sesión. cargarInbox
+  // también lo refresca de gratis con lo que ya trae (ver abajo), y
+  // ChatModal lo vuelve a pedir en cuanto marca una conversación como leída.
+  const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
+  const cargarMensajesNoLeidos = () => {
+    if (!session) { setMensajesNoLeidos(0); return; }
+    sb(`mensajes?select=id&para_perfil_id=eq.${session.user.id}&leido=eq.false`, session)
+      .then((rows) => setMensajesNoLeidos(rows.length))
+      .catch(() => {});
+  };
+  useEffect(() => { cargarMensajesNoLeidos(); }, [session?.user?.id]);
+
   // Push de mensajes nuevos: antes `activarPush` solo se ofrecía dentro de
   // Wishlist Premium (plan pago), así que un usuario gratis jamás terminaba
   // con una fila en push_subscriptions y nunca podía recibir el push de
@@ -14001,6 +14042,7 @@ export default function EncuentraCartas() {
           }
         });
         setConversaciones(Array.from(grupos.values()));
+        setMensajesNoLeidos(rows.filter((m) => m.para_perfil_id === uid && !m.leido).length);
       })
       .finally(() => setLoadingInbox(false));
     cargarPapelera();
@@ -14164,11 +14206,14 @@ export default function EncuentraCartas() {
   // hace todo el mundo) más "Mensajes" si ya inició sesión. Todo lo demás
   // vive en el menú lateral, organizado por pestañas (ver navGrupos) para
   // que siga siendo fácil de encontrar sin ocupar espacio arriba.
+  // "Mensajes" ya no vive aquí -- se abre desde el botón flotante de chats
+  // (esquina inferior, junto al carrito) para que no dependa de encontrar
+  // un ícono arriba. Sigue siendo una vista normal (setView("inbox")), solo
+  // cambió cómo se llega a ella.
   const navEsenciales = [
     { id: "search", label: "Inicio", icon: Search },
     { id: "directory", label: "Tiendas", icon: Store },
     { id: "catalogo", label: "Catálogo", icon: BookOpen },
-    ...(session ? [{ id: "inbox", label: "Mensajes", icon: MessageCircle }] : []),
   ];
   // Antes "Mercado" ocupaba este lugar del nav -- se fusionó con Inicio (ver
   // vista "search"), así que el espacio se usa para un CTA vistoso hacia
@@ -14276,8 +14321,6 @@ export default function EncuentraCartas() {
             </button>
             {navEsenciales.map(navButton)}
 
-            <NotificationBell session={session} onNavigate={setView} />
-
             {/* Foto de perfil: acceso directo a "Mi cuenta" (o a crear cuenta si
                 no hay sesión) — separado del menú de tres líneas, que abre el resto
                 (Torneos, Wishlist, Planes, Mis pagos, Ayuda, Admin, Cerrar sesión). */}
@@ -14340,6 +14383,7 @@ export default function EncuentraCartas() {
           otherFacebook={chatContext.otherFacebook}
           otherAvatar={chatContext.otherAvatar}
           onClose={() => { setChatContext(null); if (session) cargarInbox(); }}
+          onLeido={cargarMensajesNoLeidos}
         />
       )}
       {mostrarBuscarCarta && session && (
@@ -14365,6 +14409,31 @@ export default function EncuentraCartas() {
           </span>
         )}
       </button>
+
+      {/* Chats: antes había que encontrar el ícono de Mensajes arriba --
+          ahora es otro botón flotante junto al carrito (mismo halo que
+          pulsa), de un color distinto para no confundirse con el carrito,
+          con la bolita de mensajes sin leer en el color de acento del tema
+          actual (cambia solo si se personaliza en Apariencia). */}
+      {session && (
+        <button onClick={() => setView("inbox")} aria-label="Mensajes"
+          style={{ background: COLORS.violeta, color: "#fff", boxShadow: "0 6px 20px rgba(0,0,0,0.4)" }}
+          className="fixed bottom-4 left-20 sm:bottom-6 sm:left-24 z-40 w-14 h-14 rounded-full flex items-center justify-center">
+          <span style={{ border: `2px solid ${COLORS.violeta}`, animation: "ringPulse 1.8s ease-out infinite" }}
+            className="absolute inset-0 rounded-full pointer-events-none" aria-hidden="true" />
+          <span style={{ border: `2px solid ${COLORS.violeta}`, animation: "ringPulse 1.8s ease-out .6s infinite" }}
+            className="absolute inset-0 rounded-full pointer-events-none" aria-hidden="true" />
+          <MessageCircle size={24} />
+          {mensajesNoLeidos > 0 && (
+            <span style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, border: `2px solid ${COLORS.bg}` }}
+              className="absolute -top-1 -right-1 rounded-full text-xs font-bold w-5 h-5 flex items-center justify-center">
+              {mensajesNoLeidos > 9 ? "9+" : mensajesNoLeidos}
+            </span>
+          )}
+        </button>
+      )}
+
+      <NotificationBell session={session} onNavigate={setView} />
 
       <main style={{ position: "relative", zIndex: 1 }} className="max-w-5xl mx-auto px-4 sm:px-8 py-10">
         {/* SEARCH */}
