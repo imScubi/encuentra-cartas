@@ -855,7 +855,15 @@ const _cacheBusqueda = new Map();
 // todavía. Si la llave no está configurada en el servidor (variable de
 // entorno APITCG_API_KEY en Vercel) o si apitcg.com falla, se degrada en
 // silencio a "sin resultados" -- nunca rompe una búsqueda que ya funcionaba.
-const TCG_SLUG_APITCG = { pokemon: "pokemon", magic: "magic", yugioh: "yugioh", lorcana: "lorcana", onepiece: "one-piece" };
+const TCG_SLUG_APITCG = {
+  pokemon: "pokemon", magic: "magic", yugioh: "yugioh", lorcana: "lorcana", onepiece: "one-piece",
+  // Estos 8 no tienen ninguna otra fuente propia (a diferencia de los 5 de
+  // arriba) -- apitcg.com es su único catálogo real, slugs confirmados por
+  // el dueño directo desde la documentación de apitcg.com.
+  vanguard: "cardfight-vanguard", digimon: "digimon", dbfusionworld: "dragon-ball-super-fusion-world",
+  dbmasters: "dragon-ball-super-masters", fleshblood: "flesh-and-blood", gundam: "gundam",
+  hololive: "hololive", riftbound: "riftbound",
+};
 
 function mapearProductoApiTCG(p) {
   const precio = p?.markets?.tcgplayer?.prices?.market ?? p?.markets?.tcgplayer?.prices?.mid ?? p?.markets?.tcgplayer?.prices?.low ?? null;
