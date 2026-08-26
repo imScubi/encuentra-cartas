@@ -1906,6 +1906,23 @@ function SelladoPickerVisual({ tcg, onSelect }) {
       .finally(() => setCargandoProductos(false));
   }, [setElegido, tcg]);
 
+  // Respaldo automático a TCGplayerPicker/TCGCSV cuando apitcg.com no trae
+  // nada -- ya sea porque de verdad no tiene ese producto, porque está
+  // caído, o porque se le acabó la cuota mensual: en los tres casos el
+  // resultado es "vacío", así que no hace falta distinguir el motivo, se
+  // cae automático al respaldo (mismo criterio que ya usa
+  // buscarCartasCatalogo para cartas sueltas). El botón "← Volver a la
+  // búsqueda visual" sigue disponible por si el usuario quiere reintentar.
+  useEffect(() => {
+    if (modo === "nombre" && !buscando && q.trim().length >= 3 && resultados.length === 0) setUsarRespaldo(true);
+  }, [modo, buscando, q, resultados]);
+  useEffect(() => {
+    if (modo === "set" && !setElegido && !cargandoSets && sets.length === 0) setUsarRespaldo(true);
+  }, [modo, setElegido, cargandoSets, sets]);
+  useEffect(() => {
+    if (modo === "set" && setElegido && !cargandoProductos && productosDeSet.length === 0) setUsarRespaldo(true);
+  }, [modo, setElegido, cargandoProductos, productosDeSet]);
+
   const seleccionar = (p) => {
     onSelect({
       producto: p.name, set_nombre: p.setName || "", card_api_id: p.id, imagen_url: p.image || "",
@@ -1925,9 +1942,13 @@ function SelladoPickerVisual({ tcg, onSelect }) {
   );
 
   if (usarRespaldo) {
+    // Al volver se limpia la búsqueda que quedó vacía -- si no, los
+    // efectos de arriba la detectan vacía otra vez de inmediato y regresan
+    // solos al respaldo antes de que el usuario alcance a escribir algo distinto.
+    const volverABuscadorVisual = () => { setQ(""); setSetElegido(null); setUsarRespaldo(false); };
     return (
       <div className="grid gap-2">
-        <button type="button" onClick={() => setUsarRespaldo(false)} style={{ color: COLORS.muted }} className="text-xs underline w-fit">← Volver a la búsqueda visual</button>
+        <button type="button" onClick={volverABuscadorVisual} style={{ color: COLORS.muted }} className="text-xs underline w-fit">← Volver a la búsqueda visual</button>
         <TCGplayerPicker tcg={tcg} soloSellado onSelect={onSelect} />
       </div>
     );
