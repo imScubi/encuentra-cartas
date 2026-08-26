@@ -4365,6 +4365,52 @@ acciones van a fallar al intentar guardar la columna que todavía no
 existe -- el resto de esta sección, incluido el link público y los
 exports, no depende de la migración y ya funciona sin ella).
 
+## 138. Fix: portada de carpeta encimada en la vista pública + 8 TCG nuevos vía apitcg.com
+
+Dos pendientes de la sesión anterior:
+
+1. **Fix visual**: `CarpetaCover` forzaba `aspect-[3/4]` siempre; en la
+   carpeta pública se envolvía en un `<div style={{height:140}}>`
+   esperando que eso la hiciera un banner angosto, pero `aspect-ratio`
+   ignora una altura puesta en el padre -- se renderizaba casi cuadrada
+   (a partir del ancho completo del contenedor) y su cintilla terminaba
+   encimada con el título/contador de abajo. Se le agregó un prop
+   opcional `alto` que, cuando se pasa, usa una altura fija en vez de
+   aspect-ratio -- los demás usos (carrusel, miniatura del modal) siguen
+   igual, sin `alto`.
+2. **8 TCG nuevos**: el dueño pidió agregar Cardfight Vanguard, Digimon,
+   Dragon Ball Super Fusion World, Dragon Ball Super Masters, Flesh and
+   Blood, Gundam, hololive y Riftbound (de los 16 que cubre apitcg.com --
+   ver sección 129), con los slugs que confirmó directo desde la
+   documentación de apitcg.com. A diferencia de Magic/Yu-Gi-Oh/Lorcana
+   (que tienen su propia fuente aparte, con apitcg.com solo de respaldo),
+   estos 8 dependen ÚNICAMENTE de apitcg.com -- no tienen ningún otro
+   catálogo integrado. Como `buscarCartasCatalogo`/`CardPicker` ya eran
+   100% genéricos (nada hardcodeado a un TCG en particular), agregarlos
+   fue solo:
+   - `theme.js`: 8 entradas nuevas en `TCG_OPCIONES` (aparecen solas en
+     cualquier selector de TCG de la app) y en `TCG_CON_CATALOGO` (para
+     que usen el buscador real -- `CardPicker` -- en vez de cortarse a
+     `TCGplayerPicker`/TCGCSV, que no tiene estos juegos).
+   - `lib/pokemonApi.js`: 8 entradas nuevas en `TCG_SLUG_APITCG` (nuestra
+     clave interna → slug de apitcg.com).
+   - Nada más -- esto también responde lo que el dueño pidió antes ("que
+     todo lo de carpetas/el nuevo API sirva para los demás TCG"): el
+     modo manual de Carpetas ("Agregar cartas sin foto") ya usaba
+     `CardPickerUniversal` de forma genérica, así que ya funciona con
+     estos 8 sin tocar nada de Carpetas.
+   - **Lo que sigue sin cubrir a propósito** (mismo límite que ya tenía
+     One Piece, no es nuevo): producto sellado y la pantalla "Catálogo"
+     (era → set → cartas) siguen sin datos para estos 8 -- ninguno tiene
+     categoría en TCGCSV ni un dispatcher de sets propio, así que
+     simplemente se degradan a "sin resultados"/vacío en vez de romperse
+     (`categoriaIdTCGplayer`/`obtenerErasYSetsCatalogo` ya devuelven
+     null/`[]` con gracia para cualquier TCG que no reconozcan). Tampoco
+     se tocó la detección por foto con IA de Carpetas (`buscarCartaTCGdex`
+     + `/api/carpetas/detectar`) -- sigue siendo Pokémon-only, ya que usa
+     TCGdex específicamente; extenderla a estos TCGs sería un trabajo
+     aparte, no cubierto por este cambio.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

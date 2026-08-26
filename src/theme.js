@@ -57,21 +57,43 @@ export const COLORS = {
 // visual real (imagen, set, precio de referencia); Magic es el segundo
 // piloto (vía Scryfall). Yu-Gi-Oh, Lorcana y One Piece ya se pueden
 // publicar (texto libre, sin catálogo todavía) hasta que se conecte su
-// propia fuente de datos, mismo patrón que Magic ----
+// propia fuente de datos, mismo patrón que Magic.
+//
+// Los 8 de abajo (Cardfight Vanguard en adelante) se agregaron directo
+// con catálogo real vía apitcg.com (ver TCG_SLUG_APITCG en
+// lib/pokemonApi.js y sección 138 de SUSCRIPCIONES.md) -- a diferencia
+// de los 5 originales, no tienen ninguna fuente propia aparte (Scryfall,
+// YGOPRODeck, etc.), así que apitcg.com es su único catálogo, sin
+// respaldo si llegara a fallar. Producto sellado sigue sin catálogo
+// propio para estos (mismo caso que ya tenía One Piece) -- usa
+// TCGplayerPicker con lo que TCGCSV ya tenga, si acaso.
 export const TCG_OPCIONES = [
   { key: "pokemon", label: "Pokémon" },
   { key: "yugioh", label: "Yu-Gi-Oh!" },
   { key: "lorcana", label: "Lorcana" },
   { key: "magic", label: "Magic" },
   { key: "onepiece", label: "One Piece" },
+  { key: "vanguard", label: "Cardfight Vanguard" },
+  { key: "digimon", label: "Digimon" },
+  { key: "dbfusionworld", label: "Dragon Ball Super Fusion World" },
+  { key: "dbmasters", label: "Dragon Ball Super Masters" },
+  { key: "fleshblood", label: "Flesh and Blood" },
+  { key: "gundam", label: "Gundam" },
+  { key: "hololive", label: "hololive" },
+  { key: "riftbound", label: "Riftbound" },
 ];
 export const TCG_LABEL = Object.fromEntries(TCG_OPCIONES.map((o) => [o.key, o.label]));
 // TCG con buscador de texto libre (una sola caja, contra todo el catálogo):
 // Pokémon (pokemontcg.io), Magic (Scryfall), Yu-Gi-Oh (YGOPRODeck) y Lorcana
-// (lorcana-api.com). One Piece no tiene todavía una fuente gratis confiable
-// de texto libre — usa TCGplayerPicker (elegir set, luego buscar dentro,
-// ver App.jsx) en su lugar, igual que el producto sellado de todos los TCG.
-export const TCG_CON_CATALOGO = ["pokemon", "magic", "yugioh", "lorcana"];
+// (lorcana-api.com) tienen además su propia fuente aparte de apitcg.com; los
+// 8 nuevos (y One Piece) dependen solo de apitcg.com -- One Piece se quedó
+// fuera de esta lista históricamente (usa TCGplayerPicker) y no se movió
+// para no arriesgar ese flujo ya en uso, pero los 8 nuevos sí entran aquí
+// desde el principio porque apitcg.com ya es su único catálogo real.
+export const TCG_CON_CATALOGO = [
+  "pokemon", "magic", "yugioh", "lorcana",
+  "vanguard", "digimon", "dbfusionworld", "dbmasters", "fleshblood", "gundam", "hololive", "riftbound",
+];
 
 // ---- Idioma de la carta: obligatorio al publicar, para que el comprador
 // sepa en qué idioma está la carta sin tener que preguntar ----
