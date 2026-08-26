@@ -4498,6 +4498,28 @@ método de pago) justo debajo del grid, y un botón de borrar. Al
 importar una carpeta se despliega sola automáticamente. Lo que no tiene
 carpeta se sigue mostrando como lista normal, sin cambios.
 
+## 142. Modo Evento: buscar la carta exacta recibida en un intercambio + "Te costó" explícitamente opcional
+
+Dos ajustes al flujo de intercambios de la sección 139:
+
+1. **Buscar la carta exacta recibida a cambio.** El campo "¿Qué
+   recibiste a cambio?" ya no es solo texto libre -- ahora usa el mismo
+   buscador de catálogo del resto de la app (`CardPickerUniversal`, con
+   su propio selector de TCG independiente del de la carta que se
+   vendió/cambió, porque el intercambio puede cruzar juegos distintos),
+   con el mismo patrón de "¿No la encuentras? Escribirlo a mano" como
+   respaldo si no está en el catálogo. La carta elegida guarda también
+   su imagen, que ahora viaja hasta `evento_adquisiciones.imagen_url`
+   (la columna ya existía desde la migración 073, solo no se estaba
+   llenando) y se ve junto al nombre en "🛍️ Cartas que entraron" y en el
+   PDF.
+2. **"Te costó" ya se veía como opcional en el código** (nunca fue
+   obligatorio, se guarda como 0 si se deja vacío) pero no lo decía en
+   la pantalla y confundía -- ahora la etiqueta dice explícitamente
+   "Te costó (opcional)" tanto al agregar como al editar una pieza.
+
+Sin migración nueva -- ambos cambios usan columnas que ya existían.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

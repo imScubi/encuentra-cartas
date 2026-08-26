@@ -8054,7 +8054,8 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const [tcgAgregar, setTcgAgregar] = useState("pokemon");
   const vacioAgregar = {
     nombre: "", imagen_url: "", carta_ref: null, costo: "", precio_venta: "", cantidad: "1", dia: hoyISO(), carpeta: "", vendidaYa: true,
-    tipo_operacion: "venta", metodo_pago: "", intercambio_direccion: "", intercambio_monto: "", recibioNombre: "",
+    tipo_operacion: "venta", metodo_pago: "", intercambio_direccion: "", intercambio_monto: "",
+    recibioNombre: "", recibioImagenUrl: "", recibioTcg: "pokemon", recibioManual: false,
   };
   const [nuevaVenta, setNuevaVenta] = useState(vacioAgregar);
   const [guardandoVenta, setGuardandoVenta] = useState(false);
@@ -8080,6 +8081,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
       const [fila] = await sbWrite("POST", "evento_adquisiciones", [{
         evento_id: evento.id,
         nombre: valor.recibioNombre.trim(),
+        imagen_url: valor.recibioImagenUrl || null,
         dia: dia || hoyISO(),
         costo: 0,
         origen_venta_id: ventaId,
@@ -8146,7 +8148,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
       metodo_pago: v.metodo_pago || "",
       intercambio_direccion: v.intercambio_ajuste > 0 ? "recibio" : v.intercambio_ajuste < 0 ? "dio" : "",
       intercambio_monto: v.intercambio_ajuste ? String(Math.abs(v.intercambio_ajuste)) : "",
-      recibioNombre: "",
+      recibioNombre: "", recibioImagenUrl: "", recibioTcg: "pokemon", recibioManual: false,
     });
   };
 
@@ -8736,7 +8738,29 @@ function CamposOperacionEvento({ valor, onChange, inputStyle }) {
               </select>
             </div>
           )}
-          <input placeholder="¿Qué recibiste a cambio? (opcional, nombre de la carta)" value={valor.recibioNombre} onChange={(e) => onChange({ ...valor, recibioNombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <div className="grid gap-1.5">
+            <p style={{ color: COLORS.muted }} className="text-xs -mb-0.5">¿Qué recibiste a cambio? (opcional, puedes buscar la carta exacta)</p>
+            {valor.recibioNombre ? (
+              <div className="flex items-center gap-2">
+                {valor.recibioImagenUrl && <img src={valor.recibioImagenUrl} alt="" style={{ width: 32, height: 45, objectFit: "contain" }} />}
+                <Badge color={COLORS.violeta}>{valor.recibioNombre}</Badge>
+                <button type="button" onClick={() => onChange({ ...valor, recibioNombre: "", recibioImagenUrl: "" })} style={{ color: COLORS.muted }} className="text-xs">Cambiar</button>
+              </div>
+            ) : !valor.recibioManual ? (
+              <>
+                <select value={valor.recibioTcg || "pokemon"} onChange={(e) => onChange({ ...valor, recibioTcg: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
+                  {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                </select>
+                <CardPickerUniversal tcg={valor.recibioTcg || "pokemon"} onSelect={(c) => onChange({ ...valor, recibioNombre: c.name || c.producto, recibioImagenUrl: c.imagen_url || "" })} />
+                <button type="button" onClick={() => onChange({ ...valor, recibioManual: true })} style={{ color: COLORS.muted }} className="text-xs underline w-fit">¿No la encuentras? Escribirlo a mano</button>
+              </>
+            ) : (
+              <>
+                <input placeholder="Nombre de la carta que recibiste" value={valor.recibioNombre} onChange={(e) => onChange({ ...valor, recibioNombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+                <button type="button" onClick={() => onChange({ ...valor, recibioManual: false })} style={{ color: COLORS.muted }} className="text-xs underline w-fit">Volver a buscar en el catálogo</button>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -8778,7 +8802,7 @@ function FormVentaEvento({ valor, onChange, onGuardar, onCancelar, guardando, in
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <label className="text-xs" style={{ color: COLORS.muted }}>
-          Te costó
+          Te costó (opcional)
           <input type="number" placeholder="0.00" value={valor.costo} onChange={(e) => onChange({ ...valor, costo: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
         </label>
         <label className="text-xs" style={{ color: COLORS.muted }}>
@@ -8840,8 +8864,8 @@ function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdi
         </label>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <label className="text-xs" style={{ color: COLORS.muted }}>
-            Te costó
-            <input type="number" value={edit.costo} onChange={(e) => onEditChange({ ...edit, costo: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+            Te costó (opcional)
+            <input type="number" placeholder="0.00" value={edit.costo} onChange={(e) => onEditChange({ ...edit, costo: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
           </label>
           {edit.vendida && (
             <label className="text-xs" style={{ color: COLORS.muted }}>
