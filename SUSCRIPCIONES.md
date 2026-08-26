@@ -4411,6 +4411,51 @@ Dos pendientes de la sesión anterior:
      TCGdex específicamente; extenderla a estos TCGs sería un trabajo
      aparte, no cubierto por este cambio.
 
+## 139. Modo Evento: método de pago, intercambios y cartas que entraron (compras)
+
+El dueño pidió que en Modo Evento cada transacción pueda indicar si el
+pago fue efectivo/transferencia/tarjeta, que se pueda marcar como
+intercambio (con o sin dinero extra en cualquier dirección), y que se
+pueda registrar que compró una carta en el evento -- todo reflejado en
+el resumen y el PDF junto a lo que ya existía.
+
+**Migración nueva:** `073_evento_pagos_intercambios.sql` (el dueño debe
+correrla en Supabase → SQL Editor antes de que esto funcione en
+producción):
+- `evento_ventas` gana `metodo_pago` (efectivo/transferencia/tarjeta),
+  `tipo_operacion` (`venta` default o `intercambio`), e
+  `intercambio_ajuste` (el dinero extra que cambió de manos en un
+  intercambio -- positivo si el vendedor lo recibió, negativo si lo dio,
+  null si fue trueque puro).
+- Tabla nueva `evento_adquisiciones`: cada fila es una pieza que ENTRÓ
+  al inventario durante el evento -- compra directa (`costo` = lo que
+  pagó) o la carta recibida en un intercambio (`origen_venta_id` apunta
+  a la venta; `costo` queda en 0 porque el dinero de ese intercambio ya
+  se contó una vez en `intercambio_ajuste` de esa venta, para no
+  duplicarlo).
+
+**UI:** al marcar una pieza como vendida (tanto al agregarla ya vendida
+como al editar una existente) aparece un componente compartido
+(`CamposOperacionEvento`) con:
+- Venta / Intercambio (botones).
+- Si es venta: selector de método de pago (opcional).
+- Si es intercambio: si hubo dinero extra y en qué dirección ("me
+  dieron" / "yo di"), su monto y método, y un campo opcional para anotar
+  qué carta recibió a cambio.
+
+Nueva sección "🛍️ Cartas que entraron" (mismo patrón que Gastos) para
+registrar compras sueltas, con su propio botón de borrar.
+
+**Semántica contable** (decisión propia, no confirmada explícitamente
+con el dueño más allá de lo que pidió -- revisar con uso real): en una
+fila de intercambio, el ingreso que cuenta para ganancias es solo
+`intercambio_ajuste` (puede ser negativo), no `precio_venta × cantidad`
+-- `precio_venta` queda como "valor estimado" opcional, solo para
+referencia. El costo de la pieza vendida se sigue restando siempre
+(salió del inventario de cualquier forma). El resumen, el desglose por
+día y el PDF ahora muestran "Compras" (lo que entró) junto a Ventas y
+Gastos.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

@@ -7690,6 +7690,19 @@ const TIPO_GASTO_EVENTO_LABEL = Object.fromEntries(TIPO_GASTO_EVENTO_OPCIONES.ma
 const fmtMoneyEvento = (n) => `$${Number(n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const hoyISO = () => new Date().toISOString().slice(0, 10);
 
+// ---- Método de pago e intercambios (ver migración 073) ----
+const METODO_PAGO_EVENTO_OPCIONES = [
+  { key: "efectivo", label: "Efectivo" },
+  { key: "transferencia", label: "Transferencia" },
+  { key: "tarjeta", label: "Tarjeta" },
+];
+const METODO_PAGO_EVENTO_LABEL = Object.fromEntries(METODO_PAGO_EVENTO_OPCIONES.map((o) => [o.key, o.label]));
+// Cuánto efectivo extra cambió de manos en un intercambio, y en qué
+// dirección -- "recibio" = el vendedor recibió ese extra además de la
+// carta, "dio" = el vendedor puso ese extra además de su carta. Se
+// combinan en un solo número con signo (intercambio_ajuste) al guardar.
+const ingresoDeVenta = (v) => (v.tipo_operacion === "intercambio" ? Number(v.intercambio_ajuste || 0) : Number(v.precio_venta || 0) * v.cantidad);
+
 function ModoEventoView({ session, perfil, onIrAPlanes }) {
   const info = planDe(perfil);
   const [eventos, setEventos] = useState([]);
@@ -7813,6 +7826,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [ventas, setVentas] = useState([]);
   const [gastos, setGastos] = useState([]);
+  const [adquisiciones, setAdquisiciones] = useState([]);
   const [loadingDetalle, setLoadingDetalle] = useState(true);
   const [errorDetalle, setErrorDetalle] = useState(null);
   const [okDetalle, setOkDetalle] = useState(null);
@@ -7822,6 +7836,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
     Promise.all([
       sb(`evento_ventas?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session).then(setVentas),
       sb(`evento_gastos?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session).then(setGastos),
+      sb(`evento_adquisiciones?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session).then(setAdquisiciones),
     ]).catch((e) => setErrorDetalle(e.message)).finally(() => setLoadingDetalle(false));
   };
   useEffect(() => { cargarDetalle(); }, [evento.id]);
@@ -7829,30 +7844,41 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const resumen = useMemo(() => {
     const vendidas = ventas.filter((v) => v.vendida);
     const pendientes = ventas.filter((v) => !v.vendida);
-    const ingresos = vendidas.reduce((s, v) => s + Number(v.precio_venta || 0) * v.cantidad, 0);
+    const ingresos = vendidas.reduce((s, v) => s + ingresoDeVenta(v), 0);
     const costoVendido = vendidas.reduce((s, v) => s + Number(v.costo || 0) * v.cantidad, 0);
     const gastosTotal = gastos.reduce((s, g) => s + Number(g.monto || 0), 0);
-    const gananciaNeta = ingresos - costoVendido - gastosTotal;
+    // Solo las adquisiciones directas (compras sin intercambio) cuestan
+    // efectivo aparte -- las que vienen de un intercambio ya se contaron
+    // vía intercambio_ajuste de la venta a la que están ligadas, para no
+    // contar el mismo dinero dos veces.
+    const compras = adquisiciones.filter((a) => !a.origen_venta_id);
+    const costoCompras = compras.reduce((s, a) => s + Number(a.costo || 0), 0);
+    const gananciaNeta = ingresos - costoVendido - gastosTotal - costoCompras;
     const valorRestante = pendientes.reduce((s, v) => s + Number(v.costo || 0) * v.cantidad, 0);
     const piezasVendidas = vendidas.reduce((s, v) => s + v.cantidad, 0);
-    return { vendidas, pendientes, ingresos, costoVendido, gastosTotal, gananciaNeta, valorRestante, piezasVendidas };
-  }, [ventas, gastos]);
+    return { vendidas, pendientes, ingresos, costoVendido, gastosTotal, costoCompras, compras, gananciaNeta, valorRestante, piezasVendidas };
+  }, [ventas, gastos, adquisiciones]);
 
   const porDia = useMemo(() => {
     const mapa = {};
     resumen.vendidas.forEach((v) => {
       const k = v.dia;
-      mapa[k] = mapa[k] || { dia: k, ingresos: 0, costo: 0, gastos: 0 };
-      mapa[k].ingresos += Number(v.precio_venta || 0) * v.cantidad;
+      mapa[k] = mapa[k] || { dia: k, ingresos: 0, costo: 0, gastos: 0, compras: 0 };
+      mapa[k].ingresos += ingresoDeVenta(v);
       mapa[k].costo += Number(v.costo || 0) * v.cantidad;
     });
     gastos.forEach((g) => {
       const k = g.dia || "Sin fecha";
-      mapa[k] = mapa[k] || { dia: k, ingresos: 0, costo: 0, gastos: 0 };
+      mapa[k] = mapa[k] || { dia: k, ingresos: 0, costo: 0, gastos: 0, compras: 0 };
       mapa[k].gastos += Number(g.monto || 0);
     });
+    resumen.compras.forEach((a) => {
+      const k = a.dia || "Sin fecha";
+      mapa[k] = mapa[k] || { dia: k, ingresos: 0, costo: 0, gastos: 0, compras: 0 };
+      mapa[k].compras += Number(a.costo || 0);
+    });
     return Object.values(mapa).sort((a, b) => String(a.dia).localeCompare(String(b.dia)));
-  }, [resumen.vendidas, gastos]);
+  }, [resumen.vendidas, resumen.compras, gastos]);
 
   const carpetasUsadas = useMemo(() => [...new Set(ventas.map((v) => v.carpeta).filter(Boolean))], [ventas]);
 
@@ -7953,29 +7979,66 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const [mostrarAgregar, setMostrarAgregar] = useState(false);
   const [cartaManualAgregar, setCartaManualAgregar] = useState(false);
   const [tcgAgregar, setTcgAgregar] = useState("pokemon");
-  const vacioAgregar = { nombre: "", imagen_url: "", carta_ref: null, costo: "", precio_venta: "", cantidad: "1", dia: hoyISO(), carpeta: "", vendidaYa: true };
+  const vacioAgregar = {
+    nombre: "", imagen_url: "", carta_ref: null, costo: "", precio_venta: "", cantidad: "1", dia: hoyISO(), carpeta: "", vendidaYa: true,
+    tipo_operacion: "venta", metodo_pago: "", intercambio_direccion: "", intercambio_monto: "", recibioNombre: "",
+  };
   const [nuevaVenta, setNuevaVenta] = useState(vacioAgregar);
   const [guardandoVenta, setGuardandoVenta] = useState(false);
 
+  // Convierte dirección+monto (cómo lo captura el formulario) en un solo
+  // número con signo -- positivo si el vendedor recibió ese extra,
+  // negativo si lo puso él. null si el intercambio no tuvo dinero de por
+  // medio (trueque puro).
+  const calcularAjusteIntercambio = (valor) => {
+    if (valor.tipo_operacion !== "intercambio" || !valor.intercambio_direccion || !valor.intercambio_monto) return null;
+    const monto = Number(valor.intercambio_monto) || 0;
+    if (!monto) return null;
+    return valor.intercambio_direccion === "recibio" ? monto : -monto;
+  };
+
+  // Si el intercambio incluyó una carta recibida a cambio, se registra
+  // como una adquisición ligada a la venta que la originó -- así el
+  // resumen la puede mostrar en "lo que entró" sin contar su dinero por
+  // segunda vez (ese ya quedó en intercambio_ajuste de la venta).
+  const registrarAdquisicionDeIntercambio = async (ventaId, valor, dia) => {
+    if (valor.tipo_operacion !== "intercambio" || !valor.recibioNombre.trim()) return;
+    try {
+      const [fila] = await sbWrite("POST", "evento_adquisiciones", [{
+        evento_id: evento.id,
+        nombre: valor.recibioNombre.trim(),
+        dia: dia || hoyISO(),
+        costo: 0,
+        origen_venta_id: ventaId,
+      }], session);
+      setAdquisiciones((a) => [fila, ...a]);
+    } catch { /* no bloquea el guardado de la venta si esto falla */ }
+  };
+
   const agregarVenta = async () => {
     if (!nuevaVenta.nombre.trim()) { setErrorDetalle("Ponle un nombre a la pieza."); return; }
-    if (nuevaVenta.vendidaYa && !nuevaVenta.precio_venta) { setErrorDetalle("Pon el precio en el que la vendiste."); return; }
+    if (nuevaVenta.vendidaYa && nuevaVenta.tipo_operacion === "venta" && !nuevaVenta.precio_venta) { setErrorDetalle("Pon el precio en el que la vendiste."); return; }
     setGuardandoVenta(true); setErrorDetalle(null);
     try {
+      const dia = nuevaVenta.vendidaYa ? (nuevaVenta.dia || hoyISO()) : hoyISO();
       const [fila] = await sbWrite("POST", "evento_ventas", [{
         evento_id: evento.id,
         nombre: nuevaVenta.nombre.trim(),
         imagen_url: nuevaVenta.imagen_url || null,
         carta_ref: nuevaVenta.carta_ref,
         costo: Number(nuevaVenta.costo) || 0,
-        precio_venta: nuevaVenta.vendidaYa ? Number(nuevaVenta.precio_venta) : null,
+        precio_venta: nuevaVenta.vendidaYa ? Number(nuevaVenta.precio_venta) || 0 : null,
         precio_lista: !nuevaVenta.vendidaYa && nuevaVenta.precio_venta ? Number(nuevaVenta.precio_venta) : null,
         cantidad: Number(nuevaVenta.cantidad) || 1,
-        dia: nuevaVenta.vendidaYa ? (nuevaVenta.dia || hoyISO()) : hoyISO(),
+        dia,
         carpeta: nuevaVenta.carpeta.trim() || null,
         vendida: nuevaVenta.vendidaYa,
+        tipo_operacion: nuevaVenta.vendidaYa ? nuevaVenta.tipo_operacion : "venta",
+        metodo_pago: nuevaVenta.vendidaYa ? (nuevaVenta.metodo_pago || null) : null,
+        intercambio_ajuste: nuevaVenta.vendidaYa ? calcularAjusteIntercambio(nuevaVenta) : null,
       }], session);
       setVentas((v) => [fila, ...v]);
+      if (nuevaVenta.vendidaYa) await registrarAdquisicionDeIntercambio(fila.id, nuevaVenta, dia);
       setNuevaVenta(vacioAgregar);
       setMostrarAgregar(false);
     } catch (e) { setErrorDetalle(e.message); } finally { setGuardandoVenta(false); }
@@ -7995,23 +8058,33 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
       dia: v.dia || hoyISO(),
       carpeta: v.carpeta || "",
       vendida: v.vendida,
+      tipo_operacion: v.tipo_operacion || "venta",
+      metodo_pago: v.metodo_pago || "",
+      intercambio_direccion: v.intercambio_ajuste > 0 ? "recibio" : v.intercambio_ajuste < 0 ? "dio" : "",
+      intercambio_monto: v.intercambio_ajuste ? String(Math.abs(v.intercambio_ajuste)) : "",
+      recibioNombre: "",
     });
   };
 
   const guardarEdit = async () => {
-    if (edit.vendida && !edit.precio_venta) { setErrorDetalle("Pon el precio en el que se vendió."); return; }
+    if (edit.vendida && edit.tipo_operacion === "venta" && !edit.precio_venta) { setErrorDetalle("Pon el precio en el que se vendió."); return; }
     setGuardandoEdit(true); setErrorDetalle(null);
     try {
+      const dia = edit.vendida ? (edit.dia || hoyISO()) : (ventas.find((v) => v.id === editandoId)?.dia || hoyISO());
       const cambios = {
         costo: Number(edit.costo) || 0,
         cantidad: Number(edit.cantidad) || 1,
         carpeta: edit.carpeta.trim() || null,
         vendida: edit.vendida,
-        dia: edit.vendida ? (edit.dia || hoyISO()) : (ventas.find((v) => v.id === editandoId)?.dia || hoyISO()),
-        precio_venta: edit.vendida ? Number(edit.precio_venta) : null,
+        dia,
+        precio_venta: edit.vendida ? Number(edit.precio_venta) || 0 : null,
+        tipo_operacion: edit.vendida ? edit.tipo_operacion : "venta",
+        metodo_pago: edit.vendida ? (edit.metodo_pago || null) : null,
+        intercambio_ajuste: edit.vendida ? calcularAjusteIntercambio(edit) : null,
       };
       const [fila] = await sbWrite("PATCH", `evento_ventas?id=eq.${editandoId}`, cambios, session);
       setVentas((vs) => vs.map((v) => (v.id === fila.id ? fila : v)));
+      if (edit.vendida) await registrarAdquisicionDeIntercambio(fila.id, edit, dia);
       setEditandoId(null); setEdit(null);
     } catch (e) { setErrorDetalle(e.message); } finally { setGuardandoEdit(false); }
   };
@@ -8055,6 +8128,39 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
     } catch (e) { setErrorDetalle(e.message); }
   };
 
+  // ---- Compras directas: el vendedor compró una carta en el evento, sin
+  // que venga de un intercambio (ver también registrarAdquisicionDeIntercambio,
+  // arriba, para las que sí vienen ligadas a una venta). ----
+  const [mostrarCompra, setMostrarCompra] = useState(false);
+  const vacioCompra = { nombre: "", costo: "", metodo_pago: "", dia: hoyISO() };
+  const [nuevaCompra, setNuevaCompra] = useState(vacioCompra);
+  const [guardandoCompra, setGuardandoCompra] = useState(false);
+
+  const agregarCompra = async () => {
+    if (!nuevaCompra.nombre.trim()) { setErrorDetalle("Ponle un nombre a la carta que compraste."); return; }
+    setGuardandoCompra(true); setErrorDetalle(null);
+    try {
+      const [fila] = await sbWrite("POST", "evento_adquisiciones", [{
+        evento_id: evento.id,
+        nombre: nuevaCompra.nombre.trim(),
+        costo: Number(nuevaCompra.costo) || 0,
+        metodo_pago: nuevaCompra.metodo_pago || null,
+        dia: nuevaCompra.dia || hoyISO(),
+      }], session);
+      setAdquisiciones((a) => [fila, ...a]);
+      setNuevaCompra(vacioCompra);
+      setMostrarCompra(false);
+    } catch (e) { setErrorDetalle(e.message); } finally { setGuardandoCompra(false); }
+  };
+
+  const borrarAdquisicion = async (a) => {
+    if (!window.confirm(`¿Quitar "${a.nombre}" de lo que entró?`)) return;
+    try {
+      await sbWrite("DELETE", `evento_adquisiciones?id=eq.${a.id}`, {}, session);
+      setAdquisiciones((as_) => as_.filter((x) => x.id !== a.id));
+    } catch (e) { setErrorDetalle(e.message); }
+  };
+
   // ---- Reporte en PDF (jsPDF se carga solo al generar el reporte, para no
   // engordar el bundle principal de todos los usuarios que no usan esto) ----
   const [generandoPdf, setGenerandoPdf] = useState(false);
@@ -8082,6 +8188,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
         ["Ingresos", fmtMoneyEvento(resumen.ingresos)],
         ["Costo de mercancia vendida", fmtMoneyEvento(resumen.costoVendido)],
         ["Gastos operativos", fmtMoneyEvento(resumen.gastosTotal)],
+        ["Compras (cartas que entraron)", fmtMoneyEvento(resumen.costoCompras)],
         ["Ganancia neta", fmtMoneyEvento(resumen.gananciaNeta)],
         ["Piezas vendidas", String(resumen.piezasVendidas)],
         ["Inventario sin vender (valor a costo)", fmtMoneyEvento(resumen.valorRestante)],
@@ -8095,15 +8202,16 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
 
       if (porDia.length) {
         titulo("Desglose por dia");
-        doc.text("Dia", margen, y); doc.text("Ingresos", margen + 55, y); doc.text("Costo", margen + 95, y); doc.text("Gastos", margen + 130, y); doc.text("Ganancia", pageWidth - margen, y, { align: "right" });
+        doc.text("Dia", margen, y); doc.text("Ingresos", margen + 45, y); doc.text("Costo", margen + 80, y); doc.text("Gastos", margen + 110, y); doc.text("Compras", margen + 140, y); doc.text("Ganancia", pageWidth - margen, y, { align: "right" });
         y += 2; doc.line(margen, y, pageWidth - margen, y); y += 5;
         porDia.forEach((d) => {
           saltoSiNecesario();
-          const gananciaDia = d.ingresos - d.costo - d.gastos;
+          const gananciaDia = d.ingresos - d.costo - d.gastos - d.compras;
           doc.text(fmtDia(d.dia), margen, y);
-          doc.text(fmtMoneyEvento(d.ingresos), margen + 55, y);
-          doc.text(fmtMoneyEvento(d.costo), margen + 95, y);
-          doc.text(fmtMoneyEvento(d.gastos), margen + 130, y);
+          doc.text(fmtMoneyEvento(d.ingresos), margen + 45, y);
+          doc.text(fmtMoneyEvento(d.costo), margen + 80, y);
+          doc.text(fmtMoneyEvento(d.gastos), margen + 110, y);
+          doc.text(fmtMoneyEvento(d.compras), margen + 140, y);
           doc.text(fmtMoneyEvento(gananciaDia), pageWidth - margen, y, { align: "right" });
           y += 6;
         });
@@ -8122,13 +8230,28 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
       }
 
       if (resumen.vendidas.length) {
-        titulo("Ventas");
+        titulo("Ventas (lo que salio)");
         resumen.vendidas.forEach((v) => {
           saltoSiNecesario();
-          const ganancia = (Number(v.precio_venta || 0) - Number(v.costo || 0)) * v.cantidad;
-          doc.text(`${v.nombre}${v.cantidad > 1 ? ` x${v.cantidad}` : ""}`, margen, y);
-          doc.text(fmtMoneyEvento(Number(v.precio_venta || 0) * v.cantidad), margen + 110, y);
+          const esIntercambio = v.tipo_operacion === "intercambio";
+          const ingreso = ingresoDeVenta(v);
+          const ganancia = ingreso - Number(v.costo || 0) * v.cantidad;
+          const etiqueta = esIntercambio ? ` (intercambio${v.metodo_pago ? `, ${METODO_PAGO_EVENTO_LABEL[v.metodo_pago]}` : ""})` : v.metodo_pago ? ` (${METODO_PAGO_EVENTO_LABEL[v.metodo_pago]})` : "";
+          doc.text(`${v.nombre}${v.cantidad > 1 ? ` x${v.cantidad}` : ""}${etiqueta}`, margen, y);
+          doc.text(fmtMoneyEvento(ingreso), margen + 110, y);
           doc.text(fmtMoneyEvento(ganancia), pageWidth - margen, y, { align: "right" });
+          y += 6;
+        });
+        y += 4;
+      }
+
+      if (adquisiciones.length) {
+        titulo("Compras (lo que entro)");
+        adquisiciones.forEach((a) => {
+          saltoSiNecesario();
+          const etiqueta = a.origen_venta_id ? " (recibida en intercambio)" : a.metodo_pago ? ` (${METODO_PAGO_EVENTO_LABEL[a.metodo_pago]})` : "";
+          doc.text(`${a.nombre}${etiqueta}`, margen, y);
+          doc.text(fmtMoneyEvento(a.costo), pageWidth - margen, y, { align: "right" });
           y += 6;
         });
         y += 4;
@@ -8190,10 +8313,11 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
       {errorDetalle && <div className="mb-4"><ErrorBox message={errorDetalle} /></div>}
       {okDetalle && <p style={{ color: COLORS.azulPalido }} className="text-sm mb-4">{okDetalle}</p>}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-8">
         {statCard("Ingresos", fmtMoneyEvento(resumen.ingresos), COLORS.azulClaro)}
         {statCard("Costo vendido", fmtMoneyEvento(resumen.costoVendido))}
         {statCard("Gastos", fmtMoneyEvento(resumen.gastosTotal))}
+        {statCard("Compras", fmtMoneyEvento(resumen.costoCompras))}
         {statCard("Ganancia neta", fmtMoneyEvento(resumen.gananciaNeta), resumen.gananciaNeta >= 0 ? "#5FD98A" : "#E27070")}
         {statCard("Sin vender (a costo)", fmtMoneyEvento(resumen.valorRestante))}
       </div>
@@ -8325,30 +8449,82 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
         </div>
       )}
 
+      {/* ---- Compras (cartas que entraron: compradas directo, o recibidas
+          en un intercambio -- estas últimas también salen en la lista de
+          abajo por transparencia, aunque su dinero ya se contó en la
+          venta a la que están ligadas) ---- */}
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+        <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase">🛍️ Cartas que entraron ({fmtMoneyEvento(resumen.costoCompras)})</h3>
+        <button onClick={() => setMostrarCompra((v) => !v)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+          {mostrarCompra ? "Cancelar" : "+ Agregar compra"}
+        </button>
+      </div>
+
+      {mostrarCompra && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-4">
+          <input placeholder="Nombre de la carta" value={nuevaCompra.nombre} onChange={(e) => setNuevaCompra({ ...nuevaCompra, nombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm sm:col-span-2" />
+          <input type="number" placeholder="Cuánto pagaste" value={nuevaCompra.costo} onChange={(e) => setNuevaCompra({ ...nuevaCompra, costo: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <select value={nuevaCompra.metodo_pago} onChange={(e) => setNuevaCompra({ ...nuevaCompra, metodo_pago: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+            <option value="">Método de pago (opcional)</option>
+            {METODO_PAGO_EVENTO_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+          <input type="date" value={nuevaCompra.dia} onChange={(e) => setNuevaCompra({ ...nuevaCompra, dia: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <button onClick={agregarCompra} disabled={guardandoCompra} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg py-2 text-sm font-semibold sm:col-span-4 w-fit px-4">
+            {guardandoCompra ? "Guardando..." : "Guardar compra"}
+          </button>
+        </div>
+      )}
+
+      {adquisiciones.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm mb-8">Nada ha entrado todavía.</p>
+      ) : (
+        <div className="grid gap-1.5 mb-8">
+          {adquisiciones.map((a) => (
+            <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-2.5 flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-sm">
+                <span className="font-semibold">{a.nombre}</span>
+                {a.origen_venta_id ? (
+                  <Badge color={COLORS.violeta}>🔁 Intercambio</Badge>
+                ) : a.metodo_pago ? (
+                  <span style={{ color: COLORS.muted }}> — {METODO_PAGO_EVENTO_LABEL[a.metodo_pago]}</span>
+                ) : null}
+                {a.dia && <span style={{ color: COLORS.muted }} className="text-xs"> · {fmtDia(a.dia)}</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold whitespace-nowrap">{fmtMoneyEvento(a.costo)}</span>
+                <button onClick={() => borrarAdquisicion(a)} style={{ color: "#E27070" }}><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ---- Resumen por día ---- */}
       {porDia.length > 0 && (
         <>
           <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase mb-3">📅 Resumen por día</h3>
           <div className="overflow-x-auto mb-4">
-            <table className="w-full text-sm min-w-[480px]">
+            <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr style={{ color: COLORS.muted }} className="text-xs uppercase text-left">
                   <th className="pb-2 font-semibold">Día</th>
                   <th className="pb-2 font-semibold">Ingresos</th>
                   <th className="pb-2 font-semibold">Costo</th>
                   <th className="pb-2 font-semibold">Gastos</th>
+                  <th className="pb-2 font-semibold">Compras</th>
                   <th className="pb-2 font-semibold text-right">Ganancia</th>
                 </tr>
               </thead>
               <tbody>
                 {porDia.map((d) => {
-                  const ganancia = d.ingresos - d.costo - d.gastos;
+                  const ganancia = d.ingresos - d.costo - d.gastos - d.compras;
                   return (
                     <tr key={d.dia} style={{ borderTop: `1px solid ${COLORS.surface2}` }}>
                       <td className="py-2">{fmtDia(d.dia)}</td>
                       <td className="py-2">{fmtMoneyEvento(d.ingresos)}</td>
                       <td className="py-2">{fmtMoneyEvento(d.costo)}</td>
                       <td className="py-2">{fmtMoneyEvento(d.gastos)}</td>
+                      <td className="py-2">{fmtMoneyEvento(d.compras)}</td>
                       <td style={{ color: ganancia >= 0 ? "#5FD98A" : "#E27070" }} className="py-2 text-right font-semibold">{fmtMoneyEvento(ganancia)}</td>
                     </tr>
                   );
@@ -8364,6 +8540,60 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
 
 // Formulario para agregar una pieza al evento (a mano): con buscador del
 // catálogo oficial (opcional, autocompleta nombre/imagen) o nombre libre.
+// Campos de tipo de operación (venta/intercambio), método de pago, y --
+// si fue intercambio -- el dinero extra (con o sin dirección, ver
+// migración 073) y la carta recibida a cambio (opcional). Reutilizado
+// por FormVentaEvento (alta) y FilaVentaEvento (editar/marcar vendida):
+// ambos pasan `valor` con la misma forma y un `onChange` de merge-patch,
+// así que es el mismo componente en los dos lugares.
+function CamposOperacionEvento({ valor, onChange, inputStyle }) {
+  return (
+    <div className="grid gap-2">
+      <div className="flex gap-2 flex-wrap">
+        {[{ k: "venta", l: "🏷️ Venta" }, { k: "intercambio", l: "🔁 Intercambio" }].map((o) => (
+          <button key={o.k} type="button" onClick={() => onChange({ ...valor, tipo_operacion: o.k })}
+            style={{ background: valor.tipo_operacion === o.k ? `${COLORS.azul}55` : COLORS.surface2, border: `1px solid ${valor.tipo_operacion === o.k ? COLORS.azulPalido : COLORS.surface2}`, color: valor.tipo_operacion === o.k ? COLORS.azulPalido : COLORS.muted }}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+            {o.l}
+          </button>
+        ))}
+      </div>
+
+      {valor.tipo_operacion === "venta" && (
+        <select value={valor.metodo_pago} onChange={(e) => onChange({ ...valor, metodo_pago: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
+          <option value="">Método de pago (opcional)</option>
+          {METODO_PAGO_EVENTO_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+      )}
+
+      {valor.tipo_operacion === "intercambio" && (
+        <div style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 grid gap-2">
+          <p style={{ color: COLORS.muted }} className="text-xs -mt-1">¿Hubo dinero extra además de las cartas?</p>
+          <div className="flex gap-2 flex-wrap">
+            {[{ k: "", l: "Sin dinero extra" }, { k: "recibio", l: "Me dieron dinero extra" }, { k: "dio", l: "Yo di dinero extra" }].map((o) => (
+              <button key={o.k || "nada"} type="button" onClick={() => onChange({ ...valor, intercambio_direccion: o.k })}
+                style={{ background: valor.intercambio_direccion === o.k ? `${COLORS.violeta}33` : "transparent", border: `1px solid ${valor.intercambio_direccion === o.k ? COLORS.violeta : COLORS.surface2}`, color: valor.intercambio_direccion === o.k ? COLORS.violeta : COLORS.muted }}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                {o.l}
+              </button>
+            ))}
+          </div>
+          {valor.intercambio_direccion && (
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" placeholder="Monto" value={valor.intercambio_monto} onChange={(e) => onChange({ ...valor, intercambio_monto: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+              <select value={valor.metodo_pago} onChange={(e) => onChange({ ...valor, metodo_pago: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+                <option value="">Método (opcional)</option>
+                {METODO_PAGO_EVENTO_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+            </div>
+          )}
+          <input placeholder="¿Qué recibiste a cambio? (opcional, nombre de la carta)" value={valor.recibioNombre} onChange={(e) => onChange({ ...valor, recibioNombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FormVentaEvento({ valor, onChange, onGuardar, onCancelar, guardando, inputStyle, tcg, onTcg, cartaManual, onCartaManual }) {
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-xl p-4 mb-4 grid gap-2">
@@ -8403,7 +8633,7 @@ function FormVentaEvento({ valor, onChange, onGuardar, onCancelar, guardando, in
           <input type="number" placeholder="0.00" value={valor.costo} onChange={(e) => onChange({ ...valor, costo: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
         </label>
         <label className="text-xs" style={{ color: COLORS.muted }}>
-          {valor.vendidaYa ? "La vendiste en" : "Precio sugerido (opcional)"}
+          {!valor.vendidaYa ? "Precio sugerido (opcional)" : valor.tipo_operacion === "intercambio" ? "Valor estimado (opcional)" : "La vendiste en"}
           <input type="number" placeholder="0.00" value={valor.precio_venta} onChange={(e) => onChange({ ...valor, precio_venta: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
         </label>
         <label className="text-xs" style={{ color: COLORS.muted }}>
@@ -8417,6 +8647,7 @@ function FormVentaEvento({ valor, onChange, onGuardar, onCancelar, guardando, in
           </label>
         )}
       </div>
+      {valor.vendidaYa && <CamposOperacionEvento valor={valor} onChange={onChange} inputStyle={inputStyle} />}
       <input list="carpetas-evento-datalist" placeholder="Carpeta (opcional, ej. Caja 1)" value={valor.carpeta} onChange={(e) => onChange({ ...valor, carpeta: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit" />
 
       <div className="flex gap-2">
@@ -8446,7 +8677,7 @@ function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdi
           </label>
           {edit.vendida && (
             <label className="text-xs" style={{ color: COLORS.muted }}>
-              La vendiste en
+              {edit.tipo_operacion === "intercambio" ? "Valor estimado (opcional)" : "La vendiste en"}
               <input type="number" value={edit.precio_venta} onChange={(e) => onEditChange({ ...edit, precio_venta: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
             </label>
           )}
@@ -8461,6 +8692,7 @@ function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdi
             </label>
           )}
         </div>
+        {edit.vendida && <CamposOperacionEvento valor={edit} onChange={onEditChange} inputStyle={inputStyle} />}
         <input list="carpetas-evento-datalist" placeholder="Carpeta (opcional)" value={edit.carpeta} onChange={(e) => onEditChange({ ...edit, carpeta: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit" />
         <div className="flex gap-2">
           <button onClick={onGuardarEdit} disabled={guardandoEdit} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">
@@ -8472,7 +8704,13 @@ function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdi
     );
   }
 
-  const gananciaFila = v.vendida ? (Number(v.precio_venta || 0) - Number(v.costo || 0)) * v.cantidad : null;
+  const esIntercambioFila = v.tipo_operacion === "intercambio";
+  const gananciaFila = v.vendida ? ingresoDeVenta(v) - Number(v.costo || 0) * v.cantidad : null;
+  const etiquetaVentaFila = esIntercambioFila
+    ? ` · 🔁 Intercambio${v.intercambio_ajuste ? ` (${v.intercambio_ajuste > 0 ? "+" : ""}${fmtMoneyEvento(v.intercambio_ajuste)})` : ""}${v.metodo_pago ? `, ${METODO_PAGO_EVENTO_LABEL[v.metodo_pago]}` : ""}`
+    : v.metodo_pago
+    ? ` · ${METODO_PAGO_EVENTO_LABEL[v.metodo_pago]}`
+    : "";
 
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 flex items-center gap-3 flex-wrap">
@@ -8480,7 +8718,8 @@ function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdi
       <div className="flex-1 min-w-[140px]">
         <p className="text-sm font-semibold">{v.nombre}{v.cantidad > 1 ? ` ×${v.cantidad}` : ""}</p>
         <p style={{ color: COLORS.muted }} className="text-xs">
-          Costo {fmtMoneyEvento(v.costo)}{v.vendida ? ` · Vendida en ${fmtMoneyEvento(v.precio_venta)} · ${v.dia}` : v.precio_lista ? ` · Precio de lista ${fmtMoneyEvento(v.precio_lista)}` : ""}
+          Costo {fmtMoneyEvento(v.costo)}
+          {v.vendida ? ` · ${esIntercambioFila ? "Intercambiada" : "Vendida en " + fmtMoneyEvento(v.precio_venta)} · ${v.dia}${etiquetaVentaFila}` : v.precio_lista ? ` · Precio de lista ${fmtMoneyEvento(v.precio_lista)}` : ""}
           {v.carpeta ? ` · 📁 ${v.carpeta}` : ""}
         </p>
       </div>
