@@ -4520,6 +4520,86 @@ Dos ajustes al flujo de intercambios de la sección 139:
 
 Sin migración nueva -- ambos cambios usan columnas que ya existían.
 
+## 143. Migrar a apitcg.com: artista + descripción de cartas y sellado, selector visual de sellado, traducción opcional
+
+El dueño pasó el OpenAPI completo de apitcg.com y pidió que cada
+publicación (carta o sellado) incluya el artista/ilustrador y la
+descripción (texto de reglas -- ataques, habilidades -- en cartas; qué
+trae la caja, en sellado), que el selector de producto sellado sea
+visual (cuadrícula por nombre, o logos de set y dentro sus productos), y
+un botón opcional de traducir la descripción (viene en inglés).
+
+**Migración nueva:** `074_artista_descripcion_api.sql` -- agrega
+`artista`, `descripcion_api` y `descripcion_api_es` a `mercado_listings`,
+`inventario_tienda` y `sellado_tienda` (`artista` queda siempre null en
+sellado, no aplica ahí).
+
+**De dónde salen los datos:** `attributes.Artist` y `attributes.Description`
+viven en el mismo objeto `Product` de apitcg.com para cartas (`type=card`)
+y sellado (`type=sealed`) -- mismo endpoint `/api/products`. El proxy
+(`apitcgProxy` en `api/tcgcsv.js`) ya pasaba la respuesta cruda sin
+recortar; solo hacía falta que el cliente empezara a leer esos dos
+campos. `mapearProductoApiTCG` (`src/lib/pokemonApi.js`) ahora también
+devuelve `artista` y `descripcionApi` (limpio de HTML ligero con el
+helper nuevo `limpiarHtmlLigero` -- no hay ningún sanitizador de HTML en
+el repo, así que la descripción se guarda como texto plano en vez de
+arriesgar un `dangerouslySetInnerHTML`).
+
+**Selector visual de sellado:** nuevo componente `SelladoPickerVisual`
+(reemplaza a `TCGplayerPicker` en la rama `soloSellado` de
+`CardPickerUniversal`) -- dos modos: buscar por nombre (cuadrícula de
+imágenes, vía `buscarSelladoVisualApiTCG`) o buscar por set (cuadrícula
+de logos, vía `obtenerSetsVisualesApiTCG`, con un ícono de color de
+respaldo si el set no trae logo -- no todos lo tienen -- y dentro del
+set, la cuadrícula de sus productos vía `buscarSelladoDeSetApiTCG`).
+`TCGplayerPicker`/TCGCSV se conserva como respaldo manual ("¿No lo
+encuentras? Buscar en TCGplayer") por si apitcg.com todavía no tiene un
+producto en particular -- el catálogo de sellado de apitcg.com es el
+mismo de TCGplayer (las imágenes vienen del mismo
+`tcgplayer-cdn.tcgplayer.com`), así que no debería perderse cobertura.
+De paso, One Piece se agregó a `TCG_CON_CATALOGO` (`theme.js`) -- ya
+tenía a apitcg.com como fuente para cartas sueltas pero por un descuido
+seguía usando el picker de texto en vez del visual.
+
+**Al publicar:** los formularios de carta individual (`mercado_listings`),
+carta de tienda (`inventario_tienda`) y sellado de tienda
+(`sellado_tienda`) guardan `artista`/`descripcion_api` de lo que devuelve
+el picker, y muestran una vista previa chica (sin traducir -- eso vive en
+la vista pública) para que el vendedor confirme que es la publicación
+correcta.
+
+**Al ver el detalle (comprador):** `CartaDetalleView` +
+`cargarDetalleListing` muestran "🎨 Ilustrado por..." y la descripción,
+con un botón "🌐 Traducir". La traducción usa el endpoint gratuito de
+Google Translate (sin API key) vía una rama nueva `fuente=traducir` en
+`api/tcgcsv.js` -- requiere sesión válida (cualquier usuario logueado,
+no solo el dueño), y si viene `tabla`+`id` cachea el resultado en
+`descripcion_api_es` con el **service role key** (server-side, sin RLS)
+para que el siguiente visitante no vuelva a gastar la traducción -- el
+cacheo tiene que ser server-side porque cualquier visitante puede
+traducir, no solo el dueño de la publicación.
+
+**Migrar lo ya publicado:** nueva rama `fuente=migrar-descripciones` en
+`api/tcgcsv.js` (gateada a `perfiles.es_admin`, mismo patrón de
+`api/admin/usuarios.js`) -- solo cubre publicaciones cuyo `card_api_id`
+ya tiene el prefijo `apitcg:` (se buscaron con apitcg.com como fuente),
+porque esas se pueden volver a consultar directo por `/api/products/{id}`.
+Las de fuentes viejas (pokemontcg.io, TCGdex, Scryfall, YGOPRODeck,
+lorcana-api, TCGCSV) o escritas a mano quedan fuera de este primer paso
+-- no hay forma confiable de volver a encontrarlas sin una búsqueda por
+nombre con riesgo de match incorrecto. Procesa lotes de 25 con cursor
+(idempotente: una fila ya migrada, o que apitcg.com no tiene datos para
+ella, no se vuelve a consultar en la misma pasada). Nuevo tab
+"Migrar API" en `AdminPanel` con un botón por tabla que llama este
+endpoint en bucle mostrando el avance en vivo, y se puede detener en
+cualquier momento -- **apitcg.com tiene límite de peticiones al mes**, así
+que esto lo dispara el dueño a mano, a su ritmo, nunca automático.
+
+No se creó ningún archivo nuevo bajo `api/` -- Vercel Hobby ya tenía las
+12 funciones serverless topadas, así que todo esto vive como ramas
+`?fuente=` nuevas dentro de `api/tcgcsv.js`, que ya tenía esa forma de
+despacho.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

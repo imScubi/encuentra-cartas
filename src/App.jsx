@@ -22,6 +22,7 @@ import {
   parseNumeroYSet, buscarImagenRespaldoPorTcg, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
   buscarCartasCatalogo, obtenerPrecioRefActualPorTcg, categoriaIdTCGplayer,
   obtenerErasYSetsCatalogo, obtenerCartasDeSetCatalogo,
+  obtenerSetsVisualesApiTCG, buscarSelladoVisualApiTCG, buscarSelladoDeSetApiTCG,
 } from "./lib/pokemonApi.js";
 import {
   FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre, conAlpha,
@@ -1513,6 +1514,10 @@ function CardPicker({ tcg = "pokemon", onSelect, onNoEncontrada }) {
       imagen_url: c.image || "",
       precio_ref_mxn: c.precioRefMxn,
       precio_ref_fuente: c.precioRefFuente,
+      // Solo vienen cuando la carta se encontró vía apitcg.com -- las
+      // fuentes viejas (pokemontcg.io, Scryfall, etc.) no las traen.
+      artista: c.artista || null,
+      descripcion_api: c.descripcionApi || null,
     });
     setQ(""); setResults([]); setOpen(false);
   };
@@ -1846,11 +1851,162 @@ function TCGplayerPicker({ tcg = "pokemon", soloSellado = true, onSelect }) {
   );
 }
 
+// Selector visual de producto sellado, vía apitcg.com (el mismo catálogo
+// de TCGplayer que ya se usaba con TCGCSV, pero ya trae
+// attributes.Description). Dos modos: buscar por nombre (cuadrícula de
+// imágenes, igual que CardPicker) o navegar por set (cuadrícula de logos
+// -- ícono de color si el set no trae logo -- y dentro, la cuadrícula de
+// producto de ese set). TCGplayerPicker se conserva como respaldo manual
+// por si apitcg.com todavía no tiene un producto en particular.
+function SelladoPickerVisual({ tcg, onSelect }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [modo, setModo] = useState("nombre"); // "nombre" | "set"
+  const [q, setQ] = useState("");
+  const [resultados, setResultados] = useState([]);
+  const [buscando, setBuscando] = useState(false);
+  const [sets, setSets] = useState([]);
+  const [cargandoSets, setCargandoSets] = useState(false);
+  const [setElegido, setSetElegido] = useState(null);
+  const [productosDeSet, setProductosDeSet] = useState([]);
+  const [cargandoProductos, setCargandoProductos] = useState(false);
+  const [usarRespaldo, setUsarRespaldo] = useState(false);
+
+  useEffect(() => {
+    setModo("nombre"); setQ(""); setResultados([]);
+    setSets([]); setSetElegido(null); setProductosDeSet([]); setUsarRespaldo(false);
+  }, [tcg]);
+
+  useEffect(() => {
+    if (modo !== "nombre" || !q.trim() || q.trim().length < 3) { setResultados([]); return; }
+    setBuscando(true);
+    let cancelado = false;
+    let controller = null;
+    const t = setTimeout(() => {
+      controller = new AbortController();
+      buscarSelladoVisualApiTCG(tcg, q.trim(), 24, controller.signal)
+        .then((r) => { if (!cancelado) setResultados(r); })
+        .catch(() => { if (!cancelado) setResultados([]); })
+        .finally(() => { if (!cancelado) setBuscando(false); });
+    }, 400);
+    return () => { cancelado = true; clearTimeout(t); controller?.abort(); };
+  }, [q, tcg, modo]);
+
+  useEffect(() => {
+    if (modo !== "set") return;
+    setCargandoSets(true);
+    obtenerSetsVisualesApiTCG(tcg).then(setSets).catch(() => setSets([])).finally(() => setCargandoSets(false));
+  }, [modo, tcg]);
+
+  useEffect(() => {
+    if (!setElegido) { setProductosDeSet([]); return; }
+    setCargandoProductos(true);
+    buscarSelladoDeSetApiTCG(tcg, setElegido._id, "", 48)
+      .then(setProductosDeSet)
+      .catch(() => setProductosDeSet([]))
+      .finally(() => setCargandoProductos(false));
+  }, [setElegido, tcg]);
+
+  const seleccionar = (p) => {
+    onSelect({
+      producto: p.name, set_nombre: p.setName || "", card_api_id: p.id, imagen_url: p.image || "",
+      precio_ref_mxn: p.precioRefMxn, precio_ref_fuente: p.precioRefFuente,
+      artista: null, descripcion_api: p.descripcionApi || null,
+    });
+  };
+
+  const tarjeta = (p) => (
+    <button key={p.id} type="button" onClick={() => seleccionar(p)}
+      className="flex flex-col items-center gap-1 rounded-lg p-1.5 text-center hover:brightness-125">
+      <div style={{ background: COLORS.bg }} className="w-full aspect-[63/88] rounded-md overflow-hidden flex items-center justify-center">
+        {p.image ? <img src={p.image} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} loading="lazy" /> : <Package size={20} color={COLORS.muted} />}
+      </div>
+      <p className="text-xs font-medium leading-tight line-clamp-2">{p.name}</p>
+    </button>
+  );
+
+  if (usarRespaldo) {
+    return (
+      <div className="grid gap-2">
+        <button type="button" onClick={() => setUsarRespaldo(false)} style={{ color: COLORS.muted }} className="text-xs underline w-fit">← Volver a la búsqueda visual</button>
+        <TCGplayerPicker tcg={tcg} soloSellado onSelect={onSelect} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex gap-2">
+        {[{ k: "nombre", l: "Buscar por nombre" }, { k: "set", l: "Buscar por set" }].map((o) => (
+          <button key={o.k} type="button" onClick={() => setModo(o.k)}
+            style={{ background: modo === o.k ? `${COLORS.azul}55` : COLORS.surface2, color: modo === o.k ? COLORS.azulPalido : COLORS.muted }}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+            {o.l}
+          </button>
+        ))}
+      </div>
+
+      {modo === "nombre" && (
+        <>
+          <input placeholder="Nombre del producto (ej. Elite Trainer Box)" value={q} onChange={(e) => setQ(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full" />
+          {buscando && <p style={{ color: COLORS.muted }} className="text-xs">Buscando...</p>}
+          {!buscando && q.trim().length >= 3 && resultados.length === 0 && (
+            <p style={{ color: COLORS.muted }} className="text-xs">Sin resultados en apitcg.com todavía.</p>
+          )}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-80 overflow-y-auto">
+            {resultados.map(tarjeta)}
+          </div>
+        </>
+      )}
+
+      {modo === "set" && !setElegido && (
+        <>
+          {cargandoSets && <p style={{ color: COLORS.muted }} className="text-xs">Cargando sets...</p>}
+          {!cargandoSets && sets.length === 0 && (
+            <p style={{ color: COLORS.muted }} className="text-xs">No encontramos sets para este TCG en apitcg.com todavía.</p>
+          )}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-80 overflow-y-auto">
+            {sets.map((s) => (
+              <button key={s._id} type="button" onClick={() => setSetElegido(s)}
+                style={{ background: COLORS.bg }} className="flex flex-col items-center gap-1.5 rounded-lg p-2 text-center hover:brightness-125">
+                {s.logo ? (
+                  <img src={s.logo} alt={s.name} style={{ height: 40, maxWidth: "100%", objectFit: "contain" }} loading="lazy" />
+                ) : (
+                  <div style={{ width: 40, height: 40, borderRadius: 8, background: `${COLORS.azulClaro}33`, border: `1px solid ${COLORS.azulClaro}55` }} />
+                )}
+                <p className="text-[11px] leading-tight line-clamp-2">{s.name}</p>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {modo === "set" && setElegido && (
+        <>
+          <button type="button" onClick={() => setSetElegido(null)} style={{ color: COLORS.muted }} className="text-xs underline w-fit">← Otro set</button>
+          <p className="text-xs font-semibold">{setElegido.name}</p>
+          {cargandoProductos && <p style={{ color: COLORS.muted }} className="text-xs">Cargando productos...</p>}
+          {!cargandoProductos && productosDeSet.length === 0 && (
+            <p style={{ color: COLORS.muted }} className="text-xs">Sin producto sellado registrado para este set en apitcg.com todavía.</p>
+          )}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-80 overflow-y-auto">
+            {productosDeSet.map(tarjeta)}
+          </div>
+        </>
+      )}
+
+      <button type="button" onClick={() => setUsarRespaldo(true)} style={{ color: COLORS.muted }} className="text-xs underline w-fit">¿No lo encuentras? Buscar en TCGplayer</button>
+    </div>
+  );
+}
+
 // ---- Despachador único: elige el buscador correcto según el TCG (y si es
 // carta suelta o producto sellado) — así los formularios de publicar no
 // necesitan saber de dónde viene cada catálogo. ----
 function CardPickerUniversal({ tcg = "pokemon", soloSellado = false, onSelect, onNoEncontrada }) {
-  if (!soloSellado && TCG_CON_CATALOGO.includes(tcg)) {
+  if (soloSellado) {
+    return <SelladoPickerVisual tcg={tcg} onSelect={onSelect} />;
+  }
+  if (TCG_CON_CATALOGO.includes(tcg)) {
     return <CardPicker tcg={tcg} onSelect={onSelect} onNoEncontrada={onNoEncontrada} />;
   }
   return <TCGplayerPicker tcg={tcg} soloSellado={soloSellado} onSelect={onSelect} />;
@@ -1881,7 +2037,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
   const vacio = {
     tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", zona: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, foto_real_url: "", foto_real_reverso_url: "",
     gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "", buzon_tienda_id: "",
-    descripcion: "", etiquetas: "",
+    descripcion: "", etiquetas: "", artista: null, descripcion_api: null,
   };
   const [nueva, setNueva] = useState({ ...vacio, buzon_tienda_id: buzonDefault });
   // Mientras una foto real se está moderando/subiendo no dejamos publicar --
@@ -1973,6 +2129,8 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
         imagen_url: nueva.imagen_url || null,
         precio_ref_mxn: nueva.precio_ref_mxn || null,
         precio_ref_fuente: nueva.precio_ref_mxn ? nueva.precio_ref_fuente || null : null,
+        artista: nueva.artista || null,
+        descripcion_api: nueva.descripcion_api || null,
         // Las fotos reales (frente/reverso) ya NO son obligatorias para
         // publicar -- si el vendedor las subió antes de dar clic, se mandan
         // de una vez; si no, quedan en null y se pueden agregar después
@@ -2220,14 +2378,16 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
             <div>
               {!cartaManual ? (
                 <>
-                  <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_ref_fuente: c.precio_ref_fuente, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} onNoEncontrada={() => setCartaManual(true)} />
+                  <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_ref_fuente: c.precio_ref_fuente, artista: c.artista || null, descripcion_api: c.descripcion_api || null, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} onNoEncontrada={() => setCartaManual(true)} />
                   {nueva.card_api_id && (
                     <div className="flex items-center gap-3 mt-2">
                       {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                       <div>
                         <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
                         {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia{nueva.precio_ref_fuente ? ` (${nueva.precio_ref_fuente})` : ""}: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-                        <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                        {nueva.artista && <p style={{ color: COLORS.muted }} className="text-xs mt-1">🎨 Ilustrado por {nueva.artista}</p>}
+                        {nueva.descripcion_api && <p style={{ color: COLORS.muted }} className="text-xs mt-1 line-clamp-2">{nueva.descripcion_api}</p>}
+                        <button type="button" onClick={() => setNueva({ ...nueva, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, artista: null, descripcion_api: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                       </div>
                     </div>
                   )}
@@ -2281,7 +2441,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
           </>
         ) : (
           <>
-            <CardPickerUniversal tcg={nueva.tcg} soloSellado onSelect={(p) => setNueva({ ...nueva, carta: p.producto, set_nombre: p.set_nombre, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio_ref_fuente: p.precio_ref_fuente, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
+            <CardPickerUniversal tcg={nueva.tcg} soloSellado onSelect={(p) => setNueva({ ...nueva, carta: p.producto, set_nombre: p.set_nombre, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio_ref_fuente: p.precio_ref_fuente, descripcion_api: p.descripcion_api || null, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
             <div className="flex items-center gap-2 flex-wrap">
               <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
               {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
@@ -2298,7 +2458,8 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
             <div>
               <Badge color={COLORS.azulClaro}>{nueva.carta}</Badge>
               {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia{nueva.precio_ref_fuente ? ` (${nueva.precio_ref_fuente})` : ""}: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
-              <button type="button" onClick={() => setNueva({ ...nueva, carta: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+              {nueva.descripcion_api && <p style={{ color: COLORS.muted }} className="text-xs mt-1 line-clamp-2">{nueva.descripcion_api}</p>}
+              <button type="button" onClick={() => setNueva({ ...nueva, carta: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null, precio_ref_fuente: null, descripcion_api: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
             </div>
           </div>
         )}
@@ -3573,6 +3734,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
     { id: "vendedores", label: "Vendedores" },
     { id: "sorteos", label: "Sorteos" },
     { id: "errores", label: "Errores" },
+    { id: "migrar", label: "Migrar API" },
   ];
 
   return (
@@ -4157,6 +4319,111 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
       )}
         </div>
       )}
+
+      {tabAdmin === "migrar" && <MigrarDescripcionesAdmin session={session} />}
+    </div>
+  );
+}
+
+// Migrar publicaciones ya existentes al artista/descripción de
+// apitcg.com -- solo cubre lo que se buscó con apitcg.com como fuente
+// (card_api_id empieza con "apitcg:", se puede volver a consultar directo
+// por id); lo demás (fuentes viejas, escrito a mano) queda fuera de este
+// primer paso. Un botón por tabla que llama a
+// api/tcgcsv.js?fuente=migrar-descripciones en bucle, mostrando el avance
+// en vivo -- el dueño lo dispara a mano y lo puede parar cuando quiera,
+// para cuidar la cuota mensual de apitcg.com.
+function MigrarDescripcionesAdmin({ session }) {
+  const TABLAS = [
+    { tabla: "mercado_listings", label: "Mercado (vendedores individuales)" },
+    { tabla: "inventario_tienda", label: "Tiendas -- cartas sueltas" },
+    { tabla: "sellado_tienda", label: "Tiendas -- producto sellado" },
+  ];
+  const [estado, setEstado] = useState({}); // { [tabla]: { corriendo, procesadas, migradas, terminado, error } }
+  const detenidoRef = useRef({}); // { [tabla]: true } -- bandera de "parar" que el bucle lee en cada vuelta
+
+  const patchEstado = (tabla, cambios) => setEstado((e) => ({ ...e, [tabla]: { ...e[tabla], ...cambios } }));
+
+  const correrUnLote = async (tabla, cursor) => {
+    const res = await fetch("/api/tcgcsv?fuente=migrar-descripciones", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ tabla, cursor }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || "No se pudo migrar este lote.");
+    return data;
+  };
+
+  const iniciar = async (tabla) => {
+    detenidoRef.current[tabla] = false;
+    setEstado((e) => ({ ...e, [tabla]: { corriendo: true, procesadas: 0, migradas: 0, terminado: false, error: null } }));
+    let cursor = null;
+    while (!detenidoRef.current[tabla]) {
+      try {
+        const data = await correrUnLote(tabla, cursor);
+        setEstado((e) => ({
+          ...e,
+          [tabla]: {
+            ...e[tabla],
+            procesadas: (e[tabla]?.procesadas || 0) + data.procesadas,
+            migradas: (e[tabla]?.migradas || 0) + data.migradas,
+          },
+        }));
+        cursor = data.siguienteCursor;
+        if (!cursor) break;
+      } catch (err) {
+        patchEstado(tabla, { error: err.message, corriendo: false });
+        return;
+      }
+    }
+    patchEstado(tabla, { corriendo: false, terminado: !detenidoRef.current[tabla] });
+  };
+
+  const detener = (tabla) => { detenidoRef.current[tabla] = true; patchEstado(tabla, { corriendo: false }); };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🖼️ Migrar cartas viejas al nuevo API</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-1">
+        Vuelve a consultar apitcg.com para rellenar artista/descripción de publicaciones que ya existen. Solo cubre las que se buscaron con apitcg.com
+        como fuente (identificable por su <code>card_api_id</code>) -- lo demás queda fuera de este primer paso.
+      </p>
+      <p style={{ color: COLORS.muted }} className="text-xs mb-6">
+        apitcg.com tiene límite de peticiones al mes -- corre esto por tabla, a tu ritmo, y detente cuando quieras.
+      </p>
+      <div className="grid gap-3">
+        {TABLAS.map(({ tabla, label }) => {
+          const e = estado[tabla] || {};
+          return (
+            <div key={tabla} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-sm font-semibold">{label}</p>
+                  {(e.procesadas > 0 || e.corriendo) && (
+                    <p style={{ color: COLORS.muted }} className="text-xs mt-1">
+                      {e.procesadas || 0} revisadas · {e.migradas || 0} con artista/descripción nueva
+                      {e.corriendo ? " · migrando..." : e.terminado ? " · listo" : e.procesadas > 0 ? " · detenido" : ""}
+                    </p>
+                  )}
+                  {e.error && <p style={{ color: "#E27070" }} className="text-xs mt-1">{e.error}</p>}
+                </div>
+                <div className="flex gap-2">
+                  {!e.corriendo ? (
+                    <button onClick={() => iniciar(tabla)} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                      {e.procesadas > 0 ? "Seguir migrando" : "Empezar"}
+                    </button>
+                  ) : (
+                    <button onClick={() => detener(tabla)} style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+                      Detener
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -5499,7 +5766,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
 
   const [nuevaCarta, setNuevaCarta] = useState({
     tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, foto_real_url: "", foto_real_reverso_url: "",
-    gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
+    gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "", artista: null, descripcion_api: null,
   });
   // Ver el comentario equivalente en MyMarketPanel: las fotos ya no son
   // obligatorias, esto solo evita perder una subida en curso al publicar.
@@ -5507,7 +5774,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
   // Mismo criterio que selladoManual (más abajo): promos/premios/liga/staff
   // en español casi nunca están en el catálogo de pokemontcg.io.
   const [cartaManual, setCartaManual] = useState(false);
-  const [nuevoSellado, setNuevoSellado] = useState({ tcg: "pokemon", producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null });
+  const [nuevoSellado, setNuevoSellado] = useState({ tcg: "pokemon", producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, descripcion_api: null });
   const [selladoManual, setSelladoManual] = useState(false);
   const [savingCarta, setSavingCarta] = useState(false);
   const [savingSellado, setSavingSellado] = useState(false);
@@ -5660,7 +5927,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
       }
       setNuevaCarta({
         tcg: "pokemon", carta: "", set_nombre: "", condicion: "", idioma: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, foto_real_url: "", foto_real_reverso_url: "",
-        gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "",
+        gradeada: false, grado_empresa: "", grado_empresa_otro: "", grado_calificacion: "", artista: null, descripcion_api: null,
       });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingCarta(false); }
@@ -5739,8 +6006,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
         card_api_id: nuevoSellado.card_api_id || null,
         imagen_url: nuevoSellado.imagen_url || null,
         precio_ref_mxn: nuevoSellado.precio_ref_mxn || null,
+        descripcion_api: nuevoSellado.descripcion_api || null,
       }, session);
-      setNuevoSellado({ tcg: nuevoSellado.tcg, producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null });
+      setNuevoSellado({ tcg: nuevoSellado.tcg, producto: "", precio: "", precio_antes: "", cantidad: "1", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, descripcion_api: null });
       cargar();
     } catch (e) { setError(e.message); } finally { setSavingSellado(false); }
   };
@@ -6115,6 +6383,8 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
                 imagen_url: c.imagen_url,
                 precio_ref_mxn: c.precio_ref_mxn,
                 precio_ref_fuente: c.precio_ref_fuente,
+                artista: c.artista || null,
+                descripcion_api: c.descripcion_api || null,
                 precio: nuevaCarta.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : ""),
               })} onNoEncontrada={() => setCartaManual(true)} />
               {nuevaCarta.card_api_id && (
@@ -6127,7 +6397,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
                         Precio de referencia{nuevaCarta.precio_ref_fuente ? ` (${nuevaCarta.precio_ref_fuente})` : ""}: ~${nuevaCarta.precio_ref_mxn.toLocaleString("es-MX")} MXN
                       </p>
                     )}
-                    <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                    {nuevaCarta.artista && <p style={{ color: COLORS.muted }} className="text-xs mt-1">🎨 Ilustrado por {nuevaCarta.artista}</p>}
+                    {nuevaCarta.descripcion_api && <p style={{ color: COLORS.muted }} className="text-xs mt-1 line-clamp-2">{nuevaCarta.descripcion_api}</p>}
+                    <button type="button" onClick={() => setNuevaCarta({ ...nuevaCarta, carta: "", set_nombre: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null, artista: null, descripcion_api: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                   </div>
                 </div>
               )}
@@ -6236,6 +6508,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
               card_api_id: p.card_api_id,
               precio_ref_mxn: p.precio_ref_mxn,
               precio_ref_fuente: p.precio_ref_fuente,
+              descripcion_api: p.descripcion_api || null,
               precio: nuevoSellado.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : ""),
             })} />
             {nuevoSellado.card_api_id && (
@@ -6246,7 +6519,8 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
                   {nuevoSellado.precio_ref_mxn && (
                     <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia{nuevoSellado.precio_ref_fuente ? ` (${nuevoSellado.precio_ref_fuente})` : ""}: ~${nuevoSellado.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>
                   )}
-                  <button type="button" onClick={() => setNuevoSellado({ ...nuevoSellado, producto: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null, precio_ref_fuente: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
+                  {nuevoSellado.descripcion_api && <p style={{ color: COLORS.muted }} className="text-xs mt-1 line-clamp-2">{nuevoSellado.descripcion_api}</p>}
+                  <button type="button" onClick={() => setNuevoSellado({ ...nuevoSellado, producto: "", imagen_url: "", card_api_id: "", precio_ref_mxn: null, precio_ref_fuente: null, descripcion_api: null })} style={{ color: COLORS.muted }} className="text-xs mt-1">Cambiar</button>
                 </div>
               </div>
             )}
@@ -9508,6 +9782,7 @@ async function cargarDetalleListing(tabla, id) {
       imagen: miniaturaListing(r), fotoRealFrente: r.foto_real_url || null, fotoRealReverso: r.foto_real_reverso_url || null,
       cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, precioRefFuenteGuardado: r.precio_ref_fuente, tcg: r.tcg,
       buzonTienda: r.buzon_tienda || null, descripcion: r.descripcion || null, etiquetas: r.etiquetas || [],
+      artista: r.artista || null, descripcionApi: r.descripcion_api || null, descripcionApiEs: r.descripcion_api_es || null,
       enVenta: r.en_venta !== false,
       vendedor: { perfilId: r.perfil_id, nombre: r.perfiles?.nombre || "Usuario", avatarUrl: r.perfiles?.avatar_url, whatsapp: r.perfiles?.whatsapp, facebook: r.perfiles?.facebook, perfil: r.perfiles, esTienda: false },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""}`,
@@ -9524,6 +9799,7 @@ async function cargarDetalleListing(tabla, id) {
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
       imagen: miniaturaListing(r), fotoRealFrente: r.foto_real_url || null, fotoRealReverso: r.foto_real_reverso_url || null,
       cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, precioRefFuenteGuardado: r.precio_ref_fuente, tcg: r.tcg,
+      artista: r.artista || null, descripcionApi: r.descripcion_api || null, descripcionApiEs: r.descripcion_api_es || null,
       enVenta: r.en_venta !== false,
       vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
       contexto: `${r.carta}${r.set_nombre ? ` (${r.set_nombre})` : ""} en ${r.tiendas?.nombre}`,
@@ -9538,6 +9814,7 @@ async function cargarDetalleListing(tabla, id) {
       nombre: r.producto, setNombre: null, tipo: "sellado", condicion: null, idioma: null,
       precio: r.precio, precioAntes: r.precio_antes, cantidad: r.cantidad, zona: r.tiendas?.zona,
       imagen: r.imagen_url, cardApiId: r.card_api_id, precioRefGuardado: r.precio_ref_mxn, precioRefFuenteGuardado: r.precio_ref_fuente, tcg: r.tcg || "pokemon",
+      artista: null, descripcionApi: r.descripcion_api || null, descripcionApiEs: r.descripcion_api_es || null,
       vendedor: { perfilId: r.tiendas?.perfil_id, nombre: r.tiendas?.nombre, avatarUrl: r.tiendas?.perfiles?.avatar_url, whatsapp: null, facebook: null, perfil: r.tiendas?.perfiles, esTienda: true },
       contexto: `${r.producto} en ${r.tiendas?.nombre}`,
     };
@@ -9905,12 +10182,37 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
   const [precioVivo, setPrecioVivo] = useState(null);
   const [fotoZoom, setFotoZoom] = useState(null); // { src, alt } o null
   const [cargandoPrecio, setCargandoPrecio] = useState(false);
+  const [mostrarTraduccion, setMostrarTraduccion] = useState(false);
+  const [traduciendo, setTraduciendo] = useState(false);
 
   useEffect(() => {
     setItem(undefined);
     setPrecioVivo(null);
+    setMostrarTraduccion(false);
     cargarDetalleListing(tabla, id).then(setItem).catch(() => setItem(null));
   }, [id, tabla]);
+
+  // Traduce la descripción de apitcg.com (viene en inglés) y la cachea en
+  // la fila (descripcion_api_es) para que el siguiente visitante ya no
+  // tenga que volver a gastar la traducción -- el cacheo lo hace el propio
+  // servidor (service role), porque cualquier visitante puede traducir
+  // aunque no sea el dueño de la publicación.
+  const traducirDescripcion = async () => {
+    if (!item?.descripcionApi) return;
+    if (item.descripcionApiEs) { setMostrarTraduccion(true); return; }
+    setTraduciendo(true);
+    try {
+      const res = await fetch("/api/tcgcsv?fuente=traducir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({ texto: item.descripcionApi, tabla, id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.traducido) throw new Error(data?.error || "No se pudo traducir.");
+      setItem((it) => ({ ...it, descripcionApiEs: data.traducido }));
+      setMostrarTraduccion(true);
+    } catch { /* el botón se queda disponible para reintentar */ } finally { setTraduciendo(false); }
+  };
 
   useEffect(() => {
     if (!item?.cardApiId) return;
@@ -9980,6 +10282,18 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
           </div>
           <h2 style={{ fontFamily: "'Rye', serif" }} className="text-2xl font-bold mb-1">{item.nombre}</h2>
           {item.setNombre && <p style={{ color: COLORS.muted }} className="text-sm mb-4">{item.setNombre}</p>}
+          {item.artista && <p style={{ color: COLORS.muted }} className="text-xs mb-2">🎨 Ilustrado por {item.artista}</p>}
+          {item.descripcionApi && (
+            <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 mb-4">
+              <p style={{ color: COLORS.text }} className="text-sm whitespace-pre-line">
+                {mostrarTraduccion && item.descripcionApiEs ? item.descripcionApiEs : item.descripcionApi}
+              </p>
+              <button type="button" onClick={mostrarTraduccion ? () => setMostrarTraduccion(false) : traducirDescripcion} disabled={traduciendo}
+                style={{ color: COLORS.azulPalido }} className="text-xs font-semibold mt-2">
+                {traduciendo ? "Traduciendo..." : mostrarTraduccion ? "Ver original (inglés)" : "🌐 Traducir"}
+              </button>
+            </div>
+          )}
           {item.tipo === "accesorio" && item.descripcion && <p style={{ color: COLORS.text }} className="text-sm mb-3 whitespace-pre-line">{item.descripcion}</p>}
           {item.tipo === "accesorio" && item.etiquetas?.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-4">
