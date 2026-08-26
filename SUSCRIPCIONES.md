@@ -4600,6 +4600,29 @@ No se creó ningún archivo nuevo bajo `api/` -- Vercel Hobby ya tenía las
 `?fuente=` nuevas dentro de `api/tcgcsv.js`, que ya tenía esa forma de
 despacho.
 
+## 144. Respaldo automático a TCGplayer cuando apitcg.com no trae sellado
+
+Para cartas sueltas de Pokémon/Magic/Yu-Gi-Oh/Lorcana, `buscarCartasCatalogo`
+ya caía solo a la fuente propia de cada uno si apitcg.com regresaba vacío
+(sin resultados, caído, o cuota mensual agotada -- las tres se ven igual:
+un arreglo vacío). `SelladoPickerVisual` (sección 143) tenía el mismo
+respaldo a `TCGplayerPicker`/TCGCSV pero como botón manual -- ahora
+también es automático: si la búsqueda por nombre no trae nada, si no hay
+sets para ese TCG, o si un set no tiene producto sellado en apitcg.com
+todavía, se cae solo al buscador de TCGplayer sin que el usuario tenga
+que darle clic a nada. El link "← Volver a la búsqueda visual" sigue ahí
+por si quiere reintentar (limpia la búsqueda vacía al volver, si no, el
+mismo efecto automático lo regresaría de inmediato al respaldo). El botón
+manual "¿No lo encuentras? Buscar en TCGplayer" también se conserva, para
+cuando apitcg.com sí trae resultados pero no el producto exacto que se
+busca (ahí no hay nada "vacío" que detectar automático).
+
+Sigue sin haber ningún respaldo para One Piece (cartas sueltas) ni para
+los 8 TCG que dependen únicamente de apitcg.com (Cardfight Vanguard,
+Digimon, Dragon Ball Super Fusion World, Dragon Ball Super Masters, Flesh
+and Blood, Gundam, hololive, Riftbound) -- apitcg.com es su único
+catálogo real, no hay a qué otra API caer si se le acaba la cuota.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
