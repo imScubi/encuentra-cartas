@@ -4666,6 +4666,48 @@ hay que tocar cuando lleguen los íconos por TCG que va a dar el dueño
 (mapear el tema elegido a una URL de imagen ahí, en vez de un ícono
 fijo).
 
+## 146. Rediseño de navegación exclusivo de celular: cintilla de abajo + carrito/chats junto al logo
+
+El dueño pidió que en celular (nunca en escritorio) los botones de arriba
+(Inicio, Tiendas, Catálogo, Vender) se movieran a una cintilla de abajo
+con ícono arriba y texto abajo, estilo app nativa, y que el carrito y los
+chats (los botones flotantes grandes que ya existían) se movieran a un
+desplegable chico junto al logo para no chocar con la cintilla nueva.
+
+Todo es puramente responsivo (`sm:hidden`/`hidden sm:flex` de Tailwind) --
+nada de esto toca la base de datos ni cambia ningún destino, solo dónde
+se tocan.
+
+- **`CintillaMovilAbajo`** (nueva, junto a `NotificationBell`): barra fija
+  abajo (`sm:hidden`, con `env(safe-area-inset-bottom)` para el notch),
+  con los mismos 4 destinos que antes vivían arriba
+  (`search`/`directory`/`catalogo` + `irAVender`), ícono arriba y label
+  abajo, con un fondo redondeado detrás del ícono activo.
+- **`CintillaMovilCarritoChats`** (nueva, junto al logo dentro del mismo
+  grupo flex -- así nunca lo tapa, la propia flexbox los acomoda uno junto
+  al otro): colapsada muestra el ícono de carrito (y el de chats, si hay
+  sesión) en miniatura, y parpadea (`pulseGlow`) si hay algo en el
+  carrito o mensajes sin leer. Al tocarla se despliega hacia el lado
+  mostrando los dos botones completos con su numerito -- igual que los
+  botones flotantes de escritorio, pero en un menú chico en vez de dos
+  botones grandes abajo (que en celular ya no caben, ese espacio ahora es
+  de la cintilla de navegación).
+- Los botones flotantes de escritorio (carrito, chats) y el `<nav>` de
+  arriba (Vender + Inicio/Tiendas/Catálogo) se conservan intactos, solo
+  se les agregó `hidden sm:flex` -- en escritorio no cambió nada.
+- `ChatModal` (el chat de una conversación abierta) se subió de
+  `bottom-0` a `bottom-16` en celular (`sm:bottom-4` sigue igual en
+  escritorio) para que, incluso minimizado, no tape la cintilla de
+  navegación de abajo.
+- `<main>` gana `pb-24` en celular (`sm:py-10` sigue igual en escritorio)
+  para que la cintilla fija de abajo no tape lo último del contenido.
+
+Verificado con capturas en viewport de celular (390×844) contra el dev
+server local: la cintilla de abajo se ve y navega correctamente, y el
+desplegable de carrito/chats se abre junto al logo sin taparlo y sin
+mostrar "Chats" cuando no hay sesión (mismo criterio que el botón
+flotante de escritorio).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
