@@ -7906,10 +7906,13 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const [mostrarImportar, setMostrarImportar] = useState(false);
   const [cargandoInventario, setCargandoInventario] = useState(false);
   const [inventarioDisponible, setInventarioDisponible] = useState(null);
+  const [carpetasDisponibles, setCarpetasDisponibles] = useState([]);
   const [buscarImportar, setBuscarImportar] = useState("");
   const [seleccionados, setSeleccionados] = useState(new Set());
-  const [carpetaImportar, setCarpetaImportar] = useState("");
+  const [gruposExpandidos, setGruposExpandidos] = useState(new Set());
   const [importando, setImportando] = useState(false);
+
+  const SIN_CARPETA_KEY = "__sin_carpeta__";
 
   const abrirImportar = async () => {
     setMostrarImportar(true);
@@ -7917,25 +7920,33 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
     setCargandoInventario(true); setErrorDetalle(null);
     try {
       let items = [];
+      let carpetas = [];
       if (perfil?.tipo === "individual") {
-        const filas = await sb(`mercado_listings?select=id,carta,precio,imagen_url&perfil_id=eq.${session.user.id}&en_venta=eq.true`, session);
-        items = filas.map((f) => ({ tabla: "mercado_listings", id: f.id, nombre: f.carta, precio: f.precio, imagen_url: f.imagen_url }));
+        const [filas, carp] = await Promise.all([
+          sb(`mercado_listings?select=id,carta,precio,imagen_url,carpeta_id&perfil_id=eq.${session.user.id}&en_venta=eq.true`, session),
+          sb(`carpetas?select=id,nombre,color&perfil_id=eq.${session.user.id}&tienda_id=is.null`, session),
+        ]);
+        items = filas.map((f) => ({ tabla: "mercado_listings", id: f.id, nombre: f.carta, precio: f.precio, imagen_url: f.imagen_url, carpeta_id: f.carpeta_id }));
+        carpetas = carp;
       } else if (perfil?.tipo === "tienda") {
         const tiendas = await sb(`tiendas?select=id&perfil_id=eq.${session.user.id}`, session);
         const ids = tiendas.map((t) => t.id);
         if (ids.length) {
           const filtro = `tienda_id=in.(${ids.join(",")})`;
-          const [inv, sell] = await Promise.all([
-            sb(`inventario_tienda?select=id,carta,precio,imagen_url&${filtro}&en_venta=eq.true`, session),
+          const [inv, sell, carp] = await Promise.all([
+            sb(`inventario_tienda?select=id,carta,precio,imagen_url,carpeta_id&${filtro}&en_venta=eq.true`, session),
             sb(`sellado_tienda?select=id,producto,precio,imagen_url&${filtro}`, session),
+            sb(`carpetas?select=id,nombre,color&${filtro}`, session),
           ]);
           items = [
-            ...inv.map((f) => ({ tabla: "inventario_tienda", id: f.id, nombre: f.carta, precio: f.precio, imagen_url: f.imagen_url })),
-            ...sell.map((f) => ({ tabla: "sellado_tienda", id: f.id, nombre: f.producto, precio: f.precio, imagen_url: f.imagen_url })),
+            ...inv.map((f) => ({ tabla: "inventario_tienda", id: f.id, nombre: f.carta, precio: f.precio, imagen_url: f.imagen_url, carpeta_id: f.carpeta_id })),
+            ...sell.map((f) => ({ tabla: "sellado_tienda", id: f.id, nombre: f.producto, precio: f.precio, imagen_url: f.imagen_url, carpeta_id: null })),
           ];
+          carpetas = carp;
         }
       }
       setInventarioDisponible(items);
+      setCarpetasDisponibles(carpetas);
     } catch (e) { setErrorDetalle(e.message); } finally { setCargandoInventario(false); }
   };
 
@@ -7952,6 +7963,46 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const yaImportados = useMemo(() => new Set(ventas.filter((v) => v.origen_tabla && v.origen_id).map((v) => `${v.origen_tabla}:${v.origen_id}`)), [ventas]);
   const inventarioParaMostrar = inventarioFiltrado.filter((it) => !yaImportados.has(`${it.tabla}:${it.id}`));
 
+  const carpetasMapa = useMemo(() => Object.fromEntries(carpetasDisponibles.map((c) => [c.id, c])), [carpetasDisponibles]);
+
+  // Agrupa el inventario por carpeta real (una fila = una carpeta, con un
+  // solo checkbox para traerla completa de un jalón), y todo lo que no
+  // tiene carpeta va a un grupo genérico aparte.
+  const gruposImportar = useMemo(() => {
+    const porCarpeta = new Map();
+    const sinCarpeta = [];
+    for (const it of inventarioParaMostrar) {
+      const c = it.carpeta_id ? carpetasMapa[it.carpeta_id] : null;
+      if (c) {
+        if (!porCarpeta.has(c.id)) porCarpeta.set(c.id, { key: c.id, nombre: c.nombre, color: c.color, items: [] });
+        porCarpeta.get(c.id).items.push(it);
+      } else {
+        sinCarpeta.push(it);
+      }
+    }
+    const grupos = Array.from(porCarpeta.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
+    if (sinCarpeta.length) grupos.push({ key: SIN_CARPETA_KEY, nombre: "Inventario (fuera de carpetas)", color: null, items: sinCarpeta });
+    return grupos;
+  }, [inventarioParaMostrar, carpetasMapa]);
+
+  const toggleGrupoImportar = (grupo) => {
+    const claves = grupo.items.map((it) => `${it.tabla}:${it.id}`);
+    const todosMarcados = claves.every((c) => seleccionados.has(c));
+    setSeleccionados((s) => {
+      const copia = new Set(s);
+      claves.forEach((c) => (todosMarcados ? copia.delete(c) : copia.add(c)));
+      return copia;
+    });
+  };
+
+  const toggleExpandidoGrupo = (key) => {
+    setGruposExpandidos((s) => {
+      const copia = new Set(s);
+      if (copia.has(key)) copia.delete(key); else copia.add(key);
+      return copia;
+    });
+  };
+
   const importarSeleccionados = async () => {
     const items = inventarioParaMostrar.filter((it) => seleccionados.has(`${it.tabla}:${it.id}`));
     if (items.length === 0) { setErrorDetalle("Elige al menos un producto para importar."); return; }
@@ -7963,7 +8014,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
         imagen_url: it.imagen_url || null,
         origen_tabla: it.tabla,
         origen_id: it.id,
-        carpeta: carpetaImportar.trim() || null,
+        carpeta: (it.carpeta_id && carpetasMapa[it.carpeta_id]?.nombre) || null,
         costo: 0,
         precio_lista: it.precio || null,
         cantidad: 1,
@@ -8343,21 +8394,55 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
             <p style={{ color: COLORS.muted }} className="text-sm">No encontramos más publicaciones activas para importar (o ya las importaste todas).</p>
           ) : (
             <>
+              <p style={{ color: COLORS.muted }} className="text-xs mb-3">Marca una carpeta completa para traerla toda de un jalón, o ábrela para elegir piezas sueltas.</p>
               <div className="flex items-center gap-2 flex-wrap mb-3">
                 <input placeholder="Buscar en tu inventario..." value={buscarImportar} onChange={(e) => setBuscarImportar(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[160px]" />
-                <input list="carpetas-evento-datalist" placeholder="Carpeta (opcional, ej. Caja 1)" value={carpetaImportar} onChange={(e) => setCarpetaImportar(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[160px]" />
               </div>
-              <div className="grid gap-1.5 max-h-80 overflow-y-auto mb-3">
-                {inventarioParaMostrar.map((it) => {
-                  const clave = `${it.tabla}:${it.id}`;
-                  const marcado = seleccionados.has(clave);
+              <div className="grid gap-2 max-h-96 overflow-y-auto mb-3">
+                {gruposImportar.map((grupo) => {
+                  const claves = grupo.items.map((it) => `${it.tabla}:${it.id}`);
+                  const todosMarcados = claves.every((c) => seleccionados.has(c));
+                  const algunosMarcados = !todosMarcados && claves.some((c) => seleccionados.has(c));
+                  const expandido = gruposExpandidos.has(grupo.key);
                   return (
-                    <label key={clave} style={{ background: marcado ? `${COLORS.azulClaro}18` : "transparent", border: `1px solid ${marcado ? COLORS.azulClaro : COLORS.surface2}` }} className="rounded-lg p-2 flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={marcado} onChange={() => toggleSeleccionado(clave)} />
-                      {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
-                      <span className="text-sm flex-1 truncate">{it.nombre}</span>
-                      {it.precio != null && <span style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">${Number(it.precio).toLocaleString("es-MX")}</span>}
-                    </label>
+                    <div key={grupo.key} style={{ background: todosMarcados ? `${COLORS.azulClaro}18` : COLORS.bg, border: `1px solid ${todosMarcados ? COLORS.azulClaro : COLORS.surface2}` }} className="rounded-lg overflow-hidden">
+                      <div className="flex items-center gap-2 p-2">
+                        <input
+                          type="checkbox"
+                          checked={todosMarcados}
+                          ref={(el) => { if (el) el.indeterminate = algunosMarcados; }}
+                          onChange={() => toggleGrupoImportar(grupo)}
+                        />
+                        <div style={{
+                          width: 30, height: 30, flexShrink: 0, borderRadius: 8,
+                          background: `linear-gradient(160deg, ${(grupo.color || COLORS.muted)}55, ${(grupo.color || COLORS.muted)}22)`,
+                          border: `1px solid ${(grupo.color || COLORS.muted)}77`,
+                        }} />
+                        <button onClick={() => toggleExpandidoGrupo(grupo.key)} className="flex-1 min-w-0 flex items-center gap-1.5 text-left">
+                          <span className="text-sm font-semibold truncate">{grupo.key === SIN_CARPETA_KEY ? "📦 " : "📁 "}{grupo.nombre}</span>
+                          <span style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">({grupo.items.length})</span>
+                        </button>
+                        <button onClick={() => toggleExpandidoGrupo(grupo.key)} style={{ color: COLORS.muted }}>
+                          {expandido ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </button>
+                      </div>
+                      {expandido && (
+                        <div className="grid gap-1.5 p-2 pt-0">
+                          {grupo.items.map((it) => {
+                            const clave = `${it.tabla}:${it.id}`;
+                            const marcado = seleccionados.has(clave);
+                            return (
+                              <label key={clave} style={{ background: marcado ? `${COLORS.azulClaro}18` : "transparent", border: `1px solid ${marcado ? COLORS.azulClaro : COLORS.surface2}` }} className="rounded-lg p-2 flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" checked={marcado} onChange={() => toggleSeleccionado(clave)} />
+                                {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
+                                <span className="text-sm flex-1 truncate">{it.nombre}</span>
+                                {it.precio != null && <span style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">${Number(it.precio).toLocaleString("es-MX")}</span>}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
