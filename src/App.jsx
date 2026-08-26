@@ -1663,7 +1663,10 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
   return createPortal(
     <div
       style={{ background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.azulClaro}66`, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
-      className="fixed bottom-0 right-0 sm:bottom-4 sm:right-4 z-[80] w-full sm:w-96 max-w-full rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
+      // bottom-16 en celular (no bottom-0): deja libre la cintilla de
+      // navegación fija de abajo, incluso minimizado -- si no, un chat
+      // minimizado tapa por completo Inicio/Tiendas/Catálogo/Vender.
+      className="fixed bottom-16 right-0 sm:bottom-4 sm:right-4 z-[80] w-full sm:w-96 max-w-full rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
     >
       <button onClick={() => setMinimizado((v) => !v)} style={{ borderBottom: minimizado ? "none" : `1px solid ${COLORS.surface2}` }}
         className="flex items-center justify-between p-3 gap-2 w-full text-left">
@@ -12582,6 +12585,103 @@ function IconoNotificacionFlotante({ size }) {
   return <Bell size={size} />;
 }
 
+// Carrito + chats en celular: en escritorio siguen siendo los botones
+// flotantes grandes de siempre (abajo a la izquierda); en celular esos
+// chocarían con la nueva cintilla de navegación de abajo, así que se
+// reemplazan por esta cintilla chica junto al logo -- colapsada muestra
+// los dos íconos en miniatura (y parpadea si hay algo pendiente en
+// cualquiera de los dos), y al tocarla se despliega hacia el lado
+// mostrando los botones completos con su numerito.
+function CintillaMovilCarritoChats({ carritoCount, mensajesNoLeidos, mostrarChats, onCarrito, onChats }) {
+  const [abierta, setAbierta] = useState(false);
+  const hayPendiente = carritoCount > 0 || (mostrarChats && mensajesNoLeidos > 0);
+
+  return (
+    <div className="relative sm:hidden">
+      <button onClick={() => setAbierta((v) => !v)} aria-label="Carrito y mensajes"
+        style={{
+          background: COLORS.surface2,
+          border: `1px solid ${hayPendiente ? COLORS.gold : COLORS.azulClaro}55`,
+          animation: hayPendiente ? "pulseGlow 1.4s ease-in-out infinite" : "none",
+        }}
+        className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5">
+        <ShoppingCart size={14} color={COLORS.azulPalido} />
+        {/* Sin sesión no hay a dónde llevar "Chats" (la bandeja requiere
+            login) -- se oculta aquí también, mismo criterio que el botón
+            flotante de escritorio. */}
+        {mostrarChats && <MessageCircle size={14} color={COLORS.violeta} />}
+        {hayPendiente && <span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.gold }} aria-hidden="true" />}
+      </button>
+
+      {abierta && (
+        <>
+          <div className="fixed inset-0 z-[69]" onClick={() => setAbierta(false)} />
+          <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 8px 24px rgba(0,0,0,0.4)` }}
+            className="absolute top-full left-0 mt-2 z-[70] rounded-xl p-2 flex gap-2">
+            <button onClick={() => { onCarrito(); setAbierta(false); }}
+              style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }}
+              className="relative flex flex-col items-center gap-1 rounded-lg px-4 py-2.5 whitespace-nowrap">
+              <ShoppingCart size={20} />
+              <span className="text-[10px] font-semibold">Carrito</span>
+              {carritoCount > 0 && (
+                <span style={{ background: COLORS.gold, color: COLORS.textoOscuro, border: `2px solid ${COLORS.surface2}` }}
+                  className="absolute -top-1.5 -right-1.5 rounded-full text-[10px] font-bold w-5 h-5 flex items-center justify-center">
+                  {carritoCount > 9 ? "9+" : carritoCount}
+                </span>
+              )}
+            </button>
+            {mostrarChats && (
+              <button onClick={() => { onChats(); setAbierta(false); }}
+                style={{ background: COLORS.violeta, color: "#fff" }}
+                className="relative flex flex-col items-center gap-1 rounded-lg px-4 py-2.5 whitespace-nowrap">
+                <MessageCircle size={20} />
+                <span className="text-[10px] font-semibold">Chats</span>
+                {mensajesNoLeidos > 0 && (
+                  <span style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, border: `2px solid ${COLORS.surface2}` }}
+                    className="absolute -top-1.5 -right-1.5 rounded-full text-[10px] font-bold w-5 h-5 flex items-center justify-center">
+                    {mensajesNoLeidos > 9 ? "9+" : mensajesNoLeidos}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Cintilla de navegación de abajo, exclusiva de celular (en escritorio
+// sigue el <nav> de siempre arriba del header) -- ícono arriba, texto
+// abajo, mismo espíritu que cualquier app nativa. Mismos 4 destinos que
+// antes vivían arriba (Inicio/Tiendas/Catálogo/Vender), nada nuevo, solo
+// cambia dónde se tocan.
+function CintillaMovilAbajo({ view, setView, irAVender }) {
+  const tabs = [
+    { id: "search", label: "Inicio", icon: Search },
+    { id: "directory", label: "Tiendas", icon: Store },
+    { id: "catalogo", label: "Catálogo", icon: BookOpen },
+  ];
+  const vendiendoActivo = view === "myMarket" || view === "myStore";
+  const tabButton = (id, label, Icon, active, onClick) => (
+    <button key={id} onClick={onClick} className="flex-1 flex flex-col items-center justify-center gap-1 py-2">
+      <span style={{ background: active ? `${COLORS.azulPalido}22` : "transparent" }} className="rounded-full px-3 py-1">
+        <Icon size={19} color={active ? COLORS.azulPalido : COLORS.muted} />
+      </span>
+      <span style={{ color: active ? COLORS.azulPalido : COLORS.muted }} className="text-[10px] font-semibold">{label}</span>
+    </button>
+  );
+  return (
+    <nav
+      style={{ background: conAlpha(COLORS.bg, 0.94), borderTop: `1px solid ${COLORS.azulClaro}2e`, backdropFilter: "blur(14px)", paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="sm:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch"
+    >
+      {tabs.map((t) => tabButton(t.id, t.label, t.icon, view === t.id, () => setView(t.id)))}
+      {tabButton("vender", "Vender", Tag, vendiendoActivo, irAVender)}
+    </nav>
+  );
+}
+
 function NotificationBell({ session, onNavigate }) {
   const [abierto, setAbierto] = useState(false);
   const [notis, setNotis] = useState([]);
@@ -14299,27 +14399,35 @@ export default function EncuentraCartas() {
       <header style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: `1px solid ${COLORS.azulClaro}2e`, background: conAlpha(COLORS.bg, 0.66), backdropFilter: "blur(14px)" }}
         className="px-4 sm:px-8 py-6">
         <div className="max-w-5xl mx-auto flex items-center justify-between flex-wrap gap-4">
-          <button onClick={() => setView("search")} className="flex items-center gap-2">
-            {!logoError ? (
-              <img
-                src={(localStorage.getItem(TEMA_MODO_KEY) || "noche") === "dia" ? "/branding/logo.png" : "/branding/logo-noche.png"}
-                alt="Encuentra Cartas" onError={() => setLogoError(true)} style={{ height: 40, width: "auto" }} />
-            ) : (
-              <>
-                <Sparkles size={22} color={COLORS.azulPalido} />
-                <h1 style={{ fontFamily: "'Rye', serif" }} className="text-2xl sm:text-3xl font-bold">
-                  Encuentra <span style={{ color: COLORS.azulClaro }}>Cartas</span>
-                </h1>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setView("search")} className="flex items-center gap-2">
+              {!logoError ? (
+                <img
+                  src={(localStorage.getItem(TEMA_MODO_KEY) || "noche") === "dia" ? "/branding/logo.png" : "/branding/logo-noche.png"}
+                  alt="Encuentra Cartas" onError={() => setLogoError(true)} style={{ height: 40, width: "auto" }} />
+              ) : (
+                <>
+                  <Sparkles size={22} color={COLORS.azulPalido} />
+                  <h1 style={{ fontFamily: "'Rye', serif" }} className="text-2xl sm:text-3xl font-bold">
+                    Encuentra <span style={{ color: COLORS.azulClaro }}>Cartas</span>
+                  </h1>
+                </>
+              )}
+            </button>
+            {/* Carrito + chats en celular: en vez de los botones flotantes grandes
+                (que en celular chocarían con la nueva cintilla de navegación de
+                abajo), una cintilla chica junto al logo -- sin taparlo, porque
+                vive en el mismo grupo flex que el logo, no encimada -- que se
+                despliega hacia el lado para mostrar los dos botones completos. */}
+            <CintillaMovilCarritoChats carritoCount={carrito.length} mensajesNoLeidos={mensajesNoLeidos} mostrarChats={!!session} onCarrito={() => setView("carrito")} onChats={() => setView("inbox")} />
+          </div>
           <nav className="relative flex flex-wrap gap-2 items-center">
             <button onClick={irAVender}
               style={{ background: `linear-gradient(90deg, ${COLORS.gold}, #FFB84D)`, color: COLORS.textoOscuro }}
-              className="px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap shadow-sm hover:brightness-105">
+              className="hidden sm:flex px-3 py-2 rounded-lg text-sm font-bold items-center gap-2 whitespace-nowrap shadow-sm hover:brightness-105">
               <Tag size={15} /> <span>Vender</span>
             </button>
-            {navEsenciales.map(navButton)}
+            <div className="hidden sm:flex gap-2 items-center">{navEsenciales.map(navButton)}</div>
 
             {/* Foto de perfil: acceso directo a "Mi cuenta" (o a crear cuenta si
                 no hay sesión) — separado del menú de tres líneas, que abre el resto
@@ -14393,10 +14501,13 @@ export default function EncuentraCartas() {
       {/* Carrito: antes era un ícono discreto arriba -- ahora es un botón
           flotante grande abajo a la izquierda (no choca con el ChatModal,
           que se ancla a la derecha) con un halo que pulsa cada cierto
-          tiempo para que no pase desapercibido. */}
+          tiempo para que no pase desapercibido. Exclusivo de escritorio --
+          en celular vive en CintillaMovilCarritoChats, junto al logo,
+          porque este espacio ahora lo ocupa la cintilla de navegación de
+          abajo. */}
       <button onClick={() => setView("carrito")} aria-label="Carrito"
         style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro, boxShadow: "0 6px 20px rgba(0,0,0,0.4)" }}
-        className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-40 w-14 h-14 rounded-full flex items-center justify-center">
+        className="hidden sm:flex fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-40 w-14 h-14 rounded-full items-center justify-center">
         <span style={{ border: `2px solid ${COLORS.azulPalido}`, animation: "ringPulse 1.8s ease-out infinite" }}
           className="absolute inset-0 rounded-full pointer-events-none" aria-hidden="true" />
         <span style={{ border: `2px solid ${COLORS.azulPalido}`, animation: "ringPulse 1.8s ease-out .6s infinite" }}
@@ -14414,11 +14525,12 @@ export default function EncuentraCartas() {
           ahora es otro botón flotante junto al carrito (mismo halo que
           pulsa), de un color distinto para no confundirse con el carrito,
           con la bolita de mensajes sin leer en el color de acento del tema
-          actual (cambia solo si se personaliza en Apariencia). */}
+          actual (cambia solo si se personaliza en Apariencia). Exclusivo
+          de escritorio, mismo motivo que el carrito de arriba. */}
       {session && (
         <button onClick={() => setView("inbox")} aria-label="Mensajes"
           style={{ background: COLORS.violeta, color: "#fff", boxShadow: "0 6px 20px rgba(0,0,0,0.4)" }}
-          className="fixed bottom-4 left-20 sm:bottom-6 sm:left-24 z-40 w-14 h-14 rounded-full flex items-center justify-center">
+          className="hidden sm:flex fixed bottom-4 left-20 sm:bottom-6 sm:left-24 z-40 w-14 h-14 rounded-full items-center justify-center">
           <span style={{ border: `2px solid ${COLORS.violeta}`, animation: "ringPulse 1.8s ease-out infinite" }}
             className="absolute inset-0 rounded-full pointer-events-none" aria-hidden="true" />
           <span style={{ border: `2px solid ${COLORS.violeta}`, animation: "ringPulse 1.8s ease-out .6s infinite" }}
@@ -14435,7 +14547,11 @@ export default function EncuentraCartas() {
 
       <NotificationBell session={session} onNavigate={setView} />
 
-      <main style={{ position: "relative", zIndex: 1 }} className="max-w-5xl mx-auto px-4 sm:px-8 py-10">
+      <CintillaMovilAbajo view={view} setView={setView} irAVender={irAVender} />
+
+      {/* pb-24 en celular: deja espacio para que la cintilla de navegación
+          fija de abajo (CintillaMovilAbajo) no tape lo último del contenido. */}
+      <main style={{ position: "relative", zIndex: 1 }} className="max-w-5xl mx-auto px-4 sm:px-8 pt-10 pb-24 sm:py-10">
         {/* SEARCH */}
         {view === "search" && (
           <div>
