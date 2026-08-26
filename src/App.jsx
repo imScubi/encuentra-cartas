@@ -4407,11 +4407,11 @@ const COLORES_CARPETA = ["#2A4C91", "#9B6FA3", "#D99A3D", "#6882AD", "#A0526D", 
 // del color propio de la carpeta, con su nombre en una cintilla cruzada al
 // centro (como una etiqueta de archivero). Se usa tanto en el carrusel del
 // vendedor como en la vitrina pública (CarpetasStorefront).
-function CarpetaCover({ color, nombre }) {
+function CarpetaCover({ color, nombre, alto }) {
   const acento = color || COLORS.azulClaro;
   return (
-    <div style={{ background: `linear-gradient(160deg, ${acento}33, ${acento}14)`, border: `1px solid ${acento}55` }}
-      className="relative aspect-[3/4] rounded-xl overflow-hidden flex items-center justify-center">
+    <div style={{ background: `linear-gradient(160deg, ${acento}33, ${acento}14)`, border: `1px solid ${acento}55`, ...(alto ? { height: alto } : {}) }}
+      className={`relative rounded-xl overflow-hidden flex items-center justify-center ${alto ? "" : "aspect-[3/4]"}`}>
       <svg viewBox="0 0 100 130" width="62%" height="62%" style={{ opacity: 0.9 }}>
         <rect x="8" y="14" width="70" height="96" rx="8" fill={acento} opacity="0.35" transform="rotate(-8 43 62)" />
         <rect x="18" y="10" width="70" height="96" rx="8" fill={acento} opacity="0.55" transform="rotate(4 53 58)" />
@@ -5320,7 +5320,7 @@ function CarpetaPublicaView({ carpetaId, onAbrirDetalle, onVerPerfil, onAbrirTie
       </button>
 
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-2xl overflow-hidden mb-6">
-        <div style={{ height: 140 }}><CarpetaCover color={carpeta.color} nombre={carpeta.nombre} /></div>
+        <CarpetaCover color={carpeta.color} nombre={carpeta.nombre} alto={140} />
         <div className="p-5">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <h1 style={{ fontFamily: "'Rye', serif" }} className="text-2xl font-bold">{carpeta.nombre}</h1>
