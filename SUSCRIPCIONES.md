@@ -4456,6 +4456,32 @@ referencia. El costo de la pieza vendida se sigue restando siempre
 día y el PDF ahora muestran "Compras" (lo que entró) junto a Ventas y
 Gastos.
 
+## 140. Fix: importar inventario a Modo Evento por carpeta completa, no pieza por pieza
+
+El dueño reportó que al importar su inventario a un evento tenía que
+marcar el checkbox de cada producto uno por uno (tardadísimo si tiene
+muchos), y que el campo "Carpeta" de esa pantalla en realidad no
+buscaba nada -- era solo una etiqueta de texto libre que se pegaba por
+igual a todo lo que se importara en ese momento, sin relación con las
+carpetas reales del usuario.
+
+Se reemplazó la lista plana de checkboxes por una agrupada por carpeta
+real: cada carpeta del usuario (`carpetas` con su `carpeta_id` en
+`mercado_listings`/`inventario_tienda`) aparece como una sola fila con
+un icono de color, su nombre, cuántas piezas tiene, y un solo checkbox
+que selecciona/deselecciona toda la carpeta de un jalón (con estado
+indeterminado si solo hay algunas marcadas); un botón junto al nombre
+la expande para marcar piezas sueltas si hace falta afinar. Todo lo que
+no pertenece a ninguna carpeta (incluye producto sellado, que nunca
+tuvo carpeta) cae en un grupo genérico "📦 Inventario (fuera de
+carpetas)" con el mismo comportamiento. El buscador por nombre se
+mantiene y sigue filtrando dentro de los grupos.
+
+De regalo, ya no hace falta escribir a mano el nombre de la carpeta al
+importar: cada pieza importada guarda automáticamente el nombre de su
+carpeta real (o queda sin carpeta) en el registro de la venta del
+evento, en vez de depender de que el usuario tecleara algo.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
