@@ -4623,6 +4623,49 @@ Digimon, Dragon Ball Super Fusion World, Dragon Ball Super Masters, Flesh
 and Blood, Gundam, hololive, Riftbound) -- apitcg.com es su único
 catálogo real, no hay a qué otra API caer si se le acaba la cuota.
 
+## 145. Botón flotante de chats (con no leídos) + notificaciones movidas a la esquina
+
+El dueño pidió que los mensajes se abrieran desde un botón flotante
+llamativo (como el del carrito) en vez de tener que encontrar el ícono de
+"Mensajes" arriba, con un numerito de mensajes sin leer en un color que
+siga el tema de Apariencia -- y de paso movió también las notificaciones
+a otro botón flotante, en la esquina superior derecha, con un ícono que
+más adelante va a poder cambiar por TCG (pokébola, Yu-Gi-Oh, Magic...).
+
+**Migración nueva:** `075_mensajes_leido.sql` -- agrega `leido boolean
+not null default false` a `mensajes` (nunca había existido el concepto de
+"leído"; antes solo se listaban todos). Un índice parcial
+(`where leido = false`) para que contar los no leídos sea barato.
+
+**Botón de chats** (`fixed bottom-4 left-20`, junto al carrito, mismo
+halo `ringPulse` que ya usaba el carrito pero en `COLORS.violeta` para no
+confundirse): abre `setView("inbox")`, la misma vista de siempre, solo
+cambia cómo se llega. El numerito usa `COLORS.azulPalido` -- ese color
+sí cambia con el modo/tipo elegido en Apariencia (`aplicarTema` en
+`theme.js` lo muta en vivo), así que el badge "se personaliza" solo, sin
+tener que construir nada nuevo para eso.
+
+**No leídos:** `cargarMensajesNoLeidos()` (nuevo, en el componente raíz)
+consulta `mensajes?para_perfil_id=eq.<uid>&leido=eq.false` en cuanto hay
+sesión (independiente de haber visitado la bandeja alguna vez).
+`cargarInbox()` también actualiza el numerito gratis con las filas que ya
+trae. `ChatModal` marca como leídos los mensajes de esa conversación al
+abrirla (`PATCH ... leido=true`) y avisa al botón vía la nueva prop
+`onLeido` para que baje el numerito de inmediato.
+
+**Se quitó del header:** "Mensajes" de `navEsenciales` y el ícono de
+`NotificationBell` (ya no vive ahí).
+
+**Notificaciones:** `NotificationBell` ahora es un botón flotante propio
+(`fixed top-20 right-4`, debajo del header para no encimarse con el
+avatar/menú) en vez de un ícono dentro del `<nav>` -- la lógica interna
+(el panel, marcar leídas, etc.) no cambió, solo dónde vive el botón. Su
+ícono sale de un componente nuevo, `IconoNotificacionFlotante`, que hoy
+solo devuelve la campana genérica de Lucide pero es el único lugar que
+hay que tocar cuando lleguen los íconos por TCG que va a dar el dueño
+(mapear el tema elegido a una URL de imagen ahí, en vez de un ícono
+fijo).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
