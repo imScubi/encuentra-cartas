@@ -4708,19 +4708,19 @@ desplegable de carrito/chats se abre junto al logo sin taparlo y sin
 mostrar "Chats" cuando no hay sesión (mismo criterio que el botón
 flotante de escritorio).
 
-## 147. Ícono de notificaciones personalizable por TCG (Pokémon, Magic, One Piece, Riftbound, Lorcana)
+## 147. Ícono de notificaciones personalizable por TCG (Pokémon, Magic, One Piece, Riftbound, Lorcana, Yu-Gi-Oh!)
 
 Seguimiento de la sección 145: `IconoNotificacionFlotante` dejó de ser
 siempre la campana genérica -- ahora es elegible en Apariencia.
 
 - **`theme.js`**: nueva llave `TEMA_ICONO_KEY` (mismo patrón que
   `TEMA_MODO_KEY`/`TEMA_TIPO_KEY`, se guarda en `localStorage`).
-- **`public/notificaciones/*.png`**: los 5 emblemas oficiales que mandó
+- **`public/notificaciones/*.png`**: los 6 emblemas oficiales que mandó
   el dueño (`pokemon.png`, `magic.png`, `onepiece.png`, `riftbound.png`,
-  `lorcana.png`), 500×500, silueta negra sobre transparente. Un primer
-  intento de mandarlos pegándolos directo en el chat no llegó como
-  archivo a este entorno (no había forma de leerlos del disco, así que
-  se intentó con aproximaciones dibujadas a mano -- descartadas por
+  `lorcana.png`, `yugioh.png`), 500×500, silueta negra sobre transparente.
+  Un primer intento de mandarlos pegándolos directo en el chat no llegó
+  como archivo a este entorno (no había forma de leerlos del disco, así
+  que se intentó con aproximaciones dibujadas a mano -- descartadas por
   completo en esta misma sesión en cuanto sí se pudieron recuperar los
   archivos reales, extrayéndolos del propio historial de la conversación
   ya que ahí sí quedan embebidos).

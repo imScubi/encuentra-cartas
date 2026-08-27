@@ -12610,6 +12610,7 @@ const ICONOS_NOTIFICACION_TCG = [
   { key: "onepiece", label: "One Piece", img: "/notificaciones/onepiece.png" },
   { key: "riftbound", label: "Riftbound", img: "/notificaciones/riftbound.png" },
   { key: "lorcana", label: "Lorcana", img: "/notificaciones/lorcana.png" },
+  { key: "yugioh", label: "Yu-Gi-Oh!", img: "/notificaciones/yugioh.png" },
 ];
 const ICONO_NOTIFICACION_POR_KEY = Object.fromEntries(ICONOS_NOTIFICACION_TCG.map((o) => [o.key, o.img]));
 
