@@ -4968,6 +4968,52 @@ pokemontcg.io en este sandbox (egress bloqueado también hacia
 `api.pokemontcg.io` aquí, aunque en producción sí funciona -- es la
 misma API que ya usa el resto de la app).
 
+## 152. Catálogo (era → set → cartas) para los 8 TCG que solo tienen apitcg.com
+
+La vista "📚 Catálogo" (Paso 1: elige el juego) ya dejaba elegir cualquiera
+de los 13 TCG en el botonera de arriba, pero para los 8 agregados vía
+apitcg.com (Cardfight Vanguard, Digimon, Dragon Ball Super Fusion World,
+Dragon Ball Super Masters, Flesh and Blood, Gundam, hololive, Riftbound --
+ver sección 138) el Paso 2 se quedaba vacío -- `obtenerErasYSetsCatalogo`/
+`obtenerCartasDeSetCatalogo` (`pokemonApi.js`) solo cubrían Pokémon/Magic/
+Yu-Gi-Oh/Lorcana (One Piece usa su propio camino aparte, vía TCGCSV, sin
+tocar).
+
+- **`obtenerErasYSetsApiTCG(tcg, signal)`** (nueva): reutiliza
+  `obtenerSetsVisualesApiTCG` (el mismo que ya usa el selector visual de
+  producto sellado) y lo envuelve en la forma `[{ era: null, sets: [...] }]`
+  que ya espera `CatalogoView` -- estos 8 TCG no tienen concepto de "era"
+  en apitcg.com, así que se listan todos los sets juntos, mismo criterio
+  que ya usaba Lorcana.
+- **`obtenerCartasDeSetApiTCG(tcg, setId, signal)`** (nueva): pide las
+  cartas de un set con `pedirProductosApiTCG({ tcg, type: "card", set,
+  limit: 100, page })`, paginando hasta agotar el set -- apitcg.com no
+  documenta con certeza su parámetro de paginación, así que el loop se
+  corta solo en cuanto una página no trae ninguna carta nueva (por si
+  `page` no hiciera nada de verdad), con un tope duro de 5 páginas.
+- Los dos despachadores (`obtenerErasYSetsCatalogo`/
+  `obtenerCartasDeSetCatalogo`) ahora caen a estas dos funciones para
+  cualquier TCG que esté en `TCG_SLUG_APITCG` y no sea `onepiece`
+  (Pokémon/Magic/Yu-Gi-Oh/Lorcana siguen resolviéndose antes, por sus
+  propias fuentes de siempre) -- **cero cambios en `CatalogoView`**, el
+  selector de juego y toda la navegación de era/set/cartas ya eran
+  genéricos y solo hacía falta llenar el hueco de datos.
+- Se aprovechó para agregarle a "Paso 2 · Elige un set" un mensaje de
+  "No pudimos cargar los sets de X en este momento" cuando la lista sale
+  vacía (antes ese caso -- que ya le pasaba a Lorcana también si fallaba
+  -- se quedaba en blanco sin ninguna explicación).
+
+Como es la misma apitcg.com que ya usa el buscador de publicar y el
+selector de producto sellado, aplica la misma limitación: necesita
+`APITCG_API_KEY` configurada en Vercel (ver sección 129) para traer datos
+reales -- sin ella, el Catálogo de estos 8 TCG se ve vacío con el mensaje
+de arriba en vez de romperse.
+
+Verificado con `npm run build` y visualmente en el dev server local (la
+navegación Paso 1 → Paso 2 funciona y degrada a "no pudimos cargar" en
+vez de quedarse en blanco -- no se pudo probar con datos reales porque
+apitcg.com no es alcanzable desde este sandbox).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
