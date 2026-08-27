@@ -6,7 +6,6 @@ import {
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
   ArrowUp, ArrowDown, Navigation, ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
   Gift, Gavel, Download,
-  EmblemaPokemon, EmblemaMagic, EmblemaOnePiece, EmblemaRiftbound, EmblemaLorcana,
 } from "./lib/icons.jsx";
 import {
   VAPID_PUBLIC_KEY,
@@ -9426,7 +9425,7 @@ function AparienciaView({ perfil, onCambio, onIrAPlanes }) {
       <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase mt-8">Ícono de notificaciones</h3>
       <p style={{ color: COLORS.muted }} className="text-xs mb-3">El botón flotante de notificaciones (esquina superior derecha) puede mostrar el emblema de tu TCG favorito en vez de la campana genérica.</p>
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-        {ICONOS_NOTIFICACION_TCG.map(({ key, label, Icono }) => (
+        {ICONOS_NOTIFICACION_TCG.map(({ key, label, img }) => (
           <button key={key} onClick={() => cambiarIconoNotif(key)}
             style={{
               background: iconoNotif === key ? COLORS.surface2 : "transparent",
@@ -9434,7 +9433,7 @@ function AparienciaView({ perfil, onCambio, onIrAPlanes }) {
               color: iconoNotif === key ? COLORS.azulPalido : COLORS.muted,
             }}
             className="rounded-lg px-2 py-2.5 text-xs font-semibold flex flex-col items-center gap-1.5">
-            <Icono size={20} />
+            {img ? <EmblemaNotificacionImg src={img} size={20} /> : <Bell size={20} />}
             {label}
           </button>
         ))}
@@ -12601,23 +12600,37 @@ function guardarNotisLeidas(set) {
 
 // Ícono del botón flotante de notificaciones, elegible en Apariencia
 // (TEMA_ICONO_KEY -- ver theme.js) -- "default" es la campana genérica de
-// siempre; el resto son emblemas por TCG (lib/icons.jsx). Agregar un TCG
-// nuevo a este selector es agregar una entrada aquí + su ícono en
-// lib/icons.jsx, nada más.
+// siempre; el resto son los emblemas oficiales que el dueño mandó
+// (public/notificaciones/*.png). Agregar un TCG nuevo a este selector es
+// agregar su PNG en esa carpeta + una entrada aquí, nada más.
 const ICONOS_NOTIFICACION_TCG = [
-  { key: "default", label: "Genérica", Icono: Bell },
-  { key: "pokemon", label: "Pokémon", Icono: EmblemaPokemon },
-  { key: "magic", label: "Magic", Icono: EmblemaMagic },
-  { key: "onepiece", label: "One Piece", Icono: EmblemaOnePiece },
-  { key: "riftbound", label: "Riftbound", Icono: EmblemaRiftbound },
-  { key: "lorcana", label: "Lorcana", Icono: EmblemaLorcana },
+  { key: "default", label: "Genérica", img: null },
+  { key: "pokemon", label: "Pokémon", img: "/notificaciones/pokemon.png" },
+  { key: "magic", label: "Magic", img: "/notificaciones/magic.png" },
+  { key: "onepiece", label: "One Piece", img: "/notificaciones/onepiece.png" },
+  { key: "riftbound", label: "Riftbound", img: "/notificaciones/riftbound.png" },
+  { key: "lorcana", label: "Lorcana", img: "/notificaciones/lorcana.png" },
 ];
-const ICONO_NOTIFICACION_POR_KEY = Object.fromEntries(ICONOS_NOTIFICACION_TCG.map((o) => [o.key, o.Icono]));
+const ICONO_NOTIFICACION_POR_KEY = Object.fromEntries(ICONOS_NOTIFICACION_TCG.map((o) => [o.key, o.img]));
+
+// Los PNG son una silueta negra sobre transparente (para que combinen con
+// cualquier fondo de publicación) -- envueltos en una moneda clara fija
+// para que se sigan viendo bien encima del botón flotante sin importar si
+// el modo día/noche o el tinte por tipo lo oscurecen.
+function EmblemaNotificacionImg({ src, size }) {
+  const alto = Math.round(size * 1.5);
+  return (
+    <span style={{ width: alto, height: alto, borderRadius: "50%", background: "#F1E4D3", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <img src={src} alt="" width={size} height={size} style={{ objectFit: "contain" }} />
+    </span>
+  );
+}
 
 function IconoNotificacionFlotante({ size }) {
   const key = localStorage.getItem(TEMA_ICONO_KEY) || "default";
-  const Icono = ICONO_NOTIFICACION_POR_KEY[key] || Bell;
-  return <Icono size={size} />;
+  const src = ICONO_NOTIFICACION_POR_KEY[key];
+  if (!src) return <Bell size={size} />;
+  return <EmblemaNotificacionImg src={src} size={size} />;
 }
 
 // Carrito + chats en celular: en escritorio siguen siendo los botones
