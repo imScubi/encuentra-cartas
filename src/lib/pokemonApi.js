@@ -1167,3 +1167,71 @@ export async function obtenerPrecioRefActual(cardApiId) {
     return null;
   }
 }
+
+// ---- Limitless TCG (torneos/decklists competitivos de Pokémon, ver
+// sección de SUSCRIPCIONES.md sobre "Armar Mazo" + Competitivo) ----
+
+function normalizarCartaLimitless(c) {
+  if (!c || typeof c !== "object") return null;
+  const nombre = c.name ?? c.nombre ?? c.card ?? null;
+  if (!nombre) return null;
+  const cantidad = Number(c.count ?? c.qty ?? c.quantity ?? c.cantidad ?? 1) || 1;
+  const set = c.set ?? c.setCode ?? c.set_code ?? null;
+  const numero = c.number ?? c.num ?? null;
+  return { cantidad, nombre: String(nombre).trim(), set: set ? String(set).trim() : null, numero: numero ? String(numero).trim() : null };
+}
+
+// El campo `decklist` de la API de Limitless "depende del juego" -- su
+// documentación no expande la forma exacta del JSON para Pokémon TCG, así
+// que este parseo es deliberadamente flexible en vez de asumir un único
+// shape: recorre cualquier propiedad que sea un array (la forma más
+// probable es un objeto con categorías tipo Pokémon/Trainer/Energy, cada
+// una un array de cartas) y también acepta que el propio decklist ya sea
+// un array plano. Si no reconoce nada, regresa [] -- quien la llame debe
+// mostrar "no se pudo leer este decklist" en vez de asumir que sí hay
+// datos, mismo criterio de "nunca rompe" que el resto de este archivo.
+export function parsearDecklistLimitless(decklist) {
+  if (!decklist || typeof decklist !== "object") return [];
+  const cartas = [];
+  for (const valor of Object.values(decklist)) {
+    if (Array.isArray(valor)) {
+      valor.forEach((c) => {
+        const norm = normalizarCartaLimitless(c);
+        if (norm) cartas.push(norm);
+      });
+    }
+  }
+  if (cartas.length === 0 && Array.isArray(decklist)) {
+    decklist.forEach((c) => {
+      const norm = normalizarCartaLimitless(c);
+      if (norm) cartas.push(norm);
+    });
+  }
+  return cartas;
+}
+
+// Resuelve una carta de un decklist de Limitless contra el catálogo ya
+// integrado (apitcg.com/pokemontcg.io vía buscarCartasCatalogo) para
+// conseguirle card_api_id/imagen -- si no encuentra nada confiable,
+// regresa null y la carta se guarda solo con su nombre (igual que ya pasa
+// con el importador de texto plano cuando no hay match).
+export async function resolverCartaLimitless(nombre, numero, signal) {
+  try {
+    const resultados = await buscarCartasCatalogo("pokemon", nombre, signal);
+    if (!resultados.length) return null;
+    let elegido = resultados[0];
+    if (numero) {
+      const numLower = String(numero).toLowerCase();
+      const match = resultados.find((c) => c.localId?.toLowerCase() === numLower || c.localId?.toLowerCase().startsWith(numLower));
+      if (match) elegido = match;
+    }
+    return {
+      card_api_id: elegido.id,
+      imagen_url: elegido.image || null,
+      set_nombre: `${elegido.setName} ${elegido.localId}${elegido.setTotal ? "/" + elegido.setTotal : ""}`.trim(),
+    };
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return null;
+  }
+}

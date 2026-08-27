@@ -261,6 +261,29 @@ async function migrarDescripcionesProxy(req, res) {
   }
 }
 
+// Torneos/decklists/resultados competitivos de Pokémon TCG (ver sección
+// de SUSCRIPCIONES.md sobre "Armar Mazo" + Competitivo). A diferencia de
+// apitcg.com, la API de Limitless es pública -- no pide API key para
+// nada de lo que usamos aquí (torneos, standings, games) -- así que este
+// proxy no manda ningún secreto, solo evita abrir un proxy genérico
+// (lista blanca de rutas) y aprovecha para cachear la respuesta.
+async function limitlessProxy(req, res) {
+  const { path } = req.query;
+  if (!path || !/^(tournaments|games)/.test(String(path))) {
+    return res.status(400).json({ error: "Ruta inválida para Limitless TCG." });
+  }
+  try {
+    const upstream = await fetch(`https://play.limitlesstcg.com/api/${path}`, {
+      headers: { "User-Agent": "EncuentraCartas/1.0 (app de tiendas de TCG Monterrey)" },
+    });
+    const data = await upstream.json().catch(() => null);
+    res.setHeader("Cache-Control", "s-maxage=900, stale-while-revalidate=3600");
+    res.status(upstream.status).json(data ?? { error: "Respuesta inválida de Limitless TCG." });
+  } catch (e) {
+    res.status(500).json({ error: "No se pudo conectar con Limitless TCG." });
+  }
+}
+
 export default async function handler(req, res) {
   if (req.query.fuente === "shopify") {
     return importarShopify(req, res);
@@ -276,6 +299,9 @@ export default async function handler(req, res) {
   }
   if (req.query.fuente === "migrar-descripciones") {
     return migrarDescripcionesProxy(req, res);
+  }
+  if (req.query.fuente === "limitless") {
+    return limitlessProxy(req, res);
   }
 
   const { path } = req.query;

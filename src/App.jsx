@@ -23,6 +23,7 @@ import {
   buscarCartasCatalogo, obtenerPrecioRefActualPorTcg, categoriaIdTCGplayer,
   obtenerErasYSetsCatalogo, obtenerCartasDeSetCatalogo,
   obtenerSetsVisualesApiTCG, buscarSelladoVisualApiTCG, buscarSelladoDeSetApiTCG,
+  parsearDecklistLimitless, resolverCartaLimitless,
 } from "./lib/pokemonApi.js";
 import {
   FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre, conAlpha,
@@ -7641,7 +7642,47 @@ const DECKLIST_EJEMPLO = {
   onepiece: "Monkey D. Luffy 2",
 };
 
-function MazosView({ session, perfil, onIrAPlanes }) {
+// Importa el decklist de un jugador de un torneo de Limitless TCG dentro
+// de un mazo ya existente (reemplaza sus cartas, mismo criterio que
+// importarDecklist con texto plano) -- función compartida entre "Mis
+// mazos" (importar dentro de un mazo ya abierto) y "Competitivo"
+// (crear un mazo nuevo a partir de un arquetipo y llenarlo de una vez).
+// `standingsYaObtenidos` evita pedir otra vez el standings si quien llama
+// ya lo tenía (como Competitivo, que lo usa también para calcular
+// popularidad/winrate).
+async function importarDecklistLimitlessEnMazo({ session, mazoId, torneoId, jugador, standingsYaObtenidos, signal }) {
+  const standings = standingsYaObtenidos || await fetch(
+    `/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments/${torneoId}/standings`)}`,
+    { signal }
+  ).then((r) => r.json());
+  if (!Array.isArray(standings)) throw new Error("No se pudo leer ese torneo -- revisa el ID.");
+
+  const jugadorLower = jugador.trim().toLowerCase();
+  const fila = standings.find((s) => (s.player || "").toLowerCase() === jugadorLower || (s.name || "").toLowerCase() === jugadorLower);
+  if (!fila) throw new Error("No encontramos a ese jugador en este torneo.");
+
+  const cartas = parsearDecklistLimitless(fila.decklist);
+  if (cartas.length === 0) throw new Error("No se pudo leer el decklist de este jugador (puede que no lo haya subido, o que el formato no se haya reconocido).");
+
+  const resueltas = await Promise.all(cartas.map(async (c) => {
+    const match = await resolverCartaLimitless(c.nombre, c.numero, signal).catch(() => null);
+    return {
+      mazo_id: mazoId,
+      nombre: c.nombre,
+      cantidad: c.cantidad,
+      set_nombre: match?.set_nombre || c.set || c.numero || null,
+      card_api_id: match?.card_api_id || null,
+      imagen_url: match?.imagen_url || null,
+    };
+  }));
+
+  await sbWrite("DELETE", `mazo_cartas?mazo_id=eq.${mazoId}`, {}, session);
+  await sbWrite("POST", "mazo_cartas", resueltas, session);
+  await sbWrite("PATCH", `mazos?id=eq.${mazoId}`, { limitless_tournament_id: torneoId, limitless_player: fila.player || jugador }, session);
+  return { total: resueltas.length, resueltos: resueltas.filter((r) => r.card_api_id).length };
+}
+
+function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
   const info = planDe(perfil);
   const [mazos, setMazos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -7661,6 +7702,15 @@ function MazosView({ session, perfil, onIrAPlanes }) {
   const [textoImport, setTextoImport] = useState("");
   const [importando, setImportando] = useState(false);
   const [copiadoExport, setCopiadoExport] = useState(false);
+  // ---- Importar desde Limitless TCG (torneo + jugador) ----
+  const [mostrarImportLimitless, setMostrarImportLimitless] = useState(false);
+  const [torneoIdLimitless, setTorneoIdLimitless] = useState("");
+  const [jugadorLimitless, setJugadorLimitless] = useState("");
+  const [importandoLimitless, setImportandoLimitless] = useState(false);
+  const [errorLimitless, setErrorLimitless] = useState(null);
+  // ---- Buscar quien vende una carta que falta ----
+  const [buscandoVendedor, setBuscandoVendedor] = useState(null); // id de mazo_carta
+  const [vendedoresEncontrados, setVendedoresEncontrados] = useState(null); // { mcId, opciones: [...] }
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
@@ -7779,6 +7829,44 @@ function MazosView({ session, perfil, onIrAPlanes }) {
     try { await navigator.clipboard.writeText(textoExport); setCopiadoExport(true); setTimeout(() => setCopiadoExport(false), 2000); } catch {}
   };
 
+  const importarDesdeLimitless = async () => {
+    if (!actual || !torneoIdLimitless.trim() || !jugadorLimitless.trim()) return;
+    if (actual.mazo_cartas.length > 0 && !window.confirm(`Esto reemplaza las ${actual.mazo_cartas.length} cartas que ya tiene este mazo con el decklist de "${jugadorLimitless.trim()}" en Limitless TCG. ¿Continuar?`)) return;
+    setImportandoLimitless(true); setErrorLimitless(null);
+    try {
+      await importarDecklistLimitlessEnMazo({ session, mazoId: actual.id, torneoId: torneoIdLimitless.trim(), jugador: jugadorLimitless.trim() });
+      setTorneoIdLimitless(""); setJugadorLimitless(""); setMostrarImportLimitless(false);
+      cargar();
+    } catch (e) { setErrorLimitless(e.message); } finally { setImportandoLimitless(false); }
+  };
+
+  const marcarTengo = async (mc, tengo) => {
+    try {
+      await sbWrite("PATCH", `mazo_cartas?id=eq.${mc.id}`, { tengo }, session);
+      cargar();
+    } catch (e) { setError(e.message); }
+  };
+
+  // Busca publicaciones activas que vendan exactamente esta carta
+  // (card_api_id) -- si hay una sola, abre su detalle de una vez; si hay
+  // varias, se muestran para elegir; si no hay ninguna, se avisa.
+  const buscarVendedor = async (mc) => {
+    if (!mc.card_api_id) return;
+    setBuscandoVendedor(mc.id); setVendedoresEncontrados(null);
+    try {
+      const [mercado, inventario] = await Promise.all([
+        sb(`mercado_listings?select=id,precio,perfiles(nombre)&card_api_id=eq.${mc.card_api_id}&en_venta=eq.true&order=precio.asc`, session),
+        sb(`inventario_tienda?select=id,precio,tiendas(nombre)&card_api_id=eq.${mc.card_api_id}&en_venta=eq.true&order=precio.asc`, session),
+      ]);
+      const opciones = [
+        ...mercado.map((r) => ({ id: r.id, tabla: "mercado_listings", texto: r.perfiles?.nombre || "Vendedor", precio: r.precio })),
+        ...inventario.map((r) => ({ id: r.id, tabla: "inventario_tienda", texto: r.tiendas?.nombre || "Tienda", precio: r.precio })),
+      ];
+      if (opciones.length === 1) { onAbrirDetalle?.(opciones[0].id, opciones[0].tabla); return; }
+      setVendedoresEncontrados({ mcId: mc.id, opciones });
+    } catch (e) { setError(e.message); } finally { setBuscandoVendedor(null); }
+  };
+
   // ---- Vista de un mazo abierto ----
   if (actual) {
     const totalCartas = actual.mazo_cartas.reduce((s, mc) => s + mc.cantidad, 0);
@@ -7805,10 +7893,33 @@ function MazosView({ session, perfil, onIrAPlanes }) {
           <Badge color={COLORS.azulClaro}>{TCG_LABEL[actual.tcg] || "Pokémon"}</Badge>
           {(actual.etiquetas || []).map((e) => <Badge key={e} color={COLORS.violeta}>{e}</Badge>)}
           <p style={{ color: COLORS.muted }} className="text-xs">{totalCartas} carta{totalCartas === 1 ? "" : "s"}</p>
-          <button onClick={() => setMostrarImportExport((v) => !v)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-2 py-1 text-xs font-semibold ml-auto">
+          {(actual.tcg || "pokemon") === "pokemon" && (
+            <button onClick={() => setMostrarImportLimitless((v) => !v)} style={{ color: COLORS.violeta, border: `1px solid ${COLORS.violeta}55` }} className="rounded-lg px-2 py-1 text-xs font-semibold ml-auto">
+              {mostrarImportLimitless ? "Ocultar Limitless TCG" : "🏆 Importar desde Limitless TCG"}
+            </button>
+          )}
+          <button onClick={() => setMostrarImportExport((v) => !v)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className={`rounded-lg px-2 py-1 text-xs font-semibold ${(actual.tcg || "pokemon") === "pokemon" ? "" : "ml-auto"}`}>
             {mostrarImportExport ? "Ocultar importar/exportar" : "📋 Importar / exportar"}
           </button>
         </div>
+
+        {mostrarImportLimitless && (
+          <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.violeta}55` }} className="rounded-xl p-4 mb-6 grid gap-2">
+            <p style={{ color: COLORS.violeta }} className="text-sm font-semibold uppercase mb-1">Importar desde Limitless TCG</p>
+            <p style={{ color: COLORS.muted }} className="text-xs mb-1">
+              Trae el mazo real de un jugador de un torneo -- pega el ID del torneo (el que aparece en la URL de Limitless, ej. "63fcb6d32fb42a11441fb777") y el nombre de usuario del jugador.
+            </p>
+            {errorLimitless && <div className="mb-1"><ErrorBox message={errorLimitless} /></div>}
+            <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2">
+              <input placeholder="ID del torneo" value={torneoIdLimitless} onChange={(e) => setTorneoIdLimitless(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+              <input placeholder="Jugador (usuario o nombre)" value={jugadorLimitless} onChange={(e) => setJugadorLimitless(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+              <button onClick={importarDesdeLimitless} disabled={importandoLimitless || !torneoIdLimitless.trim() || !jugadorLimitless.trim()}
+                style={{ background: COLORS.violeta, color: "#fff" }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+                {importandoLimitless ? "Importando..." : "Importar"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {mostrarImportExport && (
           <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid sm:grid-cols-2 gap-4">
@@ -7870,6 +7981,37 @@ function MazosView({ session, perfil, onIrAPlanes }) {
                     <span style={{ fontFamily: "'Cabin', sans-serif" }} className="text-sm font-semibold">{mc.cantidad}</span>
                     <button onClick={() => cambiarCantidad(mc, 1)} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="w-6 h-6 rounded-md text-sm font-bold">+</button>
                   </div>
+                  <label className="flex items-center gap-1.5 pt-1 text-xs cursor-pointer" style={{ color: mc.tengo ? COLORS.verde || "#4ADE80" : COLORS.muted }}>
+                    <input type="checkbox" checked={!!mc.tengo} onChange={(e) => marcarTengo(mc, e.target.checked)} />
+                    Tengo esta carta
+                  </label>
+                  {!mc.tengo && (
+                    mc.card_api_id ? (
+                      <button onClick={() => buscarVendedor(mc)} disabled={buscandoVendedor === mc.id}
+                        style={{ color: COLORS.violeta, border: `1px solid ${COLORS.violeta}55` }} className="rounded-md px-2 py-1 text-[11px] font-semibold">
+                        {buscandoVendedor === mc.id ? "Buscando..." : "🔍 Buscar quien la vende"}
+                      </button>
+                    ) : (
+                      <p style={{ color: COLORS.muted }} className="text-[11px]" title="Esta carta no está ligada a un ID del catálogo, así que no podemos buscarla en publicaciones.">
+                        Sin catálogo -- no se puede buscar
+                      </p>
+                    )
+                  )}
+                  {vendedoresEncontrados && vendedoresEncontrados.mcId === mc.id && (
+                    vendedoresEncontrados.opciones.length === 0 ? (
+                      <p style={{ color: COLORS.muted }} className="text-[11px] pt-1">Nadie la está vendiendo todavía.</p>
+                    ) : (
+                      <div className="flex flex-col gap-1 pt-1">
+                        {vendedoresEncontrados.opciones.map((o) => (
+                          <button key={`${o.tabla}-${o.id}`} onClick={() => { onAbrirDetalle?.(o.id, o.tabla); setVendedoresEncontrados(null); }}
+                            style={{ background: COLORS.surface2, color: COLORS.text }} className="rounded-md px-2 py-1 text-[11px] text-left flex items-center justify-between gap-1">
+                            <span className="truncate">{o.texto}</span>
+                            <span style={{ color: COLORS.azulPalido }} className="whitespace-nowrap font-semibold">${o.precio}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
             ))}
@@ -7943,13 +8085,154 @@ function MazosView({ session, perfil, onIrAPlanes }) {
   );
 }
 
+// ---- Pestaña "Competitivo": torneos recientes de Pokémon TCG en Limitless
+// TCG, con popularidad/winrate de arquetipos calculados en el cliente a
+// partir de una sola llamada a standings (ver plan -- no hace falta tabla de
+// caché ni cron para una primera versión). Se puede ver sin plan; importar
+// un mazo desde aquí sigue requiriendo Ultraball+ (mismo gateo que crear
+// mazos a mano en MazosView).
+function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
+  const info = planDe(perfil);
+  const [torneos, setTorneos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [torneoAbierto, setTorneoAbierto] = useState(null);
+  const [standings, setStandings] = useState(null);
+  const [loadingStandings, setLoadingStandings] = useState(false);
+  const [errorStandings, setErrorStandings] = useState(null);
+  const [importando, setImportando] = useState(null); // deckId
+  const [errorImportar, setErrorImportar] = useState(null);
+
+  useEffect(() => {
+    setLoading(true); setError(null);
+    fetch(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent("tournaments?game=PTCG&limit=15")}`)
+      .then((r) => r.json())
+      .then((data) => setTorneos(Array.isArray(data) ? data : []))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const abrirTorneo = (torneo) => {
+    setTorneoAbierto(torneo);
+    setStandings(null); setErrorStandings(null); setErrorImportar(null);
+    setLoadingStandings(true);
+    fetch(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments/${torneo.id}/standings`)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!Array.isArray(data)) throw new Error("No se pudo leer este torneo.");
+        setStandings(data);
+      })
+      .catch((e) => setErrorStandings(e.message))
+      .finally(() => setLoadingStandings(false));
+  };
+
+  const arquetipos = useMemo(() => {
+    if (!Array.isArray(standings)) return [];
+    const porDeck = new Map();
+    for (const s of standings) {
+      if (!s.deck?.id) continue;
+      if (!porDeck.has(s.deck.id)) porDeck.set(s.deck.id, { id: s.deck.id, nombre: s.deck.name || s.deck.id, icons: s.deck.icons || [], jugadores: 0, wins: 0, losses: 0, mejor: null });
+      const a = porDeck.get(s.deck.id);
+      a.jugadores += 1;
+      a.wins += Number(s.record?.wins || 0);
+      a.losses += Number(s.record?.losses || 0);
+      if (!a.mejor || Number(s.placing || Infinity) < Number(a.mejor.placing || Infinity)) a.mejor = s;
+    }
+    const totalJugadores = standings.filter((s) => s.deck?.id).length || 1;
+    return [...porDeck.values()]
+      .map((a) => ({ ...a, popularidad: Math.round((a.jugadores / totalJugadores) * 100), winrate: a.wins + a.losses > 0 ? Math.round((a.wins / (a.wins + a.losses)) * 100) : null }))
+      .sort((x, y) => y.jugadores - x.jugadores);
+  }, [standings]);
+
+  const importarArquetipo = async (a) => {
+    if (!info.mazoBuilder) { onIrAPlanes?.(); return; }
+    if (!a.mejor) return;
+    setImportando(a.id); setErrorImportar(null);
+    try {
+      const [mazo] = await sbWrite("POST", "mazos", {
+        perfil_id: session.user.id,
+        nombre: `${a.nombre} (${torneoAbierto.name})`,
+        etiquetas: ["Competitivo"],
+        tcg: "pokemon",
+      }, session);
+      await importarDecklistLimitlessEnMazo({
+        session, mazoId: mazo.id, torneoId: torneoAbierto.id,
+        jugador: a.mejor.player || a.mejor.name,
+        standingsYaObtenidos: standings,
+      });
+    } catch (e) { setErrorImportar(e.message); } finally { setImportando(null); }
+  };
+
+  if (torneoAbierto) {
+    return (
+      <div>
+        <button onClick={() => setTorneoAbierto(null)} style={{ color: COLORS.azulPalido }} className="text-sm font-semibold mb-4">← Torneos</button>
+        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">{torneoAbierto.name}</h2>
+        <p style={{ color: COLORS.muted }} className="text-sm mb-6">{torneoAbierto.date} · {torneoAbierto.players} jugadores</p>
+        {!session && <div className="mb-4"><p style={{ color: COLORS.muted }} className="text-xs">Inicia sesión para poder importar un mazo desde aquí.</p></div>}
+        {errorImportar && <div className="mb-4"><ErrorBox message={errorImportar} /></div>}
+        {errorStandings && <div className="mb-4"><ErrorBox message={errorStandings} /></div>}
+        {loadingStandings ? (
+          <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Cargando resultados...</p>
+        ) : arquetipos.length === 0 ? (
+          <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Este torneo no tiene arquetipos identificados todavía.</p>
+        ) : (
+          <div className="grid gap-3">
+            {arquetipos.map((a) => (
+              <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-[160px]">
+                  <p className="font-semibold text-sm">{a.nombre}</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs">{a.jugadores} jugador{a.jugadores === 1 ? "" : "es"} · {a.popularidad}% popularidad{a.winrate !== null ? ` · ${a.winrate}% winrate` : ""}</p>
+                </div>
+                {session && (
+                  <button onClick={() => importarArquetipo(a)} disabled={importando === a.id || !a.mejor}
+                    style={{ background: COLORS.violeta, color: "#fff" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                    {importando === a.id ? "Importando..." : info.mazoBuilder ? "Importar este mazo" : "🔒 Requiere Ultraball+"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🏆 Competitivo</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Torneos recientes de Pokémon TCG (vía Limitless TCG): qué arquetipos se están jugando, su popularidad y su winrate.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+      {loading ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Cargando torneos...</p>
+      ) : torneos.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">No hay torneos recientes disponibles ahorita.</p>
+      ) : (
+        <div className="grid gap-2">
+          {torneos.map((t) => (
+            <button key={t.id} onClick={() => abrirTorneo(t)}
+              style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
+              className="rounded-xl p-3 text-left flex items-center justify-between gap-2 transition-transform duration-200 hover:-translate-y-0.5">
+              <div>
+                <p className="text-sm font-semibold">{t.name}</p>
+                <p style={{ color: COLORS.muted }} className="text-xs">{t.date} · {t.format}</p>
+              </div>
+              <Badge color={COLORS.azulClaro}>{t.players} jugadores</Badge>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- Envoltura de "Armar mazo": pestaña de deck builder (Mis mazos) +
 // la pestaña original de buscar decklist contra el mercado ----
-function ArmarMazoSection({ session, perfil, onAbrirChat, onVerTienda, onIrAPlanes }) {
+function ArmarMazoSection({ session, perfil, onAbrirChat, onVerTienda, onIrAPlanes, onAbrirDetalle }) {
   const [tab, setTab] = useState("mios");
   return (
     <div>
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-6 flex-wrap">
         <button onClick={() => setTab("mios")}
           style={{
             background: tab === "mios" ? COLORS.surface2 : "transparent",
@@ -7964,15 +8247,24 @@ function ArmarMazoSection({ session, perfil, onAbrirChat, onVerTienda, onIrAPlan
             color: tab === "buscar" ? COLORS.azulPalido : COLORS.muted,
           }}
           className="rounded-lg px-4 py-2 text-sm font-semibold">🃏 Buscar en el mercado</button>
+        <button onClick={() => setTab("competitivo")}
+          style={{
+            background: tab === "competitivo" ? COLORS.surface2 : "transparent",
+            border: `1px solid ${tab === "competitivo" ? COLORS.azulPalido : COLORS.surface2}`,
+            color: tab === "competitivo" ? COLORS.azulPalido : COLORS.muted,
+          }}
+          className="rounded-lg px-4 py-2 text-sm font-semibold">🏆 Competitivo</button>
       </div>
       {tab === "mios" ? (
         session ? (
-          <MazosView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
+          <MazosView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} onAbrirDetalle={onAbrirDetalle} />
         ) : (
           <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">Inicia sesión para armar y guardar tus mazos.</p>
         )
-      ) : (
+      ) : tab === "buscar" ? (
         <ArmarMazoView session={session} onAbrirChat={onAbrirChat} onVerTienda={onVerTienda} />
+      ) : (
+        <CompetitivoView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} onAbrirDetalle={onAbrirDetalle} />
       )}
     </div>
   );
@@ -15571,7 +15863,7 @@ export default function EncuentraCartas() {
         )}
 
         {view === "armarMazo" && (
-          <ArmarMazoSection session={session} perfil={perfil} onAbrirChat={abrirChat} onVerTienda={verTiendaDesdePerfil} onIrAPlanes={() => setView("planes")} />
+          <ArmarMazoSection session={session} perfil={perfil} onAbrirChat={abrirChat} onVerTienda={verTiendaDesdePerfil} onIrAPlanes={() => setView("planes")} onAbrirDetalle={abrirDetalle} />
         )}
         {view === "comunidad" && <ComunidadView session={session} onVerPerfil={verPerfil} />}
         {view === "busquedas" && (
