@@ -4825,6 +4825,38 @@ Limitless ni de Supabase en este sandbox (ambos APIs son inalcanzables
 desde aquí) -- falta correr `076_mazos_limitless.sql` en Supabase y
 probar una importación real.
 
+## 149. La integración con Limitless TCG (sección 148) baja a Zafiro en adelante
+
+`PLAN_INFO` (en `theme.js`) gana una bandera nueva, `competitivo`, en
+`true` desde Zafiro (`superball`) en adelante (`false` solo en Cuarzo).
+El Deck Builder manual completo (crear un mazo a mano, agregarle cartas
+una por una con el buscador visual, importar/exportar como texto) sigue
+siendo exclusivo de Amatista en adelante (`info.mazoBuilder`, sin
+cambios) -- lo que se movió a Zafiro es específicamente lo nuevo de la
+sección 148:
+
+- Entrar a "Mis mazos" para ver/abrir tus propios mazos (antes el tab
+  entero estaba bloqueado si no tenías Amatista+).
+- El botón "🏆 Importar desde Limitless TCG" dentro de un mazo abierto.
+- El checkbox "Tengo esta carta" y el botón "🔍 Buscar quien la vende".
+- La pestaña "🏆 Competitivo" ya se podía **ver** sin plan (torneos/
+  popularidad/winrate son de solo lectura) -- ahora **importar** un mazo
+  desde ahí pide Zafiro (`info.competitivo`) en vez de Amatista
+  (`info.mazoBuilder`).
+
+Un usuario Zafiro sin Amatista que entra a "Mis mazos" ve la lista de
+sus mazos (vacía hasta que importe uno desde Competitivo, o desde el
+botón de Limitless dentro de un mazo que ya tenga) pero **no** ve el
+formulario de "+ Nuevo mazo" a mano, ni "Agregar carta", ni
+"Importar/exportar" de texto, ni los botones +/- de cantidad (se
+reemplazan por un aviso invitándolo a importar desde Competitivo o a
+mejorar a Amatista) -- todo eso se queda gateado a `info.mazoBuilder`
+como antes. `PLAN_INFO.superball.beneficios` ya trae la línea nueva
+("Competitivo: importa mazos reales de torneos...") para que se vea
+sola en la página de Planes, sin tocar nada ahí.
+
+Verificado con `npm run build`.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

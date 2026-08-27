@@ -7722,14 +7722,20 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { if (info.mazoBuilder) cargar(); }, []);
+  // Deck Builder completo (crear a mano, agregar cartas una por una,
+  // importar/exportar texto) sigue siendo Amatista+ (info.mazoBuilder).
+  // Desde Zafiro (info.competitivo) ya se puede entrar aquí para lo que
+  // vino de Limitless TCG: ver/abrir tus mazos, importar un decklist real
+  // por torneo+jugador, marcar qué cartas ya tienes y buscar quién vende
+  // las que faltan -- ver sección 148/149 de SUSCRIPCIONES.md.
+  useEffect(() => { if (info.mazoBuilder || info.competitivo) cargar(); }, []);
 
-  if (!info.mazoBuilder) {
+  if (!info.mazoBuilder && !info.competitivo) {
     return (
       <div>
         <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-6">🧩 Mis mazos</h2>
-        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
-          Arma varios mazos con un selector visual de cartas: elige la cantidad de cada una y ponles nombre y etiquetas propias.
+        <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+          Arma varios mazos con un selector visual de cartas, o impórtalos automáticamente de torneos reales con Limitless TCG.
         </UpsellCard>
       </div>
     );
@@ -7898,9 +7904,11 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
               {mostrarImportLimitless ? "Ocultar Limitless TCG" : "🏆 Importar desde Limitless TCG"}
             </button>
           )}
-          <button onClick={() => setMostrarImportExport((v) => !v)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className={`rounded-lg px-2 py-1 text-xs font-semibold ${(actual.tcg || "pokemon") === "pokemon" ? "" : "ml-auto"}`}>
-            {mostrarImportExport ? "Ocultar importar/exportar" : "📋 Importar / exportar"}
-          </button>
+          {info.mazoBuilder && (
+            <button onClick={() => setMostrarImportExport((v) => !v)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className={`rounded-lg px-2 py-1 text-xs font-semibold ${(actual.tcg || "pokemon") === "pokemon" ? "" : "ml-auto"}`}>
+              {mostrarImportExport ? "Ocultar importar/exportar" : "📋 Importar / exportar"}
+            </button>
+          )}
         </div>
 
         {mostrarImportLimitless && (
@@ -7921,7 +7929,7 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
           </div>
         )}
 
-        {mostrarImportExport && (
+        {mostrarImportExport && info.mazoBuilder && (
           <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid sm:grid-cols-2 gap-4">
             <div>
               <p style={{ color: COLORS.azulPalido }} className="text-sm font-semibold uppercase mb-1">Importar</p>
@@ -7956,12 +7964,18 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
           </div>
         ))}
 
-        <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-2 text-sm uppercase">Agregar carta</p>
-        <div className="mb-6"><CardPickerUniversal tcg={actual.tcg || "pokemon"} onSelect={agregarCarta} /></div>
-        {guardandoCarta && <p style={{ color: COLORS.muted }} className="text-xs mb-4">Guardando...</p>}
+        {info.mazoBuilder && (
+          <>
+            <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-2 text-sm uppercase">Agregar carta</p>
+            <div className="mb-6"><CardPickerUniversal tcg={actual.tcg || "pokemon"} onSelect={agregarCarta} /></div>
+            {guardandoCarta && <p style={{ color: COLORS.muted }} className="text-xs mb-4">Guardando...</p>}
+          </>
+        )}
 
         {actual.mazo_cartas.length === 0 ? (
-          <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Todavía no agregas cartas a este mazo. Búscalas arriba.</p>
+          <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">
+            {info.mazoBuilder ? "Todavía no agregas cartas a este mazo. Búscalas arriba." : "Este mazo no tiene cartas todavía. Impórtalo desde Limitless TCG arriba."}
+          </p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {actual.mazo_cartas.map((mc) => (
@@ -7977,9 +7991,15 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
                   <p className="text-xs font-semibold leading-snug line-clamp-2">{mc.nombre}</p>
                   <p style={{ color: COLORS.muted }} className="text-xs truncate">{mc.set_nombre}</p>
                   <div className="flex items-center justify-between gap-1 mt-auto pt-1">
-                    <button onClick={() => cambiarCantidad(mc, -1)} style={{ background: COLORS.surface2, color: COLORS.text }} className="w-6 h-6 rounded-md text-sm font-bold">−</button>
-                    <span style={{ fontFamily: "'Cabin', sans-serif" }} className="text-sm font-semibold">{mc.cantidad}</span>
-                    <button onClick={() => cambiarCantidad(mc, 1)} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="w-6 h-6 rounded-md text-sm font-bold">+</button>
+                    {info.mazoBuilder ? (
+                      <>
+                        <button onClick={() => cambiarCantidad(mc, -1)} style={{ background: COLORS.surface2, color: COLORS.text }} className="w-6 h-6 rounded-md text-sm font-bold">−</button>
+                        <span style={{ fontFamily: "'Cabin', sans-serif" }} className="text-sm font-semibold">{mc.cantidad}</span>
+                        <button onClick={() => cambiarCantidad(mc, 1)} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="w-6 h-6 rounded-md text-sm font-bold">+</button>
+                      </>
+                    ) : (
+                      <span style={{ fontFamily: "'Cabin', sans-serif", color: COLORS.muted }} className="text-sm font-semibold w-full text-center">×{mc.cantidad}</span>
+                    )}
                   </div>
                   <label className="flex items-center gap-1.5 pt-1 text-xs cursor-pointer" style={{ color: mc.tengo ? COLORS.verde || "#4ADE80" : COLORS.muted }}>
                     <input type="checkbox" checked={!!mc.tengo} onChange={(e) => marcarTengo(mc, e.target.checked)} />
@@ -8025,19 +8045,29 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
   return (
     <div>
       <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🧩 Mis mazos</h2>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Arma tus mazos con un selector visual de cartas: elige la cantidad de cada una y ponles nombre y etiquetas.</p>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">
+        {info.mazoBuilder ? "Arma tus mazos con un selector visual de cartas: elige la cantidad de cada una y ponles nombre y etiquetas." : "Importa mazos reales de torneos desde la pestaña Competitivo, marca qué cartas ya tienes y busca quién vende las que faltan."}
+      </p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
-      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-8 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
-        <select value={tcgNuevo} onChange={(e) => setTcgNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
-          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-        </select>
-        <input placeholder="Nombre del mazo (ej. Charizard ex)" value={nombreNuevo} onChange={(e) => setNombreNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-        <input placeholder="Etiquetas (ej. Estándar, Torneo)" value={etiquetasNuevo} onChange={(e) => setEtiquetasNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-        <button onClick={crearMazo} disabled={creando || !nombreNuevo.trim()} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
-          {creando ? "Creando..." : "+ Nuevo mazo"}
-        </button>
-      </div>
+      {info.mazoBuilder ? (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-xl p-4 mb-8 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+          <select value={tcgNuevo} onChange={(e) => setTcgNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+            {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+          <input placeholder="Nombre del mazo (ej. Charizard ex)" value={nombreNuevo} onChange={(e) => setNombreNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <input placeholder="Etiquetas (ej. Estándar, Torneo)" value={etiquetasNuevo} onChange={(e) => setEtiquetasNuevo(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <button onClick={crearMazo} disabled={creando || !nombreNuevo.trim()} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
+            {creando ? "Creando..." : "+ Nuevo mazo"}
+          </button>
+        </div>
+      ) : (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.violeta}55` }} className="rounded-xl p-4 mb-8">
+          <p style={{ color: COLORS.muted }} className="text-xs">
+            Crear un mazo a mano es de Amatista en adelante. Con Zafiro puedes importar mazos completos desde la pestaña 🏆 Competitivo.
+          </p>
+        </div>
+      )}
 
       {mazos.length > 0 && (
         <div className="flex gap-2 flex-wrap mb-4">
@@ -8052,7 +8082,9 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
       )}
 
       {mazos.length === 0 ? (
-        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Todavía no tienes mazos. Crea el primero arriba.</p>
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">
+          {info.mazoBuilder ? "Todavía no tienes mazos. Crea el primero arriba." : "Todavía no tienes mazos. Importa uno desde la pestaña 🏆 Competitivo."}
+        </p>
       ) : mazos.filter((m) => tcgFiltroMazos === "todos" || (m.tcg || "pokemon") === tcgFiltroMazos).length === 0 ? (
         <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">No tienes mazos de {TCG_LABEL[tcgFiltroMazos] || tcgFiltroMazos} todavía.</p>
       ) : (
@@ -8145,7 +8177,7 @@ function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
   }, [standings]);
 
   const importarArquetipo = async (a) => {
-    if (!info.mazoBuilder) { onIrAPlanes?.(); return; }
+    if (!info.competitivo) { onIrAPlanes?.(); return; }
     if (!a.mejor) return;
     setImportando(a.id); setErrorImportar(null);
     try {
@@ -8187,7 +8219,7 @@ function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
                 {session && (
                   <button onClick={() => importarArquetipo(a)} disabled={importando === a.id || !a.mejor}
                     style={{ background: COLORS.violeta, color: "#fff" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
-                    {importando === a.id ? "Importando..." : info.mazoBuilder ? "Importar este mazo" : "🔒 Requiere Ultraball+"}
+                    {importando === a.id ? "Importando..." : info.competitivo ? "Importar este mazo" : "🔒 Requiere Zafiro+"}
                   </button>
                 )}
               </div>
