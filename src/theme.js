@@ -333,6 +333,14 @@ export const TIPOS_POKEMON_COLOR = {
 
 export const TEMA_MODO_KEY = "ec_tema_modo";
 export const TEMA_TIPO_KEY = "ec_tema_tipo";
+// Ícono del botón flotante de notificaciones -- independiente del modo
+// día/noche y del tinte por tipo de Pokémon de arriba. "default" = la
+// campana genérica (Bell); el resto son emblemas por TCG que el usuario
+// elige en Apariencia. La lista de TCG con emblema disponible vive junto
+// a los propios íconos en lib/icons.jsx (EmblemaPokemon, EmblemaMagic,
+// etc.) para no duplicar el mapeo en dos archivos -- ver
+// ICONOS_NOTIFICACION_TCG en App.jsx.
+export const TEMA_ICONO_KEY = "ec_tema_icono_notif";
 
 function mezclarHex(hexBase, hexTinte, cantidad) {
   const parse = (hex) => {

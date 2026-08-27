@@ -4708,6 +4708,49 @@ desplegable de carrito/chats se abre junto al logo sin taparlo y sin
 mostrar "Chats" cuando no hay sesión (mismo criterio que el botón
 flotante de escritorio).
 
+## 147. Ícono de notificaciones personalizable por TCG (Pokémon, Magic, One Piece, Riftbound, Lorcana)
+
+Seguimiento de la sección 145: `IconoNotificacionFlotante` dejó de ser
+siempre la campana genérica -- ahora es elegible en Apariencia.
+
+- **`theme.js`**: nueva llave `TEMA_ICONO_KEY` (mismo patrón que
+  `TEMA_MODO_KEY`/`TEMA_TIPO_KEY`, se guarda en `localStorage`).
+- **`lib/icons.jsx`**: 5 emblemas nuevos -- `EmblemaPokemon` (pokébola,
+  ícono de trazo), `EmblemaMagic`, `EmblemaOnePiece` (brújula),
+  `EmblemaRiftbound` (remolino de 5 aspas) y `EmblemaLorcana` (diamante +
+  alas), estos 4 últimos como figura sólida (`crearIconoSolido`, nuevo
+  helper hermano de `crearIcono` con `fill=color`/`stroke="none"` en vez
+  de trazo). **Importante:** el dueño compartió 5 imágenes de referencia
+  en el chat, pero este entorno no tuvo forma de guardarlas como archivo
+  (no aparecieron en la carpeta de subidas) -- estos 5 son aproximaciones
+  dibujadas a mano a partir de lo que se alcanzó a ver en la conversación,
+  no una copia exacta pixel por pixel de esos archivos. Pokémon, Magic y
+  One Piece salieron razonablemente fieles; Riftbound salió bien
+  (el remolino de 5 aspas se ve limpio); Lorcana es la más alejada del
+  original (el emblema real es más ornamentado). Si el dueño logra
+  compartir los archivos reales más adelante (por ejemplo adjuntándolos
+  como archivo en vez de pegarlos), reemplazar el `innerSvg` de cada uno
+  en `lib/icons.jsx` es todo el cambio que hace falta -- el resto del
+  sistema (selector, guardado, aplicar en el botón) ya no se toca.
+- **`App.jsx`**: `ICONOS_NOTIFICACION_TCG` (lista `{key, label, Icono}`,
+  junto a `NotificationBell`) es el único lugar que hay que tocar para
+  agregar un TCG nuevo al selector. `IconoNotificacionFlotante` lee
+  `TEMA_ICONO_KEY` de `localStorage` en cada render (igual que el logo
+  día/noche) y muestra el emblema correspondiente, o la campana si no
+  hay ninguno elegido.
+- **`AparienciaView`**: nueva sección "Ícono de notificaciones" (gratis
+  para cualquier plan, como el modo día/noche) con un botón por emblema;
+  al elegir uno se guarda y se aplica de inmediato (mismo `onCambio()` →
+  `setTemaVersion` que ya usan modo/tipo para forzar que toda la app
+  vuelva a leer `localStorage`).
+
+Verificado renderizando los 5 SVG por separado (fuera de la app, con
+Playwright) para confirmar que cada trazo/figura se ve bien antes de
+integrarlos -- el flujo completo (elegir en Apariencia → aplicar en el
+botón flotante) no se pudo probar de punta a punta en este sandbox
+porque Apariencia requiere sesión iniciada y aquí no hay forma de
+loguearse contra el Supabase real.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

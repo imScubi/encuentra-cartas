@@ -6,6 +6,7 @@ import {
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
   ArrowUp, ArrowDown, Navigation, ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
   Gift, Gavel, Download,
+  EmblemaPokemon, EmblemaMagic, EmblemaOnePiece, EmblemaRiftbound, EmblemaLorcana,
 } from "./lib/icons.jsx";
 import {
   VAPID_PUBLIC_KEY,
@@ -28,7 +29,7 @@ import {
   FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre, conAlpha,
   PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
   BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero, miniaturaListing,
-  MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, aplicarTema,
+  MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, TEMA_ICONO_KEY, aplicarTema,
   IDIOMA_OPCIONES, IDIOMA_LABEL, MUNICIPIOS_NL,
   CONDICION_OPCIONES, CONDICION_LABEL, CONDICION_DESC, normalizarCondicion,
   GRADEADORAS_OPCIONES, GRADEADORAS_LABEL, calificacionesDeEmpresa, textoGradeo,
@@ -9356,6 +9357,7 @@ function AparienciaView({ perfil, onCambio, onIrAPlanes }) {
   const info = planDe(perfil);
   const [modo, setModo] = useState(() => localStorage.getItem(TEMA_MODO_KEY) || "noche");
   const [tipo, setTipo] = useState(() => localStorage.getItem(TEMA_TIPO_KEY) || "default");
+  const [iconoNotif, setIconoNotif] = useState(() => localStorage.getItem(TEMA_ICONO_KEY) || "default");
 
   // Modo día/noche es gratis para todos los planes (ya no exclusivo Zafiro+)
   // -- es cosmético y no le quita empuje real a los planes de pago. Solo el
@@ -9371,6 +9373,12 @@ function AparienciaView({ perfil, onCambio, onIrAPlanes }) {
     setTipo(nuevo);
     localStorage.setItem(TEMA_TIPO_KEY, nuevo);
     aplicarTema(modo, nuevo);
+    onCambio();
+  };
+
+  const cambiarIconoNotif = (nuevo) => {
+    setIconoNotif(nuevo);
+    localStorage.setItem(TEMA_ICONO_KEY, nuevo);
     onCambio();
   };
 
@@ -9414,6 +9422,23 @@ function AparienciaView({ perfil, onCambio, onIrAPlanes }) {
           ))}
         </div>
       )}
+
+      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase mt-8">Ícono de notificaciones</h3>
+      <p style={{ color: COLORS.muted }} className="text-xs mb-3">El botón flotante de notificaciones (esquina superior derecha) puede mostrar el emblema de tu TCG favorito en vez de la campana genérica.</p>
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        {ICONOS_NOTIFICACION_TCG.map(({ key, label, Icono }) => (
+          <button key={key} onClick={() => cambiarIconoNotif(key)}
+            style={{
+              background: iconoNotif === key ? COLORS.surface2 : "transparent",
+              border: `1px solid ${iconoNotif === key ? COLORS.azulPalido : COLORS.surface2}`,
+              color: iconoNotif === key ? COLORS.azulPalido : COLORS.muted,
+            }}
+            className="rounded-lg px-2 py-2.5 text-xs font-semibold flex flex-col items-center gap-1.5">
+            <Icono size={20} />
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -12574,15 +12599,25 @@ function guardarNotisLeidas(set) {
   try { localStorage.setItem(NOTIS_LEIDAS_KEY, JSON.stringify([...set])); } catch {}
 }
 
-// Ícono del botón flotante de notificaciones -- de momento la campana
-// genérica de siempre. Más adelante el dueño va a dar íconos por TCG
-// (pokebola, ojo del milenio de Yu-Gi-Oh, maná de Magic, etc.) para que
-// cambie según el tema elegido en Apariencia -- cuando existan, este es el
-// único lugar que hay que tocar: mapear la llave de tema (TEMA_TIPO_KEY o
-// una nueva) a la URL de la imagen y usar <img> en vez de <Bell> cuando
-// haya una.
+// Ícono del botón flotante de notificaciones, elegible en Apariencia
+// (TEMA_ICONO_KEY -- ver theme.js) -- "default" es la campana genérica de
+// siempre; el resto son emblemas por TCG (lib/icons.jsx). Agregar un TCG
+// nuevo a este selector es agregar una entrada aquí + su ícono en
+// lib/icons.jsx, nada más.
+const ICONOS_NOTIFICACION_TCG = [
+  { key: "default", label: "Genérica", Icono: Bell },
+  { key: "pokemon", label: "Pokémon", Icono: EmblemaPokemon },
+  { key: "magic", label: "Magic", Icono: EmblemaMagic },
+  { key: "onepiece", label: "One Piece", Icono: EmblemaOnePiece },
+  { key: "riftbound", label: "Riftbound", Icono: EmblemaRiftbound },
+  { key: "lorcana", label: "Lorcana", Icono: EmblemaLorcana },
+];
+const ICONO_NOTIFICACION_POR_KEY = Object.fromEntries(ICONOS_NOTIFICACION_TCG.map((o) => [o.key, o.Icono]));
+
 function IconoNotificacionFlotante({ size }) {
-  return <Bell size={size} />;
+  const key = localStorage.getItem(TEMA_ICONO_KEY) || "default";
+  const Icono = ICONO_NOTIFICACION_POR_KEY[key] || Bell;
+  return <Icono size={size} />;
 }
 
 // Carrito + chats en celular: en escritorio siguen siendo los botones
