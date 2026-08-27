@@ -4749,6 +4749,82 @@ cambio en el botón flotante) no se pudo probar de punta a punta en este
 sandbox porque Apariencia requiere sesión iniciada y aquí no hay forma de
 loguearse contra el Supabase real.
 
+## 148. Integración con Limitless TCG en "Armar Mazo": importar decklists reales, marcar qué tienes, y pestaña "Competitivo"
+
+Limitless TCG (`play.limitlesstcg.com`) es la API pública de resultados de
+torneos de Pokémon TCG (entre otros juegos). Casi toda su API es pública
+sin API key (solo `/games/{id}/decks`, reglas de arquetipos, pide una key
+gated que no usamos aquí). Se integró en tres frentes:
+
+- **`api/tcgcsv.js`**: nueva rama `?fuente=limitless&path=...` (mismo
+  patrón que `apitcg`/`shopify`/`wikidex` -- Vercel Hobby sigue en el
+  límite de 12 funciones, así que se agregó a este archivo compartido en
+  vez de uno nuevo). Lista blanca de rutas: solo `tournaments*` y
+  `games*`. Cachea 15 minutos (`Cache-Control: s-maxage=900`).
+- **`supabase/migrations/076_mazos_limitless.sql`** (⚠️ falta correrla en
+  Supabase): `mazo_cartas.tengo` (boolean, uso general -- cualquier
+  carta de cualquier mazo se puede marcar como "ya la tengo", no solo
+  las importadas) y `mazos.limitless_tournament_id` /
+  `mazos.limitless_player` (trazabilidad de qué mazo se importó de
+  dónde, solo informativo).
+- **`src/lib/pokemonApi.js`**: `parsearDecklistLimitless(decklist)` lee
+  el campo `decklist` de un standing de Limitless. La documentación
+  oficial **no expande la forma exacta de ese JSON** para Pokémon TCG
+  (dice que "depende del juego"), así que el parseo es deliberadamente
+  defensivo: recorre cualquier propiedad-array del objeto (la forma más
+  probable, agrupado en categorías tipo Pokémon/Trainer/Energy) y si no
+  encuentra nada así, intenta tratar el propio `decklist` como array
+  plano. Si de plano no reconoce nada, regresa `[]` y quien importa ve
+  "no se pudo leer este decklist" en vez de tronar. `resolverCartaLimitless`
+  busca cada carta contra el catálogo ya integrado
+  (`buscarCartasCatalogo`) para conseguirle `card_api_id`/imagen; si no
+  encuentra nada confiable, la carta se guarda solo con su nombre (igual
+  que ya hacía el importador de texto plano).
+- **`App.jsx` -- `importarDecklistLimitlessEnMazo`**: función compartida
+  (no de componente) que trae el standings de un torneo, encuentra al
+  jugador, parsea y resuelve su decklist, y reemplaza las cartas del
+  mazo (con confirmación si ya tenía cartas) -- la usan tanto "Mis
+  mazos" (botón "🏆 Importar desde Limitless TCG", pide ID de torneo +
+  jugador, solo visible si el mazo es de Pokémon) como "Competitivo"
+  (crea el mazo de una vez a partir de un arquetipo).
+- **Marcar qué tienes / buscar quien vende lo que falta**: cada carta del
+  mazo (en "Mis mazos") tiene un checkbox "Tengo esta carta" (PATCH
+  directo a `mazo_cartas.tengo`). Si no la tienes y sí tiene
+  `card_api_id` (viene del catálogo, no solo nombre suelto), un botón
+  "🔍 Buscar quien la vende" busca en `mercado_listings`/
+  `inventario_tienda` activos por `card_api_id` exacto (a diferencia del
+  buscador viejo de "Buscar en el mercado", que hace match de nombre por
+  substring) -- si hay una sola coincidencia abre su publicación directo,
+  si hay varias las lista para elegir, si no hay ninguna avisa que nadie
+  la vende todavía.
+- **Pestaña nueva "🏆 Competitivo"** (`CompetitivoView`, tercera pestaña
+  de `ArmarMazoSection` junto a "Mis mazos" y "Buscar en el mercado"):
+  lista los torneos recientes de Pokémon TCG de Limitless
+  (`tournaments?game=PTCG&limit=15`, sin sesión requerida -- son
+  endpoints públicos). Al abrir un torneo, trae su `standings` una sola
+  vez y agrupa por `deck.id` (el arquetipo que Limitless mismo detecta)
+  para calcular, en el cliente, popularidad (% de jugadores que lo
+  llevaron) y winrate (wins acumulados de esos jugadores) -- Limitless no
+  entrega esto precalculado, pero es barato sacarlo de una respuesta que
+  ya es liviana (no hace falta tabla de caché propia ni cron para esta
+  primera versión). Cada arquetipo tiene un botón "Importar este mazo"
+  que trae el decklist del jugador con mejor posición de ese arquetipo en
+  ese torneo -- ver la sección se puede sin plan, pero importar sigue
+  gateado a Ultraball+ (`info.mazoBuilder`, mismo criterio que crear
+  mazos a mano).
+
+**Limitación conocida y honesta**: como el shape exacto del `decklist` en
+JSON no está 100% confirmado por la documentación oficial, conviene
+probar una importación real en cuanto esto esté en producción y avisar
+si algo no se lee bien, para poder ajustar `parsearDecklistLimitless`
+sin tener que tocar nada más. Limitado a mazos de Pokémon TCG únicamente
+(Limitless no cubre los otros TCGs de la app).
+
+Verificado con `npm run build`. No se pudo probar contra datos reales de
+Limitless ni de Supabase en este sandbox (ambos APIs son inalcanzables
+desde aquí) -- falta correr `076_mazos_limitless.sql` en Supabase y
+probar una importación real.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -4765,3 +4841,4 @@ loguearse contra el Supabase real.
 - Falta poner `APITCG_API_KEY` en Vercel y confirmar que el piloto de apitcg.com funciona de verdad en producción (ver sección 129) -- y, si funciona bien, decidir si conviene volverla la fuente principal o migrar todo el catálogo (incluido producto sellado/TCGCSV) a ella.
 - Falta correr `071_carpetas_ubicacion.sql` en Supabase (ver sección 132) para que el color/zona/envío/punto de encuentro de las carpetas funcionen en producción -- sin la migración, crear una carpeta seguirá fallando al intentar guardar esas columnas.
 - Falta correr `072_carpeta_oculta.sql` en Supabase (ver sección 137) para que ocultar/mostrar cartas de una carpeta funcione en producción -- el link público de la carpeta y los exports CSV/Excel/PDF no dependen de esta migración y ya funcionan sin ella.
+- Falta correr `076_mazos_limitless.sql` en Supabase (ver sección 148) para que "Tengo esta carta" y la importación desde Limitless TCG funcionen en producción -- y falta probar una importación real para confirmar que `parsearDecklistLimitless` lee bien el decklist real (la documentación oficial no confirma el shape exacto del JSON).
