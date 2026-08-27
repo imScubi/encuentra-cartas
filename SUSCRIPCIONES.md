@@ -4857,6 +4857,57 @@ sola en la página de Planes, sin tocar nada ahí.
 
 Verificado con `npm run build`.
 
+## 150. "Competitivo" se muda a su propia sección de Comunidad, con sub-pestañas Torneos/Decks
+
+La pestaña "🏆 Competitivo" (sección 148) dejó de vivir dentro de "Armar
+Mazo" -- ahora es su propia sección top-level dentro del menú Comunidad
+(`navGrupos`, item nuevo `{ id: "competitivo", label: "Competitivo", icon:
+Trophy }`, con el ícono `Trophy` nuevo en `lib/icons.jsx`), separada de
+`ArmarMazoSection` (que vuelve a sus 2 pestañas de siempre: Mis mazos /
+Buscar en el mercado). `CompetitivoSection` (`App.jsx`) tiene dos
+sub-pestañas propias:
+
+- **🏆 Torneos**: exactamente el flujo de antes -- lista de torneos
+  recientes de Pokémon TCG, al abrir uno se ven sus arquetipos con
+  popularidad/winrate calculados de su `standings`.
+- **🃏 Decks**: ranking agregado de arquetipos entre los últimos
+  `TORNEOS_MUESTRA_DECKS` (6) torneos -- una sola pasada de
+  `Promise.all` sobre sus standings al entrar a la pestaña (6 peticiones,
+  cada una cacheada 15 min por el proxy, así que reabrir la pestaña
+  dentro de esa ventana no vuelve a pegarle a Limitless). Trae un
+  buscador de texto (por nombre de arquetipo) y un select de orden
+  (más/menos popular, mejor/peor winrate) -- todo cálculo y filtro es en
+  el cliente sobre los datos ya agregados, sin peticiones extra.
+
+En ambas pestañas, cada arquetipo se puede expandir ("Ver cartas ▼") para
+ver su decklist real de forma visual -- esto es **perezoso**: solo se
+resuelve contra un catálogo cuando alguien de verdad lo abre, nunca de
+antemano para toda la lista. Dos fuentes de "visual" sin gastar cuota de
+apitcg.com (la fuente principal, de paga):
+
+1. **`IconosArquetipo`**: Limitless ya manda `deck.icons` (sprites chicos
+   del/de los Pokémon del arquetipo) en la respuesta de `standings` --
+   se muestran tal cual, sin pasar por ninguna API nuestra ni por
+   `resolverCartaLimitless`, cero peticiones extra.
+2. **`DeckCardsGrid`**: al expandir un arquetipo, resuelve su decklist
+   completo con `resolverDecklistLimitless` (nuevo en `pokemonApi.js`,
+   factorizado de la lógica que ya usaba `importarDecklistLimitlessEnMazo`
+   para no repetirla) -- a propósito llama `buscarCartasVisual`
+   (pokemontcg.io + TCGdex de respaldo) en vez de `buscarCartasCatalogo`
+   (que prueba apitcg.com primero), justo para que abrir varios mazos en
+   esta pantalla no le meta tráfico de más a la fuente principal de pago.
+   Se cachea en memoria por nombre+número de carta (`_cacheCartaLimitless`
+   en `pokemonApi.js`) porque cartas muy jugadas (ej. "Professor's
+   Research") se repiten en casi todos los mazos que se abran en la
+   misma sesión.
+
+Importar un mazo real a tu perfil (desde cualquiera de las dos
+sub-pestañas) sigue pidiendo Zafiro+ (`info.competitivo`, sección 149) --
+ver la lista y expandir el detalle visual de un deck es libre para
+cualquiera, con o sin sesión.
+
+Verificado con `npm run build`.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
