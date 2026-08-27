@@ -621,6 +621,11 @@ export async function buscarCartasLorcana(texto, limite = 24, signal) {
 //   inventar nombres de era no oficiales.
 // - Lorcana: son pocos sets (menos de una decena) — no hace falta agrupar
 //   por era, se listan todos directo.
+// - Vanguard/Digimon/Dragon Ball Super (Fusion World y Masters)/Flesh and
+//   Blood/Gundam/hololive/Riftbound: no tienen ninguna fuente propia (a
+//   diferencia de los 4 de arriba), así que salen de apitcg.com, que
+//   tampoco trae "era" -- se listan todos los sets juntos, mismo criterio
+//   que Lorcana (ver obtenerErasYSetsApiTCG, más abajo en este archivo).
 // Todas devuelven la misma forma [{ era, sets: [{ id, nombre, cardCount,
 // imagen }] }] para que la pantalla de Catálogo use un solo componente sin
 // importar el TCG (si era es null, la pantalla no dibuja encabezado de era).
@@ -806,24 +811,29 @@ export async function obtenerCartasDeSetLorcana(setNombre) {
 // lado de la app. Ahora se degrada a "sin resultados" (la pantalla ya
 // sabe mostrar "no pudimos cargar los sets/cartas" cuando la lista viene
 // vacía), y solo se sigue avisando si es un bug de verdad de nuestro código.
-export async function obtenerErasYSetsCatalogo(tcg) {
+export async function obtenerErasYSetsCatalogo(tcg, signal) {
   try {
     if (tcg === "pokemon") return await obtenerErasYSetsPokemon();
     if (tcg === "magic") return await obtenerErasYSetsMagic();
     if (tcg === "yugioh") return await obtenerErasYSetsYugioh();
     if (tcg === "lorcana") return await obtenerSetsLorcana();
+    // Los 8 TCG que solo tienen apitcg.com como fuente (ver
+    // obtenerErasYSetsApiTCG más arriba) -- One Piece queda fuera a
+    // propósito, su Catálogo sigue viniendo de TCGCSV (ver CatalogoView).
+    if (TCG_SLUG_APITCG[tcg] && tcg !== "onepiece") return await obtenerErasYSetsApiTCG(tcg, signal);
     return [];
   } catch {
     return [];
   }
 }
 
-export async function obtenerCartasDeSetCatalogo(tcg, setId) {
+export async function obtenerCartasDeSetCatalogo(tcg, setId, signal) {
   try {
     if (tcg === "pokemon") return await obtenerCartasDeSetPokemon(setId);
     if (tcg === "magic") return await obtenerCartasDeSetMagic(setId);
     if (tcg === "yugioh") return await obtenerCartasDeSetYugioh(setId);
     if (tcg === "lorcana") return await obtenerCartasDeSetLorcana(setId);
+    if (TCG_SLUG_APITCG[tcg] && tcg !== "onepiece") return await obtenerCartasDeSetApiTCG(tcg, setId, signal);
     return [];
   } catch {
     return [];
@@ -1043,6 +1053,49 @@ export async function buscarSelladoDeSetApiTCG(tcg, setId, texto, limite, signal
     if (e?.name === "AbortError") throw e;
     return [];
   }
+}
+
+// ---- Catálogo (era > set > cartas) para los 8 TCG que solo tienen
+// apitcg.com como fuente (Cardfight Vanguard, Digimon, Dragon Ball Super
+// Fusion World, Dragon Ball Super Masters, Flesh and Blood, Gundam,
+// hololive, Riftbound -- ver TCG_SLUG_APITCG) -- reutiliza exactamente el
+// mismo `obtenerSetsVisualesApiTCG`/`pedirProductosApiTCG` que ya usa el
+// selector visual de producto sellado, solo que pidiendo type=card. Ninguno
+// de estos 8 tiene el concepto de "era" en apitcg.com (a diferencia de
+// Pokémon/Magic/Yu-Gi-Oh), así que se listan todos los sets juntos --
+// mismo criterio que ya usa Lorcana (obtenerSetsLorcana).
+export async function obtenerErasYSetsApiTCG(tcg, signal) {
+  const sets = await obtenerSetsVisualesApiTCG(tcg, signal);
+  return [{ era: null, sets: sets.map((s) => ({ id: s._id, nombre: s.name, cardCount: null, imagen: s.logo || null })) }];
+}
+
+// Todas las cartas de un set de apitcg.com -- mismo `pedirProductosApiTCG`
+// que ya usa buscarCartasVisualApiTCG para su modo "buscar por set", pero
+// sin filtro de nombre (el set completo) y paginando hasta agotarlo.
+// apitcg.com no documenta con certeza su parámetro de paginación -- se
+// intenta `page` (la convención más común) y el loop se corta en cuanto
+// una página no trae ninguna carta nueva (por si `page` no hiciera nada y
+// repitiera la primera página una y otra vez), además de un tope duro de
+// páginas para nunca quedarse pidiendo de más.
+export async function obtenerCartasDeSetApiTCG(tcg, setId, signal) {
+  const slug = TCG_SLUG_APITCG[tcg];
+  if (!slug || !setId) return [];
+  const vistos = new Set();
+  const cartas = [];
+  for (let page = 1; page <= 5; page++) {
+    let lote;
+    try {
+      lote = await pedirProductosApiTCG(new URLSearchParams({ tcg: slug, type: "card", set: setId, limit: "100", page: String(page) }), signal);
+    } catch (e) {
+      if (e?.name === "AbortError") throw e;
+      break;
+    }
+    const nuevas = lote.filter((c) => !vistos.has(c.id));
+    if (nuevas.length === 0) break;
+    nuevas.forEach((c) => { vistos.add(c.id); cartas.push(c); });
+    if (lote.length < 100) break;
+  }
+  return cartas;
 }
 
 // Elige el catálogo correcto según el TCG de la publicación (ver

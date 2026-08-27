@@ -13842,9 +13842,12 @@ function CarritoView({ carrito, onQuitar, onRequireLogin, onEnviado, session }) 
 // ---- Catálogo: era > set > cartas, con marcado Tengo/Quiero (Amatista+).
 // Navega en 3 niveles con el mismo state (eraSel/setSel null = nivel
 // anterior) en vez de un router — mismo patrón que el resto de la app
-// (view/selectedX en el componente raíz). One Piece no usa
-// obtenerErasYSetsCatalogo (no tiene buscador de texto libre todavía, ver
-// TCG_CON_CATALOGO) — sus sets salen de TCGCSV, igual que TCGplayerPicker.
+// (view/selectedX en el componente raíz). Los 8 TCG agregados vía
+// apitcg.com (Cardfight Vanguard, Digimon, Dragon Ball Super Fusion World/
+// Masters, Flesh and Blood, Gundam, hololive, Riftbound) ya entran por
+// obtenerErasYSetsCatalogo/obtenerCartasDeSetCatalogo como cualquier otro
+// TCG -- ver sección 152 de SUSCRIPCIONES.md. Solo One Piece sigue aparte:
+// sus sets salen de TCGCSV, igual que TCGplayerPicker.
 function CatalogoView({ session, perfil, onIrAPlanes }) {
   const info = planDe(perfil);
   const [tcgSel, setTcgSel] = useState("pokemon");
@@ -14148,6 +14151,9 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
           {(grupoUnico || eraSel) && (
             <div>
               <p style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Paso 2 · Elige un set</p>
+              {(grupoUnico || eras.find((g) => g.era === eraSel))?.sets.length === 0 && (
+                <p style={{ color: COLORS.muted }} className="text-sm">No pudimos cargar los sets de {TCG_LABEL[tcgSel]} en este momento.</p>
+              )}
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {(grupoUnico || eras.find((g) => g.era === eraSel))?.sets.map((s) => (
                   <button key={s.id} onClick={() => abrirSet(s)}
