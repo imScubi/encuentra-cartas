@@ -4908,6 +4908,66 @@ cualquiera, con o sin sesión.
 
 Verificado con `npm run build`.
 
+## 151. Corrección de exactitud: el arte de un mazo de Limitless ya nunca muestra la impresión equivocada de una carta
+
+Bug real encontrado por el dueño probando la sección 150: el "Dreepy" o
+"Drakloak" de un mazo importado podían salir con el arte de una
+reimpresión de hace 10+ años (ya ilegal en Estándar) en vez de la
+impresión real que trae ese mazo, y lo mismo con energías básicas
+("Darkness Energy" mostrando una versión viejísima). Causa: `resolverCartaLimitless`
+(sección 148) buscaba solo por NOMBRE contra pokemontcg.io
+(`buscarCartasVisual`) y con eso NO alcanza -- una carta puede tener
+docenas de reimpresiones a lo largo de los años, y una búsqueda de texto
+no tiene manera de saber cuál de todas es la del mazo real. El campo
+`set`/`numero` que ya traía cada carta parseada (`parsearDecklistLimitless`)
+ni se usaba.
+
+**Cómo muestra Limitless las cartas exactas en su propia página**: se
+investigó el HTML real de una página de decklist de Limitless (el dueño
+la había mandado como `.mht` para la sección 148) -- Limitless en
+realidad NO incrusta imágenes ahí, cada carta es solo texto con un link a
+`https://limitlesstcg.com/cards/{SET}/{NUMERO}` (ej.
+`.../cards/TWM/128` para ese Dreepy exacto). Ese `{SET}` es el código
+oficial de 2-4 letras que imprime Play! Pokémon Online en cada carta
+(el mismo que usa pokemontcg.io como `set.ptcgoCode`) -- **y ese código
++ número es EXACTAMENTE lo que ya nos manda la API de Limitless por
+cada carta del decklist**, solo que no se estaba aprovechando.
+
+**Fix**: `resolverCartaLimitless` (`pokemonApi.js`) ahora recibe
+`(set, numero, signal)` en vez de `(nombre, numero, signal)`, y usa una
+función nueva, `buscarCartaExactaPokemonTCG`, que consulta pokemontcg.io
+con `set.ptcgoCode:{SET} number:{NUMERO}` -- una sola impresión posible,
+cero ambigüedad. **Si no hay set+número, o esa impresión exacta todavía
+no está en pokemontcg.io** (le puede tardar en tener sets recién
+salidos, ver sección 128), la carta se guarda SIN imagen en vez de
+adivinar por nombre -- se prefiere "sin arte" a "arte equivocado". El
+nombre que se muestra siempre es el real (viene de Limitless
+directamente), nunca depende de esta búsqueda.
+
+**Investigado y descartado**: el MCP Server de Limitless TCG
+(`mcp.so/servers/limitlesstcg-mcp`, la pregunta original que arrancó
+toda esta integración) es un proyecto de terceros (no oficial) que solo
+envuelve como recursos MCP los mismos endpoints de torneos/standings/
+pairings que ya usamos directo -- no expone ninguna base de datos de
+cartas ni URLs de arte, así que no aplica aquí.
+
+**Punto de incertidumbre honesto que sigue en pie** (heredado de la
+sección 148): el nombre exacto de las llaves `set`/`number` en el JSON
+real de Limitless no está 100% confirmado por su documentación --
+`normalizarCartaLimitless` prueba variantes razonables
+(`set`/`setCode`/`set_code`, `number`/`num`). El HTML de Limitless SÍ
+confirma que su propio modelo de datos trae set+número para TODAS las
+cartas (incluidas energías básicas, aunque el texto plano del decklist
+no lo muestre para esas), así que es muy probable que el JSON también
+los traiga -- pero conviene abrir un mazo real en producción y
+confirmar que las cartas sí muestran arte (o avisar cuáles no, para
+ajustar los nombres de campo sin tener que rediseñar nada más).
+
+Verificado con `npm run build`. No se pudo probar la consulta real a
+pokemontcg.io en este sandbox (egress bloqueado también hacia
+`api.pokemontcg.io` aquí, aunque en producción sí funciona -- es la
+misma API que ya usa el resto de la app).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

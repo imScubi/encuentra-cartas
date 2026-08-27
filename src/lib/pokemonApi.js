@@ -1210,33 +1210,60 @@ export function parsearDecklistLimitless(decklist) {
   return cartas;
 }
 
+// Busca UNA carta exacta de pokemontcg.io por set+número -- "set" es el
+// código oficial de 2-4 letras que trae Limitless (ej. "TWM", "MEE",
+// "POR"), el mismo código que Play! Pokémon Online imprime en cada carta
+// y que pokemontcg.io indexa como `set.ptcgoCode`. A diferencia de una
+// búsqueda por nombre, set+número identifica una sola impresión posible
+// -- no hay forma de que devuelva la carta equivocada (ej. un "Dreepy" de
+// hace 10 años que ya no es legal en Estándar) como sí podía pasar antes
+// buscando solo por nombre, donde una misma carta puede tener muchas
+// reimpresiones a lo largo de los años y la búsqueda por texto no tenía
+// forma de saber cuál de todas es "la del mazo real".
+async function buscarCartaExactaPokemonTCG(setCode, numero, signal) {
+  if (!setCode || !numero) return null;
+  const query = `set.ptcgoCode:${setCode} number:${numero}`;
+  try {
+    const res = await fetchConReintento(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=5`, 3, 500, signal, HEADERS_POKEMONTCG);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const cartas = data?.data || [];
+    if (cartas.length === 0) return null;
+    return mapearYOrdenarCartasPokemonTCG(cartas, numero)[0] || null;
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return null;
+  }
+}
+
 // Resuelve una carta de un decklist de Limitless contra el catálogo para
-// conseguirle card_api_id/imagen -- si no encuentra nada confiable, regresa
-// null y la carta se guarda solo con su nombre (igual que ya pasa con el
-// importador de texto plano cuando no hay match).
+// conseguirle card_api_id/imagen. A PROPÓSITO exige set+número exactos
+// (buscarCartaExactaPokemonTCG) en vez de adivinar por nombre: mostrar la
+// impresión equivocada de una carta (ej. una vieja que ya no es legal en
+// Estándar, cuando el mazo real lleva la reimpresión reciente) es peor que
+// no mostrar imagen -- si no hay set+número, o esa impresión exacta
+// todavía no está en pokemontcg.io (le puede tardar en tener sets recién
+// salidos, ver sección 128 de SUSCRIPCIONES.md), la carta se guarda solo
+// con su nombre, sin adivinar, igual que ya pasa con el importador de
+// texto plano cuando no hay match.
 //
-// A propósito usa buscarCartasVisual (pokemontcg.io + TCGdex de respaldo)
-// en vez de buscarCartasCatalogo -- esta última prueba apitcg.com primero,
-// y la pestaña "Decks" de Competitivo puede resolver el arte de varios
-// mazos completos (~15-20 cartas cada uno) solo con que alguien los abra,
-// así que conviene no cargarle tráfico extra a apitcg.com (nuestra fuente
-// principal, de paga) por algo que pokemontcg.io/TCGdex (gratis) ya
-// resuelven bien para Pokémon. Se cachea en memoria por nombre+número
-// porque cartas muy jugadas (ej. "Professor's Research") se repiten en
-// casi todos los mazos que se abran en la misma sesión.
+// Usa pokemontcg.io (no buscarCartasCatalogo, que prueba apitcg.com
+// primero) porque la pestaña "Decks" de Competitivo puede resolver el
+// arte de varios mazos completos (~15-20 cartas cada uno) solo con que
+// alguien los abra, así que conviene no cargarle tráfico extra a
+// apitcg.com (nuestra fuente principal, de paga) por algo que
+// pokemontcg.io (gratis) ya resuelve con exactitud para Pokémon. Se
+// cachea en memoria por set+número porque cartas muy jugadas (ej.
+// "Professor's Research") se repiten en casi todos los mazos que se
+// abran en la misma sesión.
 const _cacheCartaLimitless = new Map();
-export async function resolverCartaLimitless(nombre, numero, signal) {
-  const clave = `${nombre.trim().toLowerCase()}::${numero || ""}`;
+export async function resolverCartaLimitless(set, numero, signal) {
+  const clave = `${(set || "").trim().toUpperCase()}::${(numero || "").trim()}`;
+  if (!set || !numero) return null;
   if (_cacheCartaLimitless.has(clave)) return _cacheCartaLimitless.get(clave);
   try {
-    const resultados = await buscarCartasVisual(nombre, 8, signal);
-    if (!resultados.length) { _cacheCartaLimitless.set(clave, null); return null; }
-    let elegido = resultados[0];
-    if (numero) {
-      const numLower = String(numero).toLowerCase();
-      const match = resultados.find((c) => c.localId?.toLowerCase() === numLower || c.localId?.toLowerCase().startsWith(numLower));
-      if (match) elegido = match;
-    }
+    const elegido = await buscarCartaExactaPokemonTCG(set, numero, signal);
+    if (!elegido) { _cacheCartaLimitless.set(clave, null); return null; }
     const resuelta = {
       card_api_id: elegido.id,
       imagen_url: elegido.image || null,
@@ -1259,7 +1286,7 @@ export async function resolverCartaLimitless(nombre, numero, signal) {
 export async function resolverDecklistLimitless(decklistRaw, signal) {
   const cartas = parsearDecklistLimitless(decklistRaw);
   return Promise.all(cartas.map(async (c) => {
-    const match = await resolverCartaLimitless(c.nombre, c.numero, signal).catch(() => null);
+    const match = await resolverCartaLimitless(c.set, c.numero, signal).catch(() => null);
     return {
       nombre: c.nombre,
       cantidad: c.cantidad,
