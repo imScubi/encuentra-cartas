@@ -5,7 +5,7 @@ import {
   User, Megaphone, Newspaper, ShoppingCart, X, Loader2, AlertCircle,
   MessageCircle, Send, ExternalLink, Shield, Receipt, Menu, Bell, HelpCircle, Calendar, Star, Layers, Palette,
   ArrowUp, ArrowDown, Navigation, ImageIcon, Trash2, ChevronDown, ChevronUp, Tag, Copy, Check, BookOpen,
-  Gift, Gavel, Download,
+  Gift, Gavel, Download, Trophy,
 } from "./lib/icons.jsx";
 import {
   VAPID_PUBLIC_KEY,
@@ -23,7 +23,7 @@ import {
   buscarCartasCatalogo, obtenerPrecioRefActualPorTcg, categoriaIdTCGplayer,
   obtenerErasYSetsCatalogo, obtenerCartasDeSetCatalogo,
   obtenerSetsVisualesApiTCG, buscarSelladoVisualApiTCG, buscarSelladoDeSetApiTCG,
-  parsearDecklistLimitless, resolverCartaLimitless,
+  resolverDecklistLimitless,
 } from "./lib/pokemonApi.js";
 import {
   FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre, conAlpha,
@@ -7661,25 +7661,14 @@ async function importarDecklistLimitlessEnMazo({ session, mazoId, torneoId, juga
   const fila = standings.find((s) => (s.player || "").toLowerCase() === jugadorLower || (s.name || "").toLowerCase() === jugadorLower);
   if (!fila) throw new Error("No encontramos a ese jugador en este torneo.");
 
-  const cartas = parsearDecklistLimitless(fila.decklist);
-  if (cartas.length === 0) throw new Error("No se pudo leer el decklist de este jugador (puede que no lo haya subido, o que el formato no se haya reconocido).");
+  const resueltas = await resolverDecklistLimitless(fila.decklist, signal);
+  if (resueltas.length === 0) throw new Error("No se pudo leer el decklist de este jugador (puede que no lo haya subido, o que el formato no se haya reconocido).");
 
-  const resueltas = await Promise.all(cartas.map(async (c) => {
-    const match = await resolverCartaLimitless(c.nombre, c.numero, signal).catch(() => null);
-    return {
-      mazo_id: mazoId,
-      nombre: c.nombre,
-      cantidad: c.cantidad,
-      set_nombre: match?.set_nombre || c.set || c.numero || null,
-      card_api_id: match?.card_api_id || null,
-      imagen_url: match?.imagen_url || null,
-    };
-  }));
-
+  const filas = resueltas.map((r) => ({ ...r, mazo_id: mazoId }));
   await sbWrite("DELETE", `mazo_cartas?mazo_id=eq.${mazoId}`, {}, session);
-  await sbWrite("POST", "mazo_cartas", resueltas, session);
+  await sbWrite("POST", "mazo_cartas", filas, session);
   await sbWrite("PATCH", `mazos?id=eq.${mazoId}`, { limitless_tournament_id: torneoId, limitless_player: fila.player || jugador }, session);
-  return { total: resueltas.length, resueltos: resueltas.filter((r) => r.card_api_id).length };
+  return { total: filas.length, resueltos: filas.filter((r) => r.card_api_id).length };
 }
 
 function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
@@ -8046,7 +8035,7 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
     <div>
       <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🧩 Mis mazos</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">
-        {info.mazoBuilder ? "Arma tus mazos con un selector visual de cartas: elige la cantidad de cada una y ponles nombre y etiquetas." : "Importa mazos reales de torneos desde la pestaña Competitivo, marca qué cartas ya tienes y busca quién vende las que faltan."}
+        {info.mazoBuilder ? "Arma tus mazos con un selector visual de cartas: elige la cantidad de cada una y ponles nombre y etiquetas." : "Importa mazos reales de torneos desde Competitivo (menú Comunidad), marca qué cartas ya tienes y busca quién vende las que faltan."}
       </p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
@@ -8064,7 +8053,7 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
       ) : (
         <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.violeta}55` }} className="rounded-xl p-4 mb-8">
           <p style={{ color: COLORS.muted }} className="text-xs">
-            Crear un mazo a mano es de Amatista en adelante. Con Zafiro puedes importar mazos completos desde la pestaña 🏆 Competitivo.
+            Crear un mazo a mano es de Amatista en adelante. Con Zafiro puedes importar mazos completos desde 🏆 Competitivo (menú Comunidad).
           </p>
         </div>
       )}
@@ -8083,7 +8072,7 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
 
       {mazos.length === 0 ? (
         <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">
-          {info.mazoBuilder ? "Todavía no tienes mazos. Crea el primero arriba." : "Todavía no tienes mazos. Importa uno desde la pestaña 🏆 Competitivo."}
+          {info.mazoBuilder ? "Todavía no tienes mazos. Crea el primero arriba." : "Todavía no tienes mazos. Importa uno desde 🏆 Competitivo (menú Comunidad)."}
         </p>
       ) : mazos.filter((m) => tcgFiltroMazos === "todos" || (m.tcg || "pokemon") === tcgFiltroMazos).length === 0 ? (
         <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">No tienes mazos de {TCG_LABEL[tcgFiltroMazos] || tcgFiltroMazos} todavía.</p>
@@ -8117,13 +8106,134 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
   );
 }
 
-// ---- Pestaña "Competitivo": torneos recientes de Pokémon TCG en Limitless
-// TCG, con popularidad/winrate de arquetipos calculados en el cliente a
-// partir de una sola llamada a standings (ver plan -- no hace falta tabla de
-// caché ni cron para una primera versión). Se puede ver sin plan; importar
-// un mazo desde aquí sigue requiriendo Ultraball+ (mismo gateo que crear
-// mazos a mano en MazosView).
-function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
+// ---- Envoltura de "Armar mazo": pestaña de deck builder (Mis mazos) +
+// la pestaña original de buscar decklist contra el mercado -- Competitivo
+// (torneos/decks de Limitless TCG) ya no vive aquí, se movió a su propia
+// sección dentro de Comunidad (ver CompetitivoSection más abajo).
+function ArmarMazoSection({ session, perfil, onAbrirChat, onVerTienda, onIrAPlanes, onAbrirDetalle }) {
+  const [tab, setTab] = useState("mios");
+  return (
+    <div>
+      <div className="flex gap-2 mb-6 flex-wrap">
+        <button onClick={() => setTab("mios")}
+          style={{
+            background: tab === "mios" ? COLORS.surface2 : "transparent",
+            border: `1px solid ${tab === "mios" ? COLORS.azulPalido : COLORS.surface2}`,
+            color: tab === "mios" ? COLORS.azulPalido : COLORS.muted,
+          }}
+          className="rounded-lg px-4 py-2 text-sm font-semibold">🧩 Mis mazos</button>
+        <button onClick={() => setTab("buscar")}
+          style={{
+            background: tab === "buscar" ? COLORS.surface2 : "transparent",
+            border: `1px solid ${tab === "buscar" ? COLORS.azulPalido : COLORS.surface2}`,
+            color: tab === "buscar" ? COLORS.azulPalido : COLORS.muted,
+          }}
+          className="rounded-lg px-4 py-2 text-sm font-semibold">🃏 Buscar en el mercado</button>
+      </div>
+      {tab === "mios" ? (
+        session ? (
+          <MazosView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} onAbrirDetalle={onAbrirDetalle} />
+        ) : (
+          <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">Inicia sesión para armar y guardar tus mazos.</p>
+        )
+      ) : (
+        <ArmarMazoView session={session} onAbrirChat={onAbrirChat} onVerTienda={onVerTienda} />
+      )}
+    </div>
+  );
+}
+
+// ---- Sección "Competitivo" (Comunidad): torneos recientes y arquetipos de
+// Pokémon TCG en Limitless TCG, con popularidad/winrate calculados en el
+// cliente -- ver sección 148/149/150 de SUSCRIPCIONES.md. Es su propia
+// sección de Comunidad, separada de "Armar Mazo" (aunque comparte la lógica
+// de importar un mazo, importarDecklistLimitlessEnMazo, con MazosView).
+// Ver sin plan es libre (torneos/decks son de solo lectura); importar un
+// mazo desde aquí pide Zafiro+ (info.competitivo, igual que en MazosView).
+
+// Cuántos torneos recientes se agregan para el ranking global de la pestaña
+// "Decks" -- acotado a propósito (una llamada a standings por torneo, cada
+// una cacheada 15 min en el proxy) para no disparar de golpe muchas
+// peticiones a Limitless cada vez que alguien abre esta pestaña.
+const TORNEOS_MUESTRA_DECKS = 6;
+
+// Grid visual de las cartas de un decklist -- carga perezosa (solo cuando
+// se expande un mazo/arquetipo) y usa resolverDecklistLimitless, que a su
+// vez resuelve cada carta contra pokemontcg.io/TCGdex (nunca apitcg.com,
+// ver el comentario en pokemonApi.js) para no cargarle tráfico extra a
+// nuestra fuente principal de pago solo por mostrar el arte de un mazo.
+function DeckCardsGrid({ decklist }) {
+  const [cartas, setCartas] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!decklist) return;
+    const ctrl = new AbortController();
+    setCartas(null); setError(null);
+    resolverDecklistLimitless(decklist, ctrl.signal)
+      .then(setCartas)
+      .catch((e) => { if (e?.name !== "AbortError") setError("No se pudo cargar el detalle de este mazo."); });
+    return () => ctrl.abort();
+  }, [decklist]);
+
+  if (error) return <p style={{ color: COLORS.muted }} className="text-xs py-3">{error}</p>;
+  if (!cartas) return <p style={{ color: COLORS.muted }} className="text-xs text-center py-6">Cargando cartas...</p>;
+  if (cartas.length === 0) return <p style={{ color: COLORS.muted }} className="text-xs text-center py-6">No se pudo leer el decklist de este mazo.</p>;
+  return (
+    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 pt-2">
+      {cartas.map((c, i) => (
+        <div key={i} style={{ background: COLORS.surface2 }} className="rounded-lg overflow-hidden flex flex-col">
+          <div className="aspect-[4/5] flex items-center justify-center p-1 relative">
+            {c.imagen_url ? (
+              <img src={c.imagen_url} alt={c.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            ) : (
+              <Package size={18} color={COLORS.muted} />
+            )}
+            <span style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="absolute bottom-1 right-1 text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">{c.cantidad}</span>
+          </div>
+          <p className="text-[10px] px-1 py-1 leading-tight line-clamp-2">{c.nombre}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Pequeños íconos de Pokémon que Limitless ya incluye en cada arquetipo
+// (deck.icons) -- se muestran tal cual (sin pasar por ninguna API nuestra)
+// para darle algo visual a la lista de decks sin gastar ni una sola
+// petición extra. Si el formato no es una URL reconocible, se oculta solo.
+function IconosArquetipo({ icons }) {
+  const [rotos, setRotos] = useState({});
+  if (!Array.isArray(icons) || icons.length === 0) return null;
+  const visibles = icons.filter((_, i) => !rotos[i]).slice(0, 3);
+  if (visibles.length === 0) return null;
+  return (
+    <div className="flex -space-x-2">
+      {visibles.map((src, i) => (
+        <img key={i} src={src} alt="" width={22} height={22}
+          style={{ borderRadius: "9999px", border: `2px solid ${COLORS.surface}`, background: COLORS.surface2 }}
+          onError={() => setRotos((r) => ({ ...r, [i]: true }))} />
+      ))}
+    </div>
+  );
+}
+
+function agruparArquetiposPorDeck(standings) {
+  const porDeck = new Map();
+  for (const s of standings) {
+    if (!s.deck?.id) continue;
+    if (!porDeck.has(s.deck.id)) porDeck.set(s.deck.id, { id: s.deck.id, nombre: s.deck.name || s.deck.id, icons: s.deck.icons || [], jugadores: 0, wins: 0, losses: 0, mejor: null });
+    const a = porDeck.get(s.deck.id);
+    a.jugadores += 1;
+    a.wins += Number(s.record?.wins || 0);
+    a.losses += Number(s.record?.losses || 0);
+    if (!a.mejor || Number(s.placing || Infinity) < Number(a.mejor.placing || Infinity)) a.mejor = s;
+  }
+  return porDeck;
+}
+
+// ---- Sub-pestaña "Torneos": explora un torneo a la vez ----
+function CompetitivoTorneosView({ session, perfil, onIrAPlanes }) {
   const info = planDe(perfil);
   const [torneos, setTorneos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -8132,8 +8242,9 @@ function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
   const [standings, setStandings] = useState(null);
   const [loadingStandings, setLoadingStandings] = useState(false);
   const [errorStandings, setErrorStandings] = useState(null);
-  const [importando, setImportando] = useState(null); // deckId
+  const [importando, setImportando] = useState(null);
   const [errorImportar, setErrorImportar] = useState(null);
+  const [abierto, setAbierto] = useState(null); // deck.id expandido
 
   useEffect(() => {
     setLoading(true); setError(null);
@@ -8146,7 +8257,7 @@ function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
 
   const abrirTorneo = (torneo) => {
     setTorneoAbierto(torneo);
-    setStandings(null); setErrorStandings(null); setErrorImportar(null);
+    setStandings(null); setErrorStandings(null); setErrorImportar(null); setAbierto(null);
     setLoadingStandings(true);
     fetch(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments/${torneo.id}/standings`)}`)
       .then((r) => r.json())
@@ -8160,16 +8271,7 @@ function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
 
   const arquetipos = useMemo(() => {
     if (!Array.isArray(standings)) return [];
-    const porDeck = new Map();
-    for (const s of standings) {
-      if (!s.deck?.id) continue;
-      if (!porDeck.has(s.deck.id)) porDeck.set(s.deck.id, { id: s.deck.id, nombre: s.deck.name || s.deck.id, icons: s.deck.icons || [], jugadores: 0, wins: 0, losses: 0, mejor: null });
-      const a = porDeck.get(s.deck.id);
-      a.jugadores += 1;
-      a.wins += Number(s.record?.wins || 0);
-      a.losses += Number(s.record?.losses || 0);
-      if (!a.mejor || Number(s.placing || Infinity) < Number(a.mejor.placing || Infinity)) a.mejor = s;
-    }
+    const porDeck = agruparArquetiposPorDeck(standings);
     const totalJugadores = standings.filter((s) => s.deck?.id).length || 1;
     return [...porDeck.values()]
       .map((a) => ({ ...a, popularidad: Math.round((a.jugadores / totalJugadores) * 100), winrate: a.wins + a.losses > 0 ? Math.round((a.wins / (a.wins + a.losses)) * 100) : null }))
@@ -8199,7 +8301,7 @@ function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
     return (
       <div>
         <button onClick={() => setTorneoAbierto(null)} style={{ color: COLORS.azulPalido }} className="text-sm font-semibold mb-4">← Torneos</button>
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">{torneoAbierto.name}</h2>
+        <h3 className="text-lg font-bold mb-1">{torneoAbierto.name}</h3>
         <p style={{ color: COLORS.muted }} className="text-sm mb-6">{torneoAbierto.date} · {torneoAbierto.players} jugadores</p>
         {!session && <div className="mb-4"><p style={{ color: COLORS.muted }} className="text-xs">Inicia sesión para poder importar un mazo desde aquí.</p></div>}
         {errorImportar && <div className="mb-4"><ErrorBox message={errorImportar} /></div>}
@@ -8211,17 +8313,24 @@ function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
         ) : (
           <div className="grid gap-3">
             {arquetipos.map((a) => (
-              <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 flex items-center gap-3 flex-wrap">
-                <div className="flex-1 min-w-[160px]">
-                  <p className="font-semibold text-sm">{a.nombre}</p>
-                  <p style={{ color: COLORS.muted }} className="text-xs">{a.jugadores} jugador{a.jugadores === 1 ? "" : "es"} · {a.popularidad}% popularidad{a.winrate !== null ? ` · ${a.winrate}% winrate` : ""}</p>
-                </div>
-                {session && (
-                  <button onClick={() => importarArquetipo(a)} disabled={importando === a.id || !a.mejor}
-                    style={{ background: COLORS.violeta, color: "#fff" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
-                    {importando === a.id ? "Importando..." : info.competitivo ? "Importar este mazo" : "🔒 Requiere Zafiro+"}
+              <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <IconosArquetipo icons={a.icons} />
+                  <button onClick={() => setAbierto((v) => (v === a.id ? null : a.id))} className="flex-1 min-w-[160px] text-left">
+                    <p className="font-semibold text-sm">{a.nombre}</p>
+                    <p style={{ color: COLORS.muted }} className="text-xs">{a.jugadores} jugador{a.jugadores === 1 ? "" : "es"} · {a.popularidad}% popularidad{a.winrate !== null ? ` · ${a.winrate}% winrate` : ""}</p>
                   </button>
-                )}
+                  {session && (
+                    <button onClick={() => importarArquetipo(a)} disabled={importando === a.id || !a.mejor}
+                      style={{ background: COLORS.violeta, color: "#fff" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                      {importando === a.id ? "Importando..." : info.competitivo ? "Importar este mazo" : "🔒 Requiere Zafiro+"}
+                    </button>
+                  )}
+                  <button onClick={() => setAbierto((v) => (v === a.id ? null : a.id))} style={{ color: COLORS.muted }} className="text-xs">
+                    {abierto === a.id ? "Ocultar cartas ▲" : "Ver cartas ▼"}
+                  </button>
+                </div>
+                {abierto === a.id && <DeckCardsGrid decklist={a.mejor?.decklist} />}
               </div>
             ))}
           </div>
@@ -8232,8 +8341,6 @@ function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🏆 Competitivo</h2>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Torneos recientes de Pokémon TCG (vía Limitless TCG): qué arquetipos se están jugando, su popularidad y su winrate.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
       {loading ? (
         <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Cargando torneos...</p>
@@ -8258,45 +8365,179 @@ function CompetitivoView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
   );
 }
 
-// ---- Envoltura de "Armar mazo": pestaña de deck builder (Mis mazos) +
-// la pestaña original de buscar decklist contra el mercado ----
-function ArmarMazoSection({ session, perfil, onAbrirChat, onVerTienda, onIrAPlanes, onAbrirDetalle }) {
-  const [tab, setTab] = useState("mios");
+// ---- Sub-pestaña "Decks": ranking de arquetipos agregado entre varios
+// torneos recientes, con buscador y orden por popularidad/winrate ----
+function CompetitivoDecksView({ session, perfil, onIrAPlanes }) {
+  const info = planDe(perfil);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState(null);
+  const [arquetipos, setArquetipos] = useState([]);
+  const [standingsPorTorneo, setStandingsPorTorneo] = useState({});
+  const [busqueda, setBusqueda] = useState("");
+  const [orden, setOrden] = useState("popularidad_desc");
+  const [abierto, setAbierto] = useState(null);
+  const [importando, setImportando] = useState(null);
+  const [errorImportar, setErrorImportar] = useState(null);
+
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+
+  useEffect(() => {
+    let cancelado = false;
+    setCargando(true); setError(null);
+    (async () => {
+      try {
+        const torneos = await fetch(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments?game=PTCG&limit=${TORNEOS_MUESTRA_DECKS}`)}`).then((r) => r.json());
+        const lista = Array.isArray(torneos) ? torneos : [];
+        const standingsPorTorneoLocal = {};
+        const resultados = await Promise.all(lista.map(async (t) => {
+          try {
+            const st = await fetch(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments/${t.id}/standings`)}`).then((r) => r.json());
+            if (Array.isArray(st)) { standingsPorTorneoLocal[t.id] = st; return { torneo: t, standings: st }; }
+          } catch { /* un torneo individual fallando no debe tumbar el ranking completo */ }
+          return null;
+        }));
+        if (cancelado) return;
+
+        const porDeck = new Map();
+        let totalJugadores = 0;
+        for (const r of resultados) {
+          if (!r) continue;
+          for (const s of r.standings) {
+            if (!s.deck?.id) continue;
+            totalJugadores += 1;
+            if (!porDeck.has(s.deck.id)) porDeck.set(s.deck.id, { id: s.deck.id, nombre: s.deck.name || s.deck.id, icons: s.deck.icons || [], jugadores: 0, wins: 0, losses: 0, torneos: new Set(), mejor: null, mejorTorneo: null });
+            const a = porDeck.get(s.deck.id);
+            a.jugadores += 1;
+            a.wins += Number(s.record?.wins || 0);
+            a.losses += Number(s.record?.losses || 0);
+            a.torneos.add(r.torneo.id);
+            if (!a.mejor || Number(s.placing || Infinity) < Number(a.mejor.placing || Infinity)) { a.mejor = s; a.mejorTorneo = r.torneo; }
+          }
+        }
+        setArquetipos([...porDeck.values()].map((a) => ({
+          ...a,
+          torneosCount: a.torneos.size,
+          popularidad: Math.round((a.jugadores / (totalJugadores || 1)) * 100),
+          winrate: a.wins + a.losses > 0 ? Math.round((a.wins / (a.wins + a.losses)) * 100) : null,
+        })));
+        setStandingsPorTorneo(standingsPorTorneoLocal);
+      } catch (e) {
+        if (!cancelado) setError(e.message);
+      } finally {
+        if (!cancelado) setCargando(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, []);
+
+  const filtrados = useMemo(() => {
+    let lista = arquetipos;
+    const q = busqueda.trim().toLowerCase();
+    if (q) lista = lista.filter((a) => a.nombre.toLowerCase().includes(q));
+    const [campo, dir] = orden.split("_");
+    const signo = dir === "asc" ? 1 : -1;
+    return [...lista].sort((x, y) => {
+      const vx = campo === "winrate" ? (x.winrate ?? -1) : x.popularidad;
+      const vy = campo === "winrate" ? (y.winrate ?? -1) : y.popularidad;
+      return (vx - vy) * signo;
+    });
+  }, [arquetipos, busqueda, orden]);
+
+  const importarArquetipo = async (a) => {
+    if (!info.competitivo) { onIrAPlanes?.(); return; }
+    if (!a.mejor || !a.mejorTorneo) return;
+    setImportando(a.id); setErrorImportar(null);
+    try {
+      const [mazo] = await sbWrite("POST", "mazos", {
+        perfil_id: session.user.id,
+        nombre: `${a.nombre} (${a.mejorTorneo.name})`,
+        etiquetas: ["Competitivo"],
+        tcg: "pokemon",
+      }, session);
+      await importarDecklistLimitlessEnMazo({
+        session, mazoId: mazo.id, torneoId: a.mejorTorneo.id,
+        jugador: a.mejor.player || a.mejor.name,
+        standingsYaObtenidos: standingsPorTorneo[a.mejorTorneo.id],
+      });
+    } catch (e) { setErrorImportar(e.message); } finally { setImportando(null); }
+  };
+
   return (
     <div>
-      <div className="flex gap-2 mb-6 flex-wrap">
-        <button onClick={() => setTab("mios")}
-          style={{
-            background: tab === "mios" ? COLORS.surface2 : "transparent",
-            border: `1px solid ${tab === "mios" ? COLORS.azulPalido : COLORS.surface2}`,
-            color: tab === "mios" ? COLORS.azulPalido : COLORS.muted,
-          }}
-          className="rounded-lg px-4 py-2 text-sm font-semibold">🧩 Mis mazos</button>
-        <button onClick={() => setTab("buscar")}
-          style={{
-            background: tab === "buscar" ? COLORS.surface2 : "transparent",
-            border: `1px solid ${tab === "buscar" ? COLORS.azulPalido : COLORS.surface2}`,
-            color: tab === "buscar" ? COLORS.azulPalido : COLORS.muted,
-          }}
-          className="rounded-lg px-4 py-2 text-sm font-semibold">🃏 Buscar en el mercado</button>
-        <button onClick={() => setTab("competitivo")}
-          style={{
-            background: tab === "competitivo" ? COLORS.surface2 : "transparent",
-            border: `1px solid ${tab === "competitivo" ? COLORS.azulPalido : COLORS.surface2}`,
-            color: tab === "competitivo" ? COLORS.azulPalido : COLORS.muted,
-          }}
-          className="rounded-lg px-4 py-2 text-sm font-semibold">🏆 Competitivo</button>
+      <p style={{ color: COLORS.muted }} className="text-xs mb-4">Ranking agregado de los últimos {TORNEOS_MUESTRA_DECKS} torneos de Pokémon TCG en Limitless.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+      {errorImportar && <div className="mb-4"><ErrorBox message={errorImportar} /></div>}
+      <div className="flex gap-2 flex-wrap mb-4">
+        <input placeholder="Buscar arquetipo (ej. Charizard, Gholdengo)" value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+          style={inputStyle} className="rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" />
+        <select value={orden} onChange={(e) => setOrden(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm">
+          <option value="popularidad_desc">Más populares primero</option>
+          <option value="popularidad_asc">Menos populares primero</option>
+          <option value="winrate_desc">Mejor winrate primero</option>
+          <option value="winrate_asc">Peor winrate primero</option>
+        </select>
       </div>
-      {tab === "mios" ? (
-        session ? (
-          <MazosView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} onAbrirDetalle={onAbrirDetalle} />
-        ) : (
-          <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">Inicia sesión para armar y guardar tus mazos.</p>
-        )
-      ) : tab === "buscar" ? (
-        <ArmarMazoView session={session} onAbrirChat={onAbrirChat} onVerTienda={onVerTienda} />
+      {cargando ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Cargando decks...</p>
+      ) : filtrados.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">{arquetipos.length === 0 ? "No hay decks identificados en los torneos recientes." : "Ningún deck coincide con tu búsqueda."}</p>
       ) : (
-        <CompetitivoView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} onAbrirDetalle={onAbrirDetalle} />
+        <div className="grid gap-3">
+          {filtrados.map((a) => (
+            <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
+              <div className="flex items-center gap-3 flex-wrap">
+                <IconosArquetipo icons={a.icons} />
+                <button onClick={() => setAbierto((v) => (v === a.id ? null : a.id))} className="flex-1 min-w-[160px] text-left">
+                  <p className="font-semibold text-sm">{a.nombre}</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs">
+                    {a.popularidad}% popularidad{a.winrate !== null ? ` · ${a.winrate}% winrate` : ""} · visto en {a.torneosCount} torneo{a.torneosCount === 1 ? "" : "s"}
+                  </p>
+                </button>
+                {session && (
+                  <button onClick={() => importarArquetipo(a)} disabled={importando === a.id || !a.mejor}
+                    style={{ background: COLORS.violeta, color: "#fff" }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                    {importando === a.id ? "Importando..." : info.competitivo ? "Importar este mazo" : "🔒 Requiere Zafiro+"}
+                  </button>
+                )}
+                <button onClick={() => setAbierto((v) => (v === a.id ? null : a.id))} style={{ color: COLORS.muted }} className="text-xs">
+                  {abierto === a.id ? "Ocultar cartas ▲" : "Ver cartas ▼"}
+                </button>
+              </div>
+              {abierto === a.id && <DeckCardsGrid decklist={a.mejor?.decklist} />}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompetitivoSection({ session, perfil, onIrAPlanes }) {
+  const [tab, setTab] = useState("torneos");
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🏆 Competitivo</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Torneos recientes de Pokémon TCG (vía Limitless TCG): qué arquetipos se están jugando, su popularidad y su winrate. Importar un mazo real a tu perfil es de Zafiro en adelante.</p>
+      <div className="flex gap-2 mb-6 flex-wrap">
+        <button onClick={() => setTab("torneos")}
+          style={{
+            background: tab === "torneos" ? COLORS.surface2 : "transparent",
+            border: `1px solid ${tab === "torneos" ? COLORS.azulPalido : COLORS.surface2}`,
+            color: tab === "torneos" ? COLORS.azulPalido : COLORS.muted,
+          }}
+          className="rounded-lg px-4 py-2 text-sm font-semibold">🏆 Torneos</button>
+        <button onClick={() => setTab("decks")}
+          style={{
+            background: tab === "decks" ? COLORS.surface2 : "transparent",
+            border: `1px solid ${tab === "decks" ? COLORS.azulPalido : COLORS.surface2}`,
+            color: tab === "decks" ? COLORS.azulPalido : COLORS.muted,
+          }}
+          className="rounded-lg px-4 py-2 text-sm font-semibold">🃏 Decks</button>
+      </div>
+      {tab === "torneos" ? (
+        <CompetitivoTorneosView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
+      ) : (
+        <CompetitivoDecksView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
       )}
     </div>
   );
@@ -14717,6 +14958,7 @@ export default function EncuentraCartas() {
         { id: "torneos", label: "Torneos", icon: Calendar },
         { id: "sorteos", label: "Sorteos", icon: Gift },
         { id: "armarMazo", label: "Armar mazo", icon: Layers },
+        { id: "competitivo", label: "Competitivo", icon: Trophy },
         { id: "comunidad", label: "Comunidad", icon: Newspaper },
         { id: "news", label: "Noticias", icon: Megaphone },
         { id: "busquedas", label: "Cartas que están buscando", icon: Search },
@@ -15896,6 +16138,9 @@ export default function EncuentraCartas() {
 
         {view === "armarMazo" && (
           <ArmarMazoSection session={session} perfil={perfil} onAbrirChat={abrirChat} onVerTienda={verTiendaDesdePerfil} onIrAPlanes={() => setView("planes")} onAbrirDetalle={abrirDetalle} />
+        )}
+        {view === "competitivo" && (
+          <CompetitivoSection session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />
         )}
         {view === "comunidad" && <ComunidadView session={session} onVerPerfil={verPerfil} />}
         {view === "busquedas" && (

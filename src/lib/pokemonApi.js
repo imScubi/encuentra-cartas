@@ -1210,28 +1210,62 @@ export function parsearDecklistLimitless(decklist) {
   return cartas;
 }
 
-// Resuelve una carta de un decklist de Limitless contra el catálogo ya
-// integrado (apitcg.com/pokemontcg.io vía buscarCartasCatalogo) para
-// conseguirle card_api_id/imagen -- si no encuentra nada confiable,
-// regresa null y la carta se guarda solo con su nombre (igual que ya pasa
-// con el importador de texto plano cuando no hay match).
+// Resuelve una carta de un decklist de Limitless contra el catálogo para
+// conseguirle card_api_id/imagen -- si no encuentra nada confiable, regresa
+// null y la carta se guarda solo con su nombre (igual que ya pasa con el
+// importador de texto plano cuando no hay match).
+//
+// A propósito usa buscarCartasVisual (pokemontcg.io + TCGdex de respaldo)
+// en vez de buscarCartasCatalogo -- esta última prueba apitcg.com primero,
+// y la pestaña "Decks" de Competitivo puede resolver el arte de varios
+// mazos completos (~15-20 cartas cada uno) solo con que alguien los abra,
+// así que conviene no cargarle tráfico extra a apitcg.com (nuestra fuente
+// principal, de paga) por algo que pokemontcg.io/TCGdex (gratis) ya
+// resuelven bien para Pokémon. Se cachea en memoria por nombre+número
+// porque cartas muy jugadas (ej. "Professor's Research") se repiten en
+// casi todos los mazos que se abran en la misma sesión.
+const _cacheCartaLimitless = new Map();
 export async function resolverCartaLimitless(nombre, numero, signal) {
+  const clave = `${nombre.trim().toLowerCase()}::${numero || ""}`;
+  if (_cacheCartaLimitless.has(clave)) return _cacheCartaLimitless.get(clave);
   try {
-    const resultados = await buscarCartasCatalogo("pokemon", nombre, signal);
-    if (!resultados.length) return null;
+    const resultados = await buscarCartasVisual(nombre, 8, signal);
+    if (!resultados.length) { _cacheCartaLimitless.set(clave, null); return null; }
     let elegido = resultados[0];
     if (numero) {
       const numLower = String(numero).toLowerCase();
       const match = resultados.find((c) => c.localId?.toLowerCase() === numLower || c.localId?.toLowerCase().startsWith(numLower));
       if (match) elegido = match;
     }
-    return {
+    const resuelta = {
       card_api_id: elegido.id,
       imagen_url: elegido.image || null,
       set_nombre: `${elegido.setName} ${elegido.localId}${elegido.setTotal ? "/" + elegido.setTotal : ""}`.trim(),
     };
+    if (_cacheCartaLimitless.size > 300) _cacheCartaLimitless.clear();
+    _cacheCartaLimitless.set(clave, resuelta);
+    return resuelta;
   } catch (e) {
     if (e?.name === "AbortError") throw e;
     return null;
   }
+}
+
+// Resuelve un decklist completo de Limitless (parseo + catálogo por cada
+// carta) -- lo comparten tanto la importación real a un mazo (App.jsx,
+// importarDecklistLimitlessEnMazo) como la vista visual de solo lectura de
+// un arquetipo en la pestaña Competitivo (sección "Decks"), para no tener
+// la misma lógica de parseo/resolución escrita dos veces.
+export async function resolverDecklistLimitless(decklistRaw, signal) {
+  const cartas = parsearDecklistLimitless(decklistRaw);
+  return Promise.all(cartas.map(async (c) => {
+    const match = await resolverCartaLimitless(c.nombre, c.numero, signal).catch(() => null);
+    return {
+      nombre: c.nombre,
+      cantidad: c.cantidad,
+      set_nombre: match?.set_nombre || c.set || c.numero || null,
+      card_api_id: match?.card_api_id || null,
+      imagen_url: match?.imagen_url || null,
+    };
+  }));
 }
