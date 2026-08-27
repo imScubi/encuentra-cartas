@@ -4715,40 +4715,38 @@ siempre la campana genérica -- ahora es elegible en Apariencia.
 
 - **`theme.js`**: nueva llave `TEMA_ICONO_KEY` (mismo patrón que
   `TEMA_MODO_KEY`/`TEMA_TIPO_KEY`, se guarda en `localStorage`).
-- **`lib/icons.jsx`**: 5 emblemas nuevos -- `EmblemaPokemon` (pokébola,
-  ícono de trazo), `EmblemaMagic`, `EmblemaOnePiece` (brújula),
-  `EmblemaRiftbound` (remolino de 5 aspas) y `EmblemaLorcana` (diamante +
-  alas), estos 4 últimos como figura sólida (`crearIconoSolido`, nuevo
-  helper hermano de `crearIcono` con `fill=color`/`stroke="none"` en vez
-  de trazo). **Importante:** el dueño compartió 5 imágenes de referencia
-  en el chat, pero este entorno no tuvo forma de guardarlas como archivo
-  (no aparecieron en la carpeta de subidas) -- estos 5 son aproximaciones
-  dibujadas a mano a partir de lo que se alcanzó a ver en la conversación,
-  no una copia exacta pixel por pixel de esos archivos. Pokémon, Magic y
-  One Piece salieron razonablemente fieles; Riftbound salió bien
-  (el remolino de 5 aspas se ve limpio); Lorcana es la más alejada del
-  original (el emblema real es más ornamentado). Si el dueño logra
-  compartir los archivos reales más adelante (por ejemplo adjuntándolos
-  como archivo en vez de pegarlos), reemplazar el `innerSvg` de cada uno
-  en `lib/icons.jsx` es todo el cambio que hace falta -- el resto del
-  sistema (selector, guardado, aplicar en el botón) ya no se toca.
-- **`App.jsx`**: `ICONOS_NOTIFICACION_TCG` (lista `{key, label, Icono}`,
+- **`public/notificaciones/*.png`**: los 5 emblemas oficiales que mandó
+  el dueño (`pokemon.png`, `magic.png`, `onepiece.png`, `riftbound.png`,
+  `lorcana.png`), 500×500, silueta negra sobre transparente. Un primer
+  intento de mandarlos pegándolos directo en el chat no llegó como
+  archivo a este entorno (no había forma de leerlos del disco, así que
+  se intentó con aproximaciones dibujadas a mano -- descartadas por
+  completo en esta misma sesión en cuanto sí se pudieron recuperar los
+  archivos reales, extrayéndolos del propio historial de la conversación
+  ya que ahí sí quedan embebidos).
+- **`App.jsx`**: `ICONOS_NOTIFICACION_TCG` (lista `{key, label, img}`,
   junto a `NotificationBell`) es el único lugar que hay que tocar para
-  agregar un TCG nuevo al selector. `IconoNotificacionFlotante` lee
-  `TEMA_ICONO_KEY` de `localStorage` en cada render (igual que el logo
-  día/noche) y muestra el emblema correspondiente, o la campana si no
-  hay ninguno elegido.
-- **`AparienciaView`**: nueva sección "Ícono de notificaciones" (gratis
-  para cualquier plan, como el modo día/noche) con un botón por emblema;
-  al elegir uno se guarda y se aplica de inmediato (mismo `onCambio()` →
+  agregar un TCG nuevo al selector -- solo hace falta su PNG en
+  `public/notificaciones/` y una entrada aquí. `EmblemaNotificacionImg`
+  envuelve cada PNG en una "moneda" clara fija (no cambia con el tema)
+  para que la silueta negra se siga viendo bien sin importar si el modo
+  día/noche o el tinte por tipo de Pokémon oscurece el fondo del botón.
+  `IconoNotificacionFlotante` lee `TEMA_ICONO_KEY` de `localStorage` en
+  cada render (igual que el logo día/noche) y muestra el emblema
+  correspondiente, o la campana genérica si no hay ninguno elegido.
+- **`AparienciaView`**: sección "Ícono de notificaciones" (gratis para
+  cualquier plan, como el modo día/noche) con un botón por emblema; al
+  elegir uno se guarda y se aplica de inmediato (mismo `onCambio()` →
   `setTemaVersion` que ya usan modo/tipo para forzar que toda la app
   vuelva a leer `localStorage`).
 
-Verificado renderizando los 5 SVG por separado (fuera de la app, con
-Playwright) para confirmar que cada trazo/figura se ve bien antes de
-integrarlos -- el flujo completo (elegir en Apariencia → aplicar en el
-botón flotante) no se pudo probar de punta a punta en este sandbox
-porque Apariencia requiere sesión iniciada y aquí no hay forma de
+Verificado: los 5 PNG se decodificaron y se confirmaron 500×500 con
+fondo transparente antes de copiarlos al repo, y se armó una previsualización
+fuera de la app (Playwright, sobre el color de fondo real del botón) para
+confirmar que la "moneda" clara detrás de cada emblema se ve bien en modo
+noche. El flujo completo dentro de la app (elegir en Apariencia → ver el
+cambio en el botón flotante) no se pudo probar de punta a punta en este
+sandbox porque Apariencia requiere sesión iniciada y aquí no hay forma de
 loguearse contra el Supabase real.
 
 ## Qué falta / próximos pasos posibles
