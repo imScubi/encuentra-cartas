@@ -8159,9 +8159,13 @@ const TORNEOS_MUESTRA_DECKS = 6;
 
 // Grid visual de las cartas de un decklist -- carga perezosa (solo cuando
 // se expande un mazo/arquetipo) y usa resolverDecklistLimitless, que a su
-// vez resuelve cada carta contra pokemontcg.io/TCGdex (nunca apitcg.com,
-// ver el comentario en pokemonApi.js) para no cargarle tráfico extra a
-// nuestra fuente principal de pago solo por mostrar el arte de un mazo.
+// vez resuelve cada carta por set+número EXACTOS contra pokemontcg.io
+// (nunca por nombre solo, y nunca apitcg.com -- ver el comentario en
+// pokemonApi.js) para nunca mostrar la impresión equivocada de una carta
+// (ej. una edición vieja que ya no es legal en Estándar). Una carta sin
+// esa impresión exacta en pokemontcg.io se muestra sin imagen en vez de
+// adivinar -- el nombre real siempre es correcto (viene de Limitless),
+// solo puede faltar el arte.
 function DeckCardsGrid({ decklist }) {
   const [cartas, setCartas] = useState(null);
   const [error, setError] = useState(null);
