@@ -1289,33 +1289,88 @@ async function buscarCartaExactaPokemonTCG(setCode, numero, signal) {
   }
 }
 
+// Respaldo EXACTO en TCGdex para cuando pokemontcg.io (legado, ver sección
+// 128) todavía no tiene esa impresión -- TCGdex se sigue actualizando y
+// suele tener sets/promos recientes antes. Sigue siendo por set+número,
+// nunca por nombre: TCGdex expone el mismo código corto de Play! Pokémon
+// Online que usa Limitless como `tcgOnline` en cada set (se prueban un par
+// de nombres de campo alternativos por si acaso, mismo criterio defensivo
+// que ya usa normalizarCartaLimitless -- si ninguno pega, este respaldo
+// simplemente no encuentra nada, nunca adivina). La lista de sets se
+// cachea en memoria (casi no cambia en lo que dura la sesión).
+let _setsTCGdexCache = null;
+async function obtenerSetsTCGdex(signal) {
+  if (_setsTCGdexCache) return _setsTCGdexCache;
+  try {
+    const res = await fetch("https://api.tcgdex.net/v2/en/sets", { signal });
+    if (!res.ok) return [];
+    const sets = await res.json();
+    _setsTCGdexCache = Array.isArray(sets) ? sets : [];
+    return _setsTCGdexCache;
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return [];
+  }
+}
+
+async function buscarCartaExactaTCGdex(setCode, numero, signal) {
+  if (!setCode || !numero) return null;
+  try {
+    const sets = await obtenerSetsTCGdex(signal);
+    const codigoLower = setCode.toLowerCase();
+    const set = sets.find((s) => (s.tcgOnline || s.ptcgoCode || s.code || "").toLowerCase() === codigoLower);
+    if (!set) return null;
+    const res = await fetch(`https://api.tcgdex.net/v2/en/sets/${set.id}`, { signal });
+    if (!res.ok) return null;
+    const detalle = await res.json();
+    const numeroLimpio = String(numero).trim();
+    const brief = (detalle?.cards || []).find((c) => String(c.localId) === numeroLimpio);
+    if (!brief) return null;
+    const full = await fetch(`https://api.tcgdex.net/v2/en/cards/${brief.id}`, { signal }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (!full) return null;
+    const total = full.set?.cardCount?.official || full.set?.cardCount?.total || "";
+    return {
+      id: full.id, name: full.name, localId: full.localId,
+      setName: full.set?.name || set.name || "",
+      setTotal: total,
+      image: full.image ? `${full.image}/high.webp` : null,
+    };
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return null;
+  }
+}
+
 // Resuelve una carta de un decklist de Limitless contra el catálogo para
-// conseguirle card_api_id/imagen. A PROPÓSITO exige set+número exactos
-// (buscarCartaExactaPokemonTCG) en vez de adivinar por nombre: mostrar la
-// impresión equivocada de una carta (ej. una vieja que ya no es legal en
-// Estándar, cuando el mazo real lleva la reimpresión reciente) es peor que
-// no mostrar imagen -- si no hay set+número, o esa impresión exacta
-// todavía no está en pokemontcg.io (le puede tardar en tener sets recién
-// salidos, ver sección 128 de SUSCRIPCIONES.md), la carta se guarda solo
-// con su nombre, sin adivinar, igual que ya pasa con el importador de
-// texto plano cuando no hay match.
+// conseguirle card_api_id/imagen. A PROPÓSITO exige set+número exactos en
+// vez de adivinar por nombre: mostrar la impresión equivocada de una carta
+// (ej. una vieja que ya no es legal en Estándar, cuando el mazo real lleva
+// la reimpresión reciente) es peor que no mostrar imagen. Primero
+// pokemontcg.io (buscarCartaExactaPokemonTCG); si esa impresión todavía no
+// está ahí (le puede tardar en tener sets recién salidos, ver sección 128),
+// se intenta TCGdex (buscarCartaExactaTCGdex) como segundo respaldo -- las
+// dos son búsquedas EXACTAS por set+número, nunca por nombre, así que
+// agregar esta segunda fuente no reabre el riesgo de mostrar la carta
+// equivocada (ver sección 151). Si ninguna de las dos la tiene, la carta
+// se guarda solo con su nombre, sin adivinar, igual que ya pasa con el
+// importador de texto plano cuando no hay match.
 //
-// Usa pokemontcg.io (no buscarCartasCatalogo, que prueba apitcg.com
-// primero) porque la pestaña "Decks" de Competitivo puede resolver el
-// arte de varios mazos completos (~15-20 cartas cada uno) solo con que
-// alguien los abra, así que conviene no cargarle tráfico extra a
-// apitcg.com (nuestra fuente principal, de paga) por algo que
-// pokemontcg.io (gratis) ya resuelve con exactitud para Pokémon. Se
-// cachea en memoria por set+número porque cartas muy jugadas (ej.
-// "Professor's Research") se repiten en casi todos los mazos que se
-// abran en la misma sesión.
+// Ninguna de las dos es apitcg.com (que sí prueba buscarCartasCatalogo)
+// porque la pestaña "Decks" de Competitivo puede resolver el arte de
+// varios mazos completos (~15-20 cartas cada uno) solo con que alguien los
+// abra, así que conviene no cargarle tráfico extra a apitcg.com (nuestra
+// fuente principal, de paga) por algo que dos fuentes gratis ya resuelven
+// con exactitud para Pokémon. Se cachea en memoria por set+número porque
+// cartas muy jugadas (ej. "Professor's Research") se repiten en casi
+// todos los mazos que se abran en la misma sesión.
 const _cacheCartaLimitless = new Map();
 export async function resolverCartaLimitless(set, numero, signal) {
   const clave = `${(set || "").trim().toUpperCase()}::${(numero || "").trim()}`;
   if (!set || !numero) return null;
   if (_cacheCartaLimitless.has(clave)) return _cacheCartaLimitless.get(clave);
   try {
-    const elegido = await buscarCartaExactaPokemonTCG(set, numero, signal);
+    let elegido = await buscarCartaExactaPokemonTCG(set, numero, signal);
+    if (!elegido) elegido = await buscarCartaExactaTCGdex(set, numero, signal);
     if (!elegido) { _cacheCartaLimitless.set(clave, null); return null; }
     const resuelta = {
       card_api_id: elegido.id,
