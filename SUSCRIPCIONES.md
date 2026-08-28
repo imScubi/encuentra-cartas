@@ -5014,6 +5014,52 @@ navegación Paso 1 → Paso 2 funciona y degrada a "no pudimos cargar" en
 vez de quedarse en blanco -- no se pudo probar con datos reales porque
 apitcg.com no es alcanzable desde este sandbox).
 
+## 153. Segundo respaldo EXACTO (TCGdex) para el arte de cartas de Limitless
+
+Seguimiento de la sección 151: el dueño probó el arte visual de un mazo
+real de Competitivo y varias cartas (Drakloak, Dragapult ex, Meowth ex)
+seguían sin imagen -- pokemontcg.io (legado, no recibe sets/promos
+nuevos, ver sección 128) simplemente no tenía esa impresión exacta
+todavía, aunque el set+número sí eran correctos.
+
+`resolverCartaLimitless` ahora prueba una SEGUNDA fuente antes de
+rendirse: `buscarCartaExactaTCGdex(set, numero, signal)`, que hace
+exactamente el mismo tipo de búsqueda EXACTA por set+número que
+`buscarCartaExactaPokemonTCG`, solo que contra TCGdex (que se sigue
+actualizando y suele tener sets/promos recientes antes que pokemontcg.io).
+TCGdex expone el mismo código corto de Play! Pokémon Online que usa
+Limitless como el campo `tcgOnline` de cada set -- se busca el set con
+ese código, se busca la carta por `localId` exacto dentro de sus cartas,
+y se pide el detalle completo (imagen incluida), mismo patrón de doble
+petición que ya usaba el respaldo de TCGdex para el buscador de publicar
+(`buscarCartasVisualTCGdexIdioma`).
+
+**Sigue sin haber riesgo de mostrar la carta equivocada** (la prioridad
+que pidió el dueño en la sección 151): las dos fuentes son búsquedas
+exactas por set+número, nunca por nombre -- si ninguna de las dos tiene
+esa impresión, la carta se sigue guardando sin imagen en vez de adivinar.
+Se cachea la lista de sets de TCGdex en memoria (una sola petición por
+sesión) y el nombre del campo `tcgOnline` se prueba con un par de
+alternativas razonables (`ptcgoCode`, `code`) por si acaso -- si el
+nombre real fuera otro, este respaldo simplemente no encuentra nada
+(igual que hoy), nunca rompe ni empeora lo que ya funcionaba.
+
+**Honesto**: si una carta sigue sin imagen incluso con las dos fuentes,
+es porque de verdad no está en ninguna de las dos todavía (una impresión
+recién salida) -- no hay una tercera fuente EXACTA fácil de agregar hoy
+(apitcg.com no tiene un campo equivalente al código corto de Limitless
+sin antes resolver el nombre completo del set, que no tenemos). Si esto
+sigue pasando seguido, la siguiente idea sería: cuando OTRA carta del
+MISMO set dentro del mismo mazo sí se resuelva por pokemontcg.io/TCGdex,
+reusar el nombre real de ese set (que sí conocemos en ese momento) para
+buscar en apitcg.com por nombre completo -- no implementado todavía,
+para no complicar esto de más sin evidencia de que hace falta.
+
+Verificado con `npm run build`. No se pudo probar contra TCGdex real en
+este sandbox (egress bloqueado hacia `api.tcgdex.net` aquí también) --
+falta confirmar en producción que el campo `tcgOnline` es el correcto y
+que las cartas que fallaban ahora sí traen imagen.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
