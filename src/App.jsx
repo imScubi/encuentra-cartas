@@ -11593,7 +11593,10 @@ function SorteoCard({ s, onAbrir }) {
         {s.imagen_url ? <img src={s.imagen_url} alt={s.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Gift size={32} color={COLORS.muted} />}
       </div>
       <div className="p-3">
-        <Badge color={activo ? COLORS.gold : COLORS.muted}>{sorteoEstadoLabel(s)}</Badge>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Badge color={activo ? COLORS.gold : COLORS.muted}>{sorteoEstadoLabel(s)}</Badge>
+          {s.exclusivo && <Badge color={COLORS.violeta}>🔒 Exclusivo</Badge>}
+        </div>
         <p className="font-semibold text-sm mt-1">{s.titulo}</p>
         <p style={{ color: COLORS.gold }} className="text-xs mt-1">🎁 {s.premio}</p>
         <p style={{ color: COLORS.muted }} className="text-xs mt-1">{s.tiendas?.nombre ? `Organiza: ${s.tiendas.nombre}` : "Organiza: Encuentra Cartas"}</p>
@@ -11675,11 +11678,29 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
   const esOrganizador = !!(session && sorteo && (sorteo.perfil_id === session.user.id || perfil?.es_admin));
   const totalBoletos = participantes.reduce((acc, p) => acc + p.boletos, 0);
 
+  // Sorteo exclusivo (ver migración 077): ¿esta visita trae guardado el
+  // código de campaña de ESTE sorteo? Se guardó en sessionStorage al
+  // abrir el link con ?c=... (ver el efecto de parseo de URL en el
+  // componente raíz) -- se compara contra sorteoId para que un código
+  // viejo de otro sorteo que alguien haya visitado antes en la misma
+  // pestaña nunca "se cuele" aquí.
+  let llegoPorCampana = false;
+  if (sorteo?.exclusivo) {
+    try {
+      const stash = JSON.parse(sessionStorage.getItem("ec_campana_pendiente") || "null");
+      llegoPorCampana = !!(stash?.sorteoId === sorteoId && stash?.codigo && sorteo.codigo_campana && stash.codigo.toUpperCase() === sorteo.codigo_campana.toUpperCase());
+    } catch {}
+  }
+
   const participar = async () => {
     if (!session) { onRequireLogin(); return; }
     setUniendome(true); setError(null);
     try {
-      await sbWrite("POST", "sorteo_participantes", { sorteo_id: sorteoId, perfil_id: session.user.id }, session);
+      if (sorteo.exclusivo) {
+        await sbWrite("POST", "rpc/sorteo_unirse_por_campana", { p_codigo: sorteo.codigo_campana }, session);
+      } else {
+        await sbWrite("POST", "sorteo_participantes", { sorteo_id: sorteoId, perfil_id: session.user.id }, session);
+      }
       cargar();
     } catch (e) { setError(e.message); } finally { setUniendome(false); }
   };
@@ -11786,6 +11807,7 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-5">
           <div className="flex items-center gap-2 flex-wrap mb-2">
             <Badge color={activo ? COLORS.gold : COLORS.muted}>{sorteoEstadoLabel(sorteo)}</Badge>
+            {sorteo.exclusivo && <Badge color={COLORS.violeta}>🔒 Exclusivo por campaña</Badge>}
             {sorteo.destacado && activo && <Badge color={COLORS.violeta}>⭐ Destacado en Inicio</Badge>}
             <p style={{ color: COLORS.muted }} className="text-xs">{sorteo.tiendas?.nombre ? `Organiza: ${sorteo.tiendas.nombre}` : "Organiza: Encuentra Cartas"}</p>
           </div>
@@ -11796,6 +11818,14 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
             {activo ? `Termina: ${new Date(sorteo.fecha_fin).toLocaleString("es-MX")}` : `Terminó: ${new Date(sorteo.fecha_fin).toLocaleString("es-MX")}`}
             {" · "}{participantes.length} participante{participantes.length === 1 ? "" : "s"} · {totalBoletos} boleto{totalBoletos === 1 ? "" : "s"} en total
           </p>
+
+          {sorteo.exclusivo && (
+            <div style={{ background: `${COLORS.violeta}11`, border: `1px solid ${COLORS.violeta}55` }} className="rounded-xl p-4 mb-4">
+              <p style={{ color: COLORS.violeta }} className="text-sm">
+                🔒 Este es un sorteo exclusivo: solo puede participar quien se unió a través del link o código especial de la campaña. Cualquiera puede ver aquí la lista completa de participantes y, al cerrar el sorteo, quién ganó -- para que sea totalmente transparente.
+              </p>
+            </div>
+          )}
 
           {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
@@ -11831,7 +11861,26 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
             </div>
           )}
 
-          {activo && (
+          {activo && sorteo.exclusivo && (
+            <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-3">
+              {miParticipacion ? (
+                <p className="text-sm">
+                  Ya participas con <strong style={{ color: COLORS.gold }}>{miParticipacion.boletos} boleto{miParticipacion.boletos === 1 ? "" : "s"}</strong>.
+                </p>
+              ) : llegoPorCampana ? (
+                <button onClick={participar} disabled={uniendome}
+                  style={{ background: COLORS.violeta, color: "#fff" }} className="rounded-xl py-3 text-sm font-bold w-full">
+                  {uniendome ? "Uniéndote..." : session ? "🎉 Reclamar mi lugar" : "Crea tu cuenta o inicia sesión para reclamar tu lugar"}
+                </button>
+              ) : (
+                <p style={{ color: COLORS.muted }} className="text-sm">
+                  🔒 Solo puedes participar en este sorteo a través del link o código especial de la campaña -- no hay forma de unirte desde aquí.
+                </p>
+              )}
+            </div>
+          )}
+
+          {activo && !sorteo.exclusivo && (
             <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-3">
               {!miParticipacion ? (
                 <button onClick={participar} disabled={uniendome}
@@ -11861,6 +11910,10 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
             </div>
           )}
 
+          {esOrganizador && sorteo.exclusivo && sorteo.codigo_campana && (
+            <div className="mb-4"><CampanaLinkBox sorteoId={sorteo.id} codigo={sorteo.codigo_campana} /></div>
+          )}
+
           {esOrganizador && activo && (
             <div className="flex gap-2 flex-wrap mb-6">
               <button onClick={elegirGanador} disabled={eligiendo}
@@ -11880,7 +11933,7 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
 
           {participantes.length > 0 && (
             <div>
-              <h3 style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Participantes</h3>
+              <h3 style={{ color: COLORS.muted }} className="text-xs font-semibold uppercase mb-2">Participantes {sorteo.exclusivo && "-- lista pública, para que sea transparente"}</h3>
               <div className="grid gap-1.5 max-h-64 overflow-y-auto">
                 {participantes.map((p) => (
                   <div key={p.id} className="flex items-center gap-2">
@@ -11903,6 +11956,52 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
   );
 }
 
+// Genera un código corto tipo "A3F9K2" para un sorteo exclusivo (ver
+// migración 077) -- editable, es solo un punto de partida cómodo (el
+// organizador puede cambiarlo por algo tipo "TIKTOK1" a mano).
+function generarCodigoCampana() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+// Link + QR de un sorteo exclusivo -- SOLO para el organizador (nunca se
+// muestra en la página pública del sorteo, ver SorteoDetalleView): si
+// cualquier visitante pudiera verlo, cualquiera podría copiar el código
+// sin haber visto el video, tumbando el propósito de "exclusivo por
+// campaña". Usa una API pública de QR (sin llave, una sola petición GET)
+// en vez de agregar una librería nueva -- la app ya confía en imágenes de
+// terceros vía <img src> en todos lados (pokemontcg.io, Scryfall,
+// TCGdex...) y hoy no tiene ninguna dependencia de generar QR. El botón
+// de copiar el link YA es el respaldo si la imagen del QR no carga.
+function CampanaLinkBox({ sorteoId, codigo }) {
+  const [copiado, setCopiado] = useState(false);
+  const link = `${window.location.origin}/?sorteo=${sorteoId}&c=${codigo}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(link)}`;
+  const copiar = async () => {
+    try { await navigator.clipboard.writeText(link); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch {}
+  };
+  return (
+    <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.violeta}55` }} className="rounded-xl p-4 grid gap-2 sm:grid-cols-[auto_1fr] items-start">
+      <img src={qrUrl} alt="" width={140} height={140} className="rounded-lg" style={{ background: "#fff" }}
+        onError={(e) => { e.target.style.display = "none"; }} />
+      <div className="grid gap-2">
+        <p style={{ color: COLORS.violeta }} className="text-xs font-semibold uppercase">🔒 Link exclusivo de campaña</p>
+        <p style={{ color: COLORS.muted }} className="text-xs">
+          Pega este link (o el QR) en la descripción de tu video -- solo quien entre por aquí puede participar en este sorteo.
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <code style={{ background: COLORS.bg, color: COLORS.text }} className="rounded-lg px-2 py-1.5 text-xs break-all">{link}</code>
+          <button onClick={copiar} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1 whitespace-nowrap">
+            <Copy size={12} /> {copiado ? "¡Copiado!" : "Copiar link"}
+          </button>
+          <a href={qrUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+            Ver/descargar QR
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Formulario para organizar un sorteo -- se usa tanto en AdminPanel
 // (tiendaId=null, "Encuentra Cartas" como organizador) como en MyStorePanel
 // (tiendaId de la tienda del dueño, Aurora o afiliada).
@@ -11918,12 +12017,13 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
 // se vuelva a montar y tome los valores iniciales.
 function CrearSorteoForm({ session, tiendaId, pendiente, plantilla, onCreado }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
-  const vacio = { titulo: "", descripcion: "", premio: "", imagen_url: "", fecha_fin: "", entrada_por_publicacion: false };
+  const vacio = { titulo: "", descripcion: "", premio: "", imagen_url: "", fecha_fin: "", entrada_por_publicacion: false, exclusivo: false, codigo_campana: "" };
   const [nuevo, setNuevo] = useState(() => ({ ...vacio, ...(plantilla || {}), fecha_fin: "" }));
   const [subiendoImagen, setSubiendoImagen] = useState(false);
   const [creando, setCreando] = useState(false);
   const [error, setError] = useState(null);
   const [ok, setOk] = useState(false);
+  const [creado, setCreado] = useState(null); // fila recién creada, solo para mostrar su link/QR si es exclusivo
 
   const subirImagen = async (file) => {
     setSubiendoImagen(true); setError(null);
@@ -11933,11 +12033,15 @@ function CrearSorteoForm({ session, tiendaId, pendiente, plantilla, onCreado }) 
     } catch (e) { setError(e.message); } finally { setSubiendoImagen(false); }
   };
 
+  const alternarExclusivo = (checked) => {
+    setNuevo((n) => ({ ...n, exclusivo: checked, codigo_campana: checked && !n.codigo_campana ? generarCodigoCampana() : n.codigo_campana }));
+  };
+
   const crear = async () => {
     if (!nuevo.titulo.trim() || !nuevo.premio.trim() || !nuevo.fecha_fin) return;
-    setCreando(true); setError(null); setOk(false);
+    setCreando(true); setError(null); setOk(false); setCreado(null);
     try {
-      await sbWrite("POST", "sorteos", {
+      const [fila] = await sbWrite("POST", "sorteos", {
         perfil_id: session.user.id,
         tienda_id: tiendaId || null,
         titulo: nuevo.titulo.trim(),
@@ -11945,11 +12049,16 @@ function CrearSorteoForm({ session, tiendaId, pendiente, plantilla, onCreado }) 
         premio: nuevo.premio.trim(),
         imagen_url: nuevo.imagen_url || null,
         fecha_fin: new Date(nuevo.fecha_fin).toISOString(),
-        entrada_por_publicacion: nuevo.entrada_por_publicacion,
+        // "exclusivo" ya excluye los bonos de siempre (compartir/publicar) --
+        // ver migración 077, se ignoran del lado del servidor de todos modos.
+        entrada_por_publicacion: nuevo.exclusivo ? false : nuevo.entrada_por_publicacion,
+        exclusivo: nuevo.exclusivo,
+        codigo_campana: nuevo.exclusivo ? (nuevo.codigo_campana.trim().toUpperCase() || generarCodigoCampana()) : null,
         ...(pendiente ? { estado: "pendiente" } : {}),
       }, session);
       setNuevo(vacio);
       setOk(true);
+      setCreado(fila || null);
       onCreado?.();
     } catch (e) { setError(e.message); } finally { setCreando(false); }
   };
@@ -11964,6 +12073,9 @@ function CrearSorteoForm({ session, tiendaId, pendiente, plantilla, onCreado }) 
       )}
       {error && <ErrorBox message={error} />}
       {ok && <p style={{ color: COLORS.gold }} className="text-xs">{pendiente ? "Sorteo enviado a revisión." : "Sorteo publicado."}</p>}
+      {creado?.exclusivo && creado?.codigo_campana && (
+        <div className="mb-2"><CampanaLinkBox sorteoId={creado.id} codigo={creado.codigo_campana} /></div>
+      )}
       <input placeholder="Título del sorteo" value={nuevo.titulo} onChange={(e) => setNuevo({ ...nuevo, titulo: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
       <input placeholder="Premio (ej. Booster box de Prismatic Evolutions)" value={nuevo.premio} onChange={(e) => setNuevo({ ...nuevo, premio: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
       <textarea placeholder="Descripción / reglas (opcional)" value={nuevo.descripcion} onChange={(e) => setNuevo({ ...nuevo, descripcion: e.target.value })} rows={2} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
@@ -11975,10 +12087,22 @@ function CrearSorteoForm({ session, tiendaId, pendiente, plantilla, onCreado }) 
         </label>
         {nuevo.imagen_url && <img src={nuevo.imagen_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />}
       </div>
-      <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: COLORS.muted }}>
-        <input type="checkbox" checked={nuevo.entrada_por_publicacion} onChange={(e) => setNuevo({ ...nuevo, entrada_por_publicacion: e.target.checked })} />
-        Cada carta que un usuario publique en el Mercado mientras el sorteo esté activo le suma +1 boleto extra (si publica 5, gana 5 boletos).
+      <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: COLORS.violeta }}>
+        <input type="checkbox" checked={nuevo.exclusivo} onChange={(e) => alternarExclusivo(e.target.checked)} />
+        🔒 Sorteo exclusivo (solo entra quien llegue por el link/código de tu campaña, ej. un video en redes)
       </label>
+      {nuevo.exclusivo && (
+        <div>
+          <p style={{ color: COLORS.muted }} className="text-xs mb-1">Código de campaña (se usa para armar el link -- puedes cambiarlo, ej. "TIKTOK1")</p>
+          <input value={nuevo.codigo_campana} onChange={(e) => setNuevo({ ...nuevo, codigo_campana: e.target.value.toUpperCase() })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit font-mono" />
+        </div>
+      )}
+      {!nuevo.exclusivo && (
+        <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: COLORS.muted }}>
+          <input type="checkbox" checked={nuevo.entrada_por_publicacion} onChange={(e) => setNuevo({ ...nuevo, entrada_por_publicacion: e.target.checked })} />
+          Cada carta que un usuario publique en el Mercado mientras el sorteo esté activo le suma +1 boleto extra (si publica 5, gana 5 boletos).
+        </label>
+      )}
       <div>
         <p style={{ color: COLORS.muted }} className="text-xs mb-1">Termina el</p>
         <input type="datetime-local" value={nuevo.fecha_fin} onChange={(e) => setNuevo({ ...nuevo, fecha_fin: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit" />
@@ -14372,7 +14496,15 @@ export default function EncuentraCartas() {
         const s = { access_token: tokens.access_token, refresh_token: tokens.refresh_token, user };
         localStorage.setItem("ec_session", JSON.stringify(s));
         setSession(s);
-        cargarOCrearPerfil(s);
+        // Si ya tenía cuenta (Google de alguien que ya se había
+        // registrado antes), cargarOCrearPerfil encuentra su perfil y
+        // esNuevo sale false -- no hace nada más. Si es la primera vez
+        // que entra con Google y su tipo de cuenta no viene en
+        // user_metadata (nunca lo trae Google), no se crea nada aquí
+        // todavía -- se muestra CompletarPerfilOAuthModal más abajo en
+        // el render, y ES SU onCreado el que de verdad dispara
+        // procesarNuevoRegistro para una cuenta nueva de Google.
+        cargarOCrearPerfil(s).then(({ esNuevo } = {}) => { if (esNuevo) procesarNuevoRegistro(s); });
       })
       .catch(() => {});
   }, []);
@@ -14387,10 +14519,16 @@ export default function EncuentraCartas() {
 
   // Trae el perfil de la persona; si no existe (primer inicio de sesión tras confirmar su correo),
   // lo crea usando los datos que guardamos al momento del registro.
+  // Regresa { perfil, esNuevo } (además de dejar el state de siempre) --
+  // esNuevo (true solo cuando esta llamada fue la que creó el renglón de
+  // perfiles) es lo que necesita procesarNuevoRegistro para saber si debe
+  // acreditar un referido/campaña pendiente en el caso de alguien que
+  // inicia sesión ya confirmado sin pasar por el flujo normal de signup.
   const cargarOCrearPerfil = async (s) => {
     try {
       const rows = await sb(`perfiles?select=*&id=eq.${s.user.id}`, s);
       let p = rows[0];
+      let creoNuevo = false;
       if (!p && s.user.user_metadata?.tipo) {
         const creado = await crearConSlugUnico("perfiles", {
           id: s.user.id,
@@ -14403,6 +14541,7 @@ export default function EncuentraCartas() {
           email: s.user.email || null,
         }, s.user.user_metadata.nombre, s, "usuario");
         p = Array.isArray(creado) ? creado[0] : creado;
+        creoNuevo = !!p;
         // Mismo caso que en AccountModal.handleSignUp: si tuvo que
         // confirmar su correo antes de tener sesión, la tienda se crea
         // hasta ahora (primer login), con los datos que guardamos en
@@ -14419,33 +14558,54 @@ export default function EncuentraCartas() {
         }
       }
       setPerfil(p || null);
+      return { perfil: p || null, esNuevo: creoNuevo };
     } catch {
       setPerfil(null);
+      return { perfil: null, esNuevo: false };
     } finally {
       setPerfilChecked(true);
     }
   };
 
+  // Se llama una sola vez, justo cuando se confirma que una cuenta es
+  // NUEVA (sin importar el camino: correo directo, confirmar correo y
+  // volver, Google, o iniciar sesión ya confirmado -- ver los 3 llamados
+  // de más abajo). Acredita el link de referido de siempre (+2 boletos a
+  // quien invitó, migración 051) y/o el link de campaña de un sorteo
+  // exclusivo (1 boleto plano, migración 077) si había alguno pendiente
+  // en sessionStorage -- ambos best-effort: un sorteo/código que ya no
+  // existe no debe romper el registro de la cuenta nueva.
+  const procesarNuevoRegistro = (s) => {
+    let veniaDeSorteo = false;
+    try {
+      const pendienteRef = JSON.parse(sessionStorage.getItem("ec_referido_pendiente") || "null");
+      sessionStorage.removeItem("ec_referido_pendiente");
+      if (pendienteRef?.sorteoId && pendienteRef?.refPerfilId && pendienteRef.refPerfilId !== s.user.id) {
+        veniaDeSorteo = true;
+        sbWrite("POST", "sorteo_referidos", { sorteo_id: pendienteRef.sorteoId, referente_perfil_id: pendienteRef.refPerfilId, nuevo_perfil_id: s.user.id }, s).catch(() => {});
+      }
+    } catch {}
+    try {
+      const pendienteCampana = JSON.parse(sessionStorage.getItem("ec_campana_pendiente") || "null");
+      sessionStorage.removeItem("ec_campana_pendiente");
+      if (pendienteCampana?.codigo) {
+        veniaDeSorteo = true;
+        sbWrite("POST", "rpc/sorteo_unirse_por_campana", { p_codigo: pendienteCampana.codigo }, s).catch(() => {});
+      }
+    } catch {}
+    // Si venía de un link de sorteo, la dejamos en esa vista (ya la puso
+    // el efecto de parseo de URL) en vez de mandarla a Ayuda -- así
+    // alguien que se acaba de registrar por el link del video cae de
+    // vuelta en su sorteo, no en una pantalla genérica.
+    if (!veniaDeSorteo) setView("ayuda");
+  };
+
   const handleAuthed = (s, { esNuevo } = {}) => {
     setSession(s);
     setShowAccountModal(false);
-    cargarOCrearPerfil(s);
-    if (esNuevo) {
-      setView("ayuda");
-      // Si esta cuenta se creó a través del link de un sorteo, se le
-      // acredita a quien invitó (+2 boletos) y esta cuenta entra
-      // automática al sorteo con su propio boleto -- ver el trigger
-      // sorteo_procesar_referido en la migración 051. El insert es
-      // best-effort: si falla (sorteo ya no existe, etc.) no debe
-      // romper el registro de la cuenta nueva.
-      try {
-        const pendiente = JSON.parse(sessionStorage.getItem("ec_referido_pendiente") || "null");
-        sessionStorage.removeItem("ec_referido_pendiente");
-        if (pendiente?.sorteoId && pendiente?.refPerfilId && pendiente.refPerfilId !== s.user.id) {
-          sbWrite("POST", "sorteo_referidos", { sorteo_id: pendiente.sorteoId, referente_perfil_id: pendiente.refPerfilId, nuevo_perfil_id: s.user.id }, s).catch(() => {});
-        }
-      } catch {}
-    }
+    cargarOCrearPerfil(s).then(({ esNuevo: creoNuevo } = {}) => {
+      if (esNuevo || creoNuevo) procesarNuevoRegistro(s);
+    });
   };
 
   const handleLogout = () => {
@@ -14794,7 +14954,7 @@ export default function EncuentraCartas() {
   const actualizarUrlCompartible = (params) => {
     try {
       const u = new URL(window.location.href);
-      ["listing", "tabla", "u", "tienda", "sorteo", "ref", "subasta", "carpeta"].forEach((k) => u.searchParams.delete(k));
+      ["listing", "tabla", "u", "tienda", "sorteo", "ref", "c", "subasta", "carpeta"].forEach((k) => u.searchParams.delete(k));
       Object.entries(params || {}).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
       window.history.pushState({}, "", u);
     } catch {}
@@ -14882,14 +15042,23 @@ export default function EncuentraCartas() {
     const tiendaSlug = params.get("tienda");
     const sorteoId = params.get("sorteo");
     const refPerfilId = params.get("ref");
+    const campanaCodigo = params.get("c");
     const subastaId = params.get("subasta");
     const carpetaId = params.get("carpeta");
     // Link de referido de un sorteo (?sorteo=X&ref=Y): se guarda para
     // acreditárselo a quien invitó en cuanto esta visita termine de
-    // registrarse (ver handleAuthed) -- puede pasar varias pantallas
-    // (elige tipo de cuenta, confirma correo, etc.) antes de eso.
+    // registrarse (ver procesarNuevoRegistro) -- puede pasar varias
+    // pantallas (elige tipo de cuenta, confirma correo, etc.) antes de eso.
     if (sorteoId && refPerfilId) {
       try { sessionStorage.setItem("ec_referido_pendiente", JSON.stringify({ sorteoId, refPerfilId })); } catch {}
+    }
+    // Link de campaña de un sorteo EXCLUSIVO (?sorteo=X&c=CODIGO, ver
+    // migración 077): mecánica separada del referido de arriba -- esta
+    // guarda el código para que, en cuanto haya sesión (cuenta nueva o ya
+    // existente), procesarNuevoRegistro/SorteoDetalleView llame
+    // rpc/sorteo_unirse_por_campana y entre con 1 boleto plano.
+    if (sorteoId && campanaCodigo) {
+      try { sessionStorage.setItem("ec_campana_pendiente", JSON.stringify({ sorteoId, codigo: campanaCodigo })); } catch {}
     }
     if (listing && tabla) {
       setSelectedListing({ id: listing, tabla });
@@ -15104,7 +15273,7 @@ export default function EncuentraCartas() {
           onConfirmado={confirmarCorreoConfirmado} onCerrar={() => setConfirmarInfo(null)} />
       )}
       {session && perfilChecked && !perfil && (
-        <CompletarPerfilOAuthModal session={session} onCreado={(p) => setPerfil(p)} onCancelar={handleLogout} />
+        <CompletarPerfilOAuthModal session={session} onCreado={(p) => { setPerfil(p); procesarNuevoRegistro(session); }} onCancelar={handleLogout} />
       )}
       {chatContext && session && (
         <ChatModal

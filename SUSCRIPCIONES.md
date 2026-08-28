@@ -5060,6 +5060,75 @@ este sandbox (egress bloqueado hacia `api.tcgdex.net` aquí también) --
 falta confirmar en producción que el campo `tcgOnline` es el correcto y
 que las cartas que fallaban ahora sí traen imagen.
 
+## 154. Sorteos exclusivos por link/código de campaña (para videos de redes sociales)
+
+Pensado para campañas tipo "trade challenge" en redes: el dueño sube un
+video anunciando un sorteo (ej. una carta de Charizard) y solo quien
+entra por el link/QR específico de ese video puede participar -- no
+cualquier usuario que ya tenga cuenta y esté navegando la lista normal de
+Sorteos. Extiende el sistema de sorteos ya existente (sección de
+`051_sorteos.sql` en adelante), no lo reemplaza.
+
+- **`supabase/migrations/077_sorteos_exclusivos_campana.sql`** (⚠️ falta
+  correrla en Supabase): dos columnas nuevas en `sorteos` --
+  `exclusivo` (boolean) y `codigo_campana` (texto corto, único,
+  A-Z0-9-, 3-24 caracteres). Cierra la policy de INSERT de
+  `sorteo_participantes` (y la de `sorteo_referidos`, el bono de
+  referidos de siempre) para que NO se pueda entrar directo a un sorteo
+  exclusivo -- la única puerta es la función nueva
+  `sorteo_unirse_por_campana(p_codigo)` (security definer), que resuelve
+  todo del lado del servidor a partir de `auth.uid()` y el código (nunca
+  recibe un `sorteo_id`/`perfil_id` que mande el cliente, así que no hay
+  nada que falsificar) y entra al usuario con exactamente 1 boleto
+  plano -- los bonos de compartir/publicar/referir de los sorteos
+  abiertos no aplican aquí (bloqueados también del lado del servidor, por
+  si la UI algún día se equivoca).
+- **Link**: `?sorteo=<id>&c=<codigo>` -- mismo patrón que el link de
+  referido de siempre (`&ref=`), solo que con `&c=`. Sirve tanto para una
+  cuenta que se registra por primera vez como para alguien que ya tenía
+  cuenta y solo necesita "reclamar su lugar" -- las dos rutas terminan en
+  la misma función.
+- **Arreglo de Google en el camino**: al investigar el flujo real, se
+  encontró que quien de verdad crea el perfil de alguien que se registra
+  por primera vez con Google es `CompletarPerfilOAuthModal` (no el efecto
+  que lee el token de la URL, como parecía a primera vista) -- su
+  `onCreado` nunca disparaba el procesamiento de "cuenta nueva", así que
+  el bono de referidos de siempre Y esto nuevo se perdían en silencio
+  para cualquiera que se registrara con Google. `cargarOCrearPerfil`
+  ahora regresa si de verdad creó un perfil nuevo, y los 3 caminos reales
+  de alta (correo directo, confirmar correo y volver, Google) más el
+  caso de iniciar sesión ya confirmado sin pasar por el link de
+  confirmación, todos convergen en una función compartida nueva,
+  `procesarNuevoRegistro`, que ahora sí funciona igual sin importar el
+  método de registro.
+- **Transparencia**: la página del sorteo ya mostraba la lista de
+  participantes y el ganador sin pedir sesión (confirmado leyendo el
+  componente) -- se le agregó un badge "🔒 Exclusivo por campaña" y un
+  texto explicando la regla, para que cualquiera (incluso sin cuenta) que
+  abra el link entienda por qué no ve un botón normal de "Participar" y
+  confíe en que la lista es pública de verdad.
+- **UI del organizador**: `CrearSorteoForm` gana un checkbox "🔒 Sorteo
+  exclusivo" + campo de código (autogenerado, editable). Al crearse (o
+  desde el detalle del sorteo, solo visible para el organizador) se
+  muestra el link + un QR generado con una API pública gratuita
+  (`api.qrserver.com`, sin librería nueva -- la app ya confía en
+  imágenes de terceros vía `<img src>` en todos lados) para pegar en la
+  descripción del video. Esa caja de link/QR es **solo del organizador**
+  -- nunca aparece en la página pública, porque si cualquiera pudiera
+  verla, cualquiera podría copiar el código sin haber visto el video.
+- Disponible para el mismo grupo que ya puede crear sorteos (Admin,
+  tienda Aurora, o afiliada con aprobación pendiente) -- sin restricción
+  extra, es de bajo riesgo por el diseño de la función de unión.
+
+Verificado con `npm run build` y visualmente en el dev server (la
+pantalla de Sorteos carga sin errores). No se pudo probar el flujo
+completo de principio a fin en este sandbox (requiere sesión real de
+Supabase) -- falta correr la migración y probar en producción: crear un
+sorteo exclusivo, abrir su link en incógnito (cuenta nueva) y con una
+cuenta ya existente, con los dos métodos de registro (correo y Google), y
+confirmar que en ambos casos se entra con 1 boleto y se cae de vuelta en
+la vista del sorteo.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -5077,3 +5146,4 @@ que las cartas que fallaban ahora sí traen imagen.
 - Falta correr `071_carpetas_ubicacion.sql` en Supabase (ver sección 132) para que el color/zona/envío/punto de encuentro de las carpetas funcionen en producción -- sin la migración, crear una carpeta seguirá fallando al intentar guardar esas columnas.
 - Falta correr `072_carpeta_oculta.sql` en Supabase (ver sección 137) para que ocultar/mostrar cartas de una carpeta funcione en producción -- el link público de la carpeta y los exports CSV/Excel/PDF no dependen de esta migración y ya funcionan sin ella.
 - Falta correr `076_mazos_limitless.sql` en Supabase (ver sección 148) para que "Tengo esta carta" y la importación desde Limitless TCG funcionen en producción -- y falta probar una importación real para confirmar que `parsearDecklistLimitless` lee bien el decklist real (la documentación oficial no confirma el shape exacto del JSON).
+- Falta correr `077_sorteos_exclusivos_campana.sql` en Supabase (ver sección 154) para que los sorteos exclusivos por link de campaña funcionen en producción -- y falta probar el flujo completo end-to-end (cuenta nueva y cuenta existente, correo y Google) una vez desplegado.
