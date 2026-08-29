@@ -15239,7 +15239,11 @@ export default function EncuentraCartas() {
       const u = new URL(window.location.href);
       ["listing", "tabla", "u", "tienda", "sorteo", "ref", "c", "subasta", "carpeta", "wishlist"].forEach((k) => u.searchParams.delete(k));
       Object.entries(params || {}).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
-      window.history.pushState({}, "", u);
+      // replaceState, no pushState: esta función solo mantiene la URL
+      // visible/compartible correcta -- quien crea entradas reales del
+      // historial (para que "atrás" funcione) es el efecto de navegación
+      // más abajo, una sola vez por cambio real de pantalla.
+      window.history.replaceState({}, "", u);
     } catch {}
   };
 
@@ -15390,6 +15394,64 @@ export default function EncuentraCartas() {
     sb(`tiendas?select=*,perfiles!perfil_id(plan,plan_vence,instagram,google_maps_url,sitio_web,avatar_url,diamante_desde,created_at,tiempo_respuesta_promedio_minutos,tiempo_respuesta_conteo),verificaciones_tienda(estado)&id=eq.${tiendaId}`)
       .then((rows) => { if (rows[0]) openStore(rows[0]); });
   };
+
+  // ---- Botón/gesto de "atrás" (navegador y celular) ----
+  // La app no usa router -- este efecto + el listener de abajo son todo
+  // lo que hace falta para que "atrás" funcione en todas las pantallas
+  // de nivel raíz, no solo las que ya tenían link compartible. No toca
+  // ninguno de los ~40 sitios que llaman setView -- reacciona a los
+  // cambios de view/seleccionados, sin importar quién los causó.
+  const snapshotNavegacion = () => ({
+    view,
+    listingId: selectedListing?.id || null,
+    listingTabla: selectedListing?.tabla || null,
+    perfilId: selectedPerfilId,
+    tiendaId: selectedStore?.id || null,
+    sorteoId: selectedSorteoId,
+    subastaId: selectedSubastaId,
+    carpetaId: selectedCarpetaPublicaId,
+    wishlistPerfilId: selectedWishlistPerfilId,
+  });
+
+  const restaurandoHistorialRef = useRef(false);
+  const montadoNavRef = useRef(false);
+
+  // Cada vez que cambia lo que se está viendo, se agrega una entrada al
+  // historial -- así "atrás" siempre tiene algo real que recorrer. La
+  // primera vez (montaje) se usa replaceState en vez de pushState, para
+  // no duplicar la entrada que el navegador ya trae de por sí. Si el
+  // cambio vino de restaurar por popstate (ver abajo), no se vuelve a
+  // empujar -- si no, cada "atrás" generaría una entrada nueva hacia
+  // adelante en vez de retroceder de verdad.
+  useEffect(() => {
+    if (restaurandoHistorialRef.current) { restaurandoHistorialRef.current = false; return; }
+    try {
+      if (!montadoNavRef.current) { montadoNavRef.current = true; window.history.replaceState(snapshotNavegacion(), "", window.location.href); }
+      else { window.history.pushState(snapshotNavegacion(), "", window.location.href); }
+    } catch {}
+  }, [view, selectedListing, selectedPerfilId, selectedStore, selectedSorteoId, selectedSubastaId, selectedCarpetaPublicaId, selectedWishlistPerfilId]);
+
+  // Restaura la pantalla exacta al darle "atrás"/"adelante" (o al gesto
+  // de atrás en celular, que dispara el mismo evento) -- reusa las
+  // mismas funciones que ya abren cada pantalla desde un link
+  // compartido, nunca duplica esa lógica.
+  useEffect(() => {
+    const onPopState = (e) => {
+      restaurandoHistorialRef.current = true;
+      const s = e.state;
+      if (!s) { setView("search"); return; }
+      if (s.listingId && s.listingTabla) abrirDetalle(s.listingId, s.listingTabla);
+      else if (s.view === "perfilPublico" && s.perfilId) verPerfil(s.perfilId);
+      else if (s.view === "storeDetail" && s.tiendaId) verTiendaDesdePerfil(s.tiendaId);
+      else if (s.view === "sorteoDetalle" && s.sorteoId) abrirSorteo(s.sorteoId);
+      else if (s.view === "subastaDetalle" && s.subastaId) abrirSubasta(s.subastaId);
+      else if (s.view === "carpetaPublica" && s.carpetaId) abrirCarpetaPublica(s.carpetaId);
+      else if (s.view === "wishlistPublica" && s.wishlistPerfilId) abrirWishlistPublica(s.wishlistPerfilId);
+      else setView(s.view || "search");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   // Esenciales: siempre visibles arriba, máximo 5 para no saturar el
   // encabezado -- las mismas 4 para cualquier persona (comprar es lo que
