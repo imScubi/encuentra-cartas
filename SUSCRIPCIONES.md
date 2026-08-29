@@ -5208,6 +5208,77 @@ slug no existe, sin errores de React -- no se pudo probar con datos
 reales porque Supabase y los CDNs de imágenes no son alcanzables desde
 este sandbox).
 
+## 156. Corrección: avatar faltante en la imagen de Wishlist + el botón "atrás" (navegador y celular) ya funciona en toda la app
+
+Dos reportes después de confirmar que la sección 155 "funciona
+perfectamente": (1) el avatar no salía en la imagen PNG generada de la
+Wishlist; (2) el botón "atrás" del navegador y el gesto/tecla atrás de
+Android no regresaban a la pantalla anterior en ningún lado de la app --
+al usarlo (incluso dos veces) sacaba de la app o mandaba directo al
+inicio, sin importar en qué pantalla estuviera.
+
+- **Avatar faltante**: causa fue la misma lista blanca de hosts del
+  proxy de imágenes (`HOSTS_IMAGENES_PERMITIDOS`, sección 155) --
+  `raw.githubusercontent.com` (donde vive el avatar Pokémon por
+  default/elegido, `randomPokemonAvatar()`/`pokemonSpriteUrl()` en
+  `pokemonApi.js`) y `lh3.googleusercontent.com` (foto de perfil de
+  quien se registró con Google) no estaban en la lista, así que el
+  proxy los rechazaba con 400 y `wishlistImagen.js` (ya diseñado para no
+  tronar por una imagen rota) se quedaba con el círculo vacío en vez de
+  la foto. Se agregaron ambos hosts a `HOSTS_IMAGENES_PERMITIDOS`
+  (`api/tcgcsv.js`) -- mismo criterio de lista blanca explícita que el
+  resto (nunca "cualquier host"), verificado con un chequeo de sintaxis
+  del módulo (no se pudo probar en vivo, GitHub/Google no son
+  alcanzables desde este sandbox).
+- **Botón/gesto "atrás" roto en toda la app**: causa raíz fue que la app
+  nunca escuchaba el evento `popstate` -- cero listeners en todo el
+  código. El único uso de `window.history` era `actualizarUrlCompartible`
+  (`pushState`, y solo para las 8 pantallas con link compartible --
+  detalle de carta, perfil, tienda, sorteo, subasta, carpeta, wishlist),
+  mientras que las ~40 llamadas a `setView(...)` del resto de la app
+  (drawer, pestañas, botones sueltos) nunca tocaban el historial. Como
+  nada escuchaba "atrás", la app seguía mostrando lo mismo aunque el
+  navegador sí retrocediera en su propio historial interno -- hasta que
+  se acababan las entradas apiladas y ahí sí sacaba de la página.
+  - **Arreglo, deliberadamente mínimo** (para no arriesgar el resto de
+    la navegación, que es central en toda la app): un solo efecto
+    reactivo en el componente raíz observa `view` + los 7
+    "seleccionados" de nivel raíz (`selectedListing`, `selectedPerfilId`,
+    `selectedStore`, `selectedSorteoId`, `selectedSubastaId`,
+    `selectedCarpetaPublicaId`, `selectedWishlistPerfilId`) y hace
+    `pushState` cada vez que cualquiera cambia -- sin tocar ninguno de
+    los ~40 sitios que llaman `setView` uno por uno. Un solo listener de
+    `popstate` restaura la pantalla exacta reusando las funciones que YA
+    existen para abrir cada una (`abrirDetalle`, `verPerfil`,
+    `verTiendaDesdePerfil`, `abrirSorteo`, `abrirSubasta`,
+    `abrirCarpetaPublica`, `abrirWishlistPublica`) -- nunca lógica de
+    "restaurar" duplicada. `actualizarUrlCompartible` cambió su
+    `pushState` por `replaceState` (una línea): deja de crear entradas
+    del historial (eso ahora lo hace el efecto nuevo, una sola vez por
+    navegación real) y se queda solo con mantener la URL visible/
+    compartible correcta -- sus 13 sitios de llamada no se tocaron.
+  - **Fuera de alcance a propósito**: los modales (login, chat, confirmar
+    correo, etc.) no se agregan al historial -- "atrás" no los cierra,
+    solo navega entre pantallas. Estado interno de cada pantalla
+    (pestañas dentro de un panel, formularios) es invisible para este
+    efecto y no participa. Caso raro aceptado sin blindar: presionar
+    "atrás" varias veces muy rápido justo en una pantalla que re-pide
+    datos (perfil/tienda/sorteo/subasta/carpeta/wishlist, no así detalle
+    de carta) podría, en una carrera de tiempos, dejar una entrada de
+    más en el historial -- no rompe nada, en el peor caso hace falta una
+    pulsada extra en esa pantalla puntual.
+- Verificado con `npm run build` (sin errores) y con una prueba real de
+  Playwright contra el dev server: navegación Inicio → Catálogo →
+  Tiendas → Sorteos (por header y drawer), luego tres `goBack()`
+  seguidos -- la app retrocedió exactamente Sorteos → Tiendas → Catálogo
+  → Inicio, en ese orden, confirmado por el título visible de cada
+  pantalla en cada paso. Captura final confirmó que la app terminó en el
+  inicio normal, sin pantalla en blanco ni estado atorado. ⚠️ No se pudo
+  probar con sesión real de Supabase desde este sandbox (bloqueado),
+  ni el gesto físico de "atrás" de un celular Android real -- pendiente
+  que el dueño lo pruebe en producción, en un teléfono real, navegando
+  varias pantallas seguidas.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -5226,4 +5297,5 @@ este sandbox).
 - Falta correr `072_carpeta_oculta.sql` en Supabase (ver sección 137) para que ocultar/mostrar cartas de una carpeta funcione en producción -- el link público de la carpeta y los exports CSV/Excel/PDF no dependen de esta migración y ya funcionan sin ella.
 - Falta correr `076_mazos_limitless.sql` en Supabase (ver sección 148) para que "Tengo esta carta" y la importación desde Limitless TCG funcionen en producción -- y falta probar una importación real para confirmar que `parsearDecklistLimitless` lee bien el decklist real (la documentación oficial no confirma el shape exacto del JSON).
 - Falta correr `077_sorteos_exclusivos_campana.sql` en Supabase (ver sección 154) para que los sorteos exclusivos por link de campaña funcionen en producción -- y falta probar el flujo completo end-to-end (cuenta nueva y cuenta existente, correo y Google) una vez desplegado.
-- Falta correr `078_coleccion_usuario_wishlist_publica.sql` en Supabase (ver sección 155) para que el link público de la Wishlist rediseñada funcione en producción -- y falta confirmar en vivo que los hostnames de imagen del proxy nuevo (`?fuente=imgproxy`) son los correctos para pokemontcg.io/apitcg.com/TCGplayer (se infirieron, no se pudieron probar desde este sandbox).
+- Falta correr `078_coleccion_usuario_wishlist_publica.sql` en Supabase (ver sección 155) para que el link público de la Wishlist rediseñada funcione en producción -- y falta confirmar en vivo que los hostnames de imagen del proxy nuevo (`?fuente=imgproxy`) son los correctos para pokemontcg.io/apitcg.com/TCGplayer (se infirieron, no se pudieron probar desde este sandbox). El avatar (GitHub/Google) ya se confirmó y arregló -- ver sección 156.
+- Falta que el dueño pruebe en un celular Android real el gesto/tecla física de "atrás" (ver sección 156) -- se verificó con Playwright que el botón "atrás" del navegador funciona correctamente, pero el gesto físico de un teléfono real no se pudo probar desde este sandbox.

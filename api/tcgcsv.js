@@ -86,6 +86,13 @@ const HOSTS_IMAGENES_PERMITIDOS = new Set([
   "api.apitcg.com", "product-images.tcgplayer.com", "tcgplayer-cdn.tcgplayer.com",
   "r2.limitlesstcg.net", "limitless3.nyc3.cdn.digitaloceanspaces.com",
   "images.ygoprodeck.com", "nulypgaaekexlbxbxdwq.supabase.co",
+  // Avatares: el avatar "Pokémon" default/elegido (randomPokemonAvatar,
+  // ver pokemonApi.js) sale de GitHub, no de Supabase Storage -- sin este
+  // host, la imagen generada de la Wishlist se quedaba sin foto de perfil
+  // para cualquiera con un avatar Pokémon (el default de toda cuenta
+  // nueva). lh3.googleusercontent.com cubre la foto de perfil de quien
+  // se registró con Google (user_metadata.picture).
+  "raw.githubusercontent.com", "lh3.googleusercontent.com",
 ]);
 const TAMANO_MAX_IMAGEN_BYTES = 3 * 1024 * 1024;
 
