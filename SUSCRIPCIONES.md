@@ -5129,6 +5129,85 @@ cuenta ya existente, con los dos métodos de registro (correo y Google), y
 confirmar que en ambos casos se entra con 1 boleto y se cae de vuelta en
 la vista del sorteo.
 
+## 155. Rediseño de la Wishlist: carpeta visual compartible por link + imagen descargable (Zafiro+)
+
+La "Lista de deseos" mezclaba dos cosas distintas en una pantalla: una
+lista de texto plano de cartas "quiero" (tabla `wishlist`, sin imagen,
+gratis) y las Alertas de precio con push (tabla `alertas`, Amatista+).
+Peor: lo único que se mostraba públicamente en un perfil bajo la
+etiqueta "Lista de deseos" en realidad eran las Alertas de precio, no
+las cartas que de verdad se buscan -- un bug real de etiquetado, no solo
+de producto.
+
+- **Nueva bandera de plan**: `wishlistCompartible` (`theme.js`), `true`
+  desde Zafiro en adelante -- deliberadamente NO se reutilizó
+  `wishlistPremium` (que sigue Amatista+, sin tocar, gateando "Tengo"/
+  Master Sets y las Alertas de precio con push). Si se hubiera reusado
+  esa bandera, mover "la wishlist" a Zafiro habría filtrado esas dos
+  cosas también, sin querer. `ultraball.resumen` se reescribió de "Todo
+  Zafiro + Wishlist Premium" a "Todo Zafiro + Alertas de precio con
+  push" -- ya no aplicaba una vez que Zafiro tiene su propia wishlist.
+- **Tabla base: `coleccion_usuario` con `estado='quiero'`** (no la vieja
+  `wishlist`, que solo guardaba el nombre en texto -- se dejó de escribir
+  ahí, `CatalogoView.marcar()`, sin borrar la tabla por seguridad/
+  reversibilidad). `coleccion_usuario` ya traía imagen/card_api_id/set y
+  su propio `unique(perfil_id, tcg, card_api_id)`, perfecto para una
+  carpeta visual.
+- **`supabase/migrations/078_coleccion_usuario_wishlist_publica.sql`**
+  (⚠️ falta correrla): política de lectura pública en `coleccion_usuario`
+  para `estado='quiero'`, con el chequeo de `visibilidad.wishlist`
+  **embebido en la propia policy** (mismo patrón que ya usan
+  `alertas`/`carpetas` en `021_visibilidad_publica.sql`) -- no basta con
+  chequearlo solo del lado de la app, porque cualquiera puede pegarle a
+  PostgREST directo con la anon key (ya pública en el bundle de JS).
+  Nunca se expone `estado='tengo'` públicamente (revelaría qué cartas
+  valiosas tiene alguien y dónde).
+- **`MiWishlistView`** (nuevo, dentro de `AlertasPanel` -- ahora 2
+  pestañas: "🎁 Mi Wishlist" / "🔔 Alertas de precio", esta última sin
+  cambios): grid visual (igual estilo que `CarpetaPublicaView`), buscador
+  para agregar cartas directo (antes solo se podía marcar "quiero" desde
+  el Catálogo -- maneja el choque 23505 con una carta que ya tenías
+  marcada "tengo", haciendo `PATCH` en vez de fallar), botón de copiar
+  link, botón "Verla como público", y el generador de imagen.
+- **`WishlistPublicaView`** (nuevo) + link `?wishlist=<slug-del-perfil>`
+  (mismo patrón de resolución que `?u=<slug>`, ya que una wishlist no es
+  una fila con su propio id -- es "las cartas quiero de este perfil"):
+  sin sesión, RLS decide qué se ve. No distingue "no existe" de "está
+  oculta" (mismo criterio que `CarpetaPublicaView`).
+- **`api/tcgcsv.js`, rama nueva `?fuente=imgproxy`**: necesaria para
+  generar la imagen sin romper el canvas -- las cartas vienen de +6 CDNs
+  de terceros (pokemontcg.io, Scryfall, TCGdex, apitcg.com, TCGplayer,
+  Limitless, YGOPRODeck) más Supabase Storage, y dibujar una imagen
+  cross-origin sin CORS permisivo "mancha" el canvas (bloquea
+  `toBlob()`). A diferencia de `origenValido` (pensada para que el
+  SERVIDOR arme la ruta, nunca una libre que mande el cliente), aquí el
+  cliente sí manda una URL completa -- así que se usa una lista blanca de
+  hosts conocidos (no solo "no es IP privada") y se bloquean
+  redirecciones (`redirect:"manual"`) para cerrar un hueco de SSRF-vía-
+  redirección que sí aplica aquí (la wishlist pública no pide sesión,
+  cualquiera puede llamar esta ruta). ⚠️ Los hostnames de imagen de
+  pokemontcg.io/apitcg.com/TCGplayer se infieren del uso conocido de
+  cada API, no se pudieron confirmar en vivo desde este sandbox -- si
+  una carta se queda sin imagen en producción, agregar su host real es
+  un cambio de una línea.
+- **`src/lib/wishlistImagen.js`** (nuevo): dibuja con Canvas2D nativo
+  (sin librería nueva, mismo criterio que el QR de sorteos) un grid de
+  4 columnas con el arte de cada carta (vía el proxy de arriba), el
+  nombre/perfil del dueño, "Encuentra Cartas" como marca, y el link como
+  texto en el pie -- exporta un PNG vía `canvas.toBlob()`. El botón
+  "Generar imagen" (`BotonGenerarImagenWishlist`, compartido entre
+  `MiWishlistView` y `WishlistPublicaView`) ofrece descargar o compartir
+  (Web Share API con archivo, si el navegador lo soporta).
+- La sección "wishlist" del perfil público (`PerfilPublicoView`) ahora sí
+  muestra las cartas "quiero" de verdad (antes mostraba Alertas de
+  precio por error) con un grid visual y un link "Ver completa".
+
+Verificado con `npm run build` y visualmente en el dev server (la ruta
+pública `?wishlist=<slug>` degrada bien a la página de inicio cuando el
+slug no existe, sin errores de React -- no se pudo probar con datos
+reales porque Supabase y los CDNs de imágenes no son alcanzables desde
+este sandbox).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -5147,3 +5226,4 @@ la vista del sorteo.
 - Falta correr `072_carpeta_oculta.sql` en Supabase (ver sección 137) para que ocultar/mostrar cartas de una carpeta funcione en producción -- el link público de la carpeta y los exports CSV/Excel/PDF no dependen de esta migración y ya funcionan sin ella.
 - Falta correr `076_mazos_limitless.sql` en Supabase (ver sección 148) para que "Tengo esta carta" y la importación desde Limitless TCG funcionen en producción -- y falta probar una importación real para confirmar que `parsearDecklistLimitless` lee bien el decklist real (la documentación oficial no confirma el shape exacto del JSON).
 - Falta correr `077_sorteos_exclusivos_campana.sql` en Supabase (ver sección 154) para que los sorteos exclusivos por link de campaña funcionen en producción -- y falta probar el flujo completo end-to-end (cuenta nueva y cuenta existente, correo y Google) una vez desplegado.
+- Falta correr `078_coleccion_usuario_wishlist_publica.sql` en Supabase (ver sección 155) para que el link público de la Wishlist rediseñada funcione en producción -- y falta confirmar en vivo que los hostnames de imagen del proxy nuevo (`?fuente=imgproxy`) son los correctos para pokemontcg.io/apitcg.com/TCGplayer (se infirieron, no se pudieron probar desde este sandbox).

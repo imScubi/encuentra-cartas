@@ -59,6 +59,75 @@ async function wikidexProxy(req, res) {
   }
 }
 
+// Proxy de imágenes para poder dibujar el arte de una carta dentro de un
+// <canvas> (ver src/lib/wishlistImagen.js -- la imagen descargable de la
+// Wishlist) sin "manchar" el canvas: un <img> cross-origin sin headers
+// CORS permisivos bloquea canvas.toBlob(), y las cartas vienen de +6 CDNs
+// de terceros distintos que no controlamos. Sirviendo la imagen desde
+// nuestro propio origen, el <img> deja de ser cross-origin para el canvas.
+//
+// A diferencia de origenValido (pensada para que el SERVIDOR arme la ruta
+// final a partir de un origen + colección, nunca una ruta libre que mande
+// el cliente -- ver el comentario de arriba), aquí el cliente SÍ manda una
+// URL completa (la imagen exacta de una carta), así que se usa una lista
+// blanca de hosts conocidos en vez de solo validar que no sea IP privada,
+// y se bloquean redirecciones (fetch con redirect:"manual") -- esta ruta
+// la puede llamar cualquier visitante sin sesión (la Wishlist pública no
+// pide login), así que el hueco de SSRF-vía-redirección sí aplica aquí de
+// lleno, a diferencia de importarShopify (gateado a un dueño de tienda
+// nombrando su propio dominio).
+//
+// Honesto: algunos de estos hostnames se infieren del uso conocido de
+// cada API (no se pudieron confirmar en vivo desde este entorno, ver
+// SUSCRIPCIONES.md) -- si una carta se queda sin imagen en producción,
+// agregar su host real aquí es un cambio de una línea.
+const HOSTS_IMAGENES_PERMITIDOS = new Set([
+  "images.pokemontcg.io", "cards.scryfall.io", "assets.tcgdex.net", "api.tcgdex.net",
+  "api.apitcg.com", "product-images.tcgplayer.com", "tcgplayer-cdn.tcgplayer.com",
+  "r2.limitlesstcg.net", "limitless3.nyc3.cdn.digitaloceanspaces.com",
+  "images.ygoprodeck.com", "nulypgaaekexlbxbxdwq.supabase.co",
+]);
+const TAMANO_MAX_IMAGEN_BYTES = 3 * 1024 * 1024;
+
+async function imgProxy(req, res) {
+  const { url } = req.query;
+  let parsed;
+  try {
+    parsed = new URL(String(url || ""));
+  } catch {
+    return res.status(400).json({ error: "URL de imagen inválida." });
+  }
+  if (parsed.protocol !== "https:" || !HOSTS_IMAGENES_PERMITIDOS.has(parsed.hostname)) {
+    return res.status(400).json({ error: "Host de imagen no permitido." });
+  }
+  try {
+    const upstream = await fetch(parsed.href, {
+      redirect: "manual",
+      headers: { "User-Agent": "EncuentraCartas/1.0 (app de tiendas de TCG Monterrey)" },
+    });
+    if (upstream.status >= 300 && upstream.status < 400) {
+      return res.status(400).json({ error: "Esa imagen no se puede cargar (redirección no permitida)." });
+    }
+    const contentType = upstream.headers.get("content-type") || "";
+    if (!upstream.ok || !contentType.startsWith("image/")) {
+      return res.status(415).json({ error: "La URL no apunta a una imagen." });
+    }
+    const contentLength = Number(upstream.headers.get("content-length") || 0);
+    if (contentLength > TAMANO_MAX_IMAGEN_BYTES) {
+      return res.status(413).json({ error: "Imagen demasiado grande." });
+    }
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    if (buffer.length > TAMANO_MAX_IMAGEN_BYTES) {
+      return res.status(413).json({ error: "Imagen demasiado grande." });
+    }
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "s-maxage=86400, stale-while-revalidate=604800");
+    res.status(200).send(buffer);
+  } catch (e) {
+    res.status(500).json({ error: "No se pudo cargar la imagen." });
+  }
+}
+
 async function importarShopify(req, res) {
   const { origin, coleccion, page } = req.query;
   const origenLimpio = origenValido(origin || "");
@@ -290,6 +359,9 @@ export default async function handler(req, res) {
   }
   if (req.query.fuente === "wikidex") {
     return wikidexProxy(req, res);
+  }
+  if (req.query.fuente === "imgproxy") {
+    return imgProxy(req, res);
   }
   if (req.query.fuente === "apitcg") {
     return apitcgProxy(req, res);
