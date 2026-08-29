@@ -188,7 +188,7 @@ export const PLAN_INFO = {
     nombre: "Cuarzo", emoji: "⚪", precio: 0, color: COLORS.muted,
     resumen: "Básico y gratis",
     beneficios: ["Publica hasta 20 cartas/productos activos", "Aparece en búsquedas y en el directorio", "Modo día/noche"],
-    limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: false, mazoBuilder: false, competitivo: false, subastas: false, sorteos: false, modoEvento: false,
+    limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, wishlistCompartible: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: false, mazoBuilder: false, competitivo: false, subastas: false, sorteos: false, modoEvento: false,
   },
   superball: {
     nombre: "Zafiro", emoji: "🔵", precio: 49, color: COLORS.azulClaro,
@@ -199,21 +199,22 @@ export const PLAN_INFO = {
       "Filtra tiendas por zona y encuentra la más cercana con tu ubicación",
       "Organiza subastas de tus cartas/productos",
       "Competitivo: importa mazos reales de torneos de Pokémon TCG (vía Limitless TCG), marca qué cartas ya tienes y encuentra quién vende las que faltan",
+      "Wishlist compartible: arma tu lista de cartas deseadas en una carpeta visual, comparte el link o descarga una imagen para mandarla directo",
     ],
-    limiteCartas: 50, verificado: true, redesExtra: true, wishlistPremium: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false, competitivo: true, subastas: true, sorteos: false, modoEvento: false,
+    limiteCartas: 50, verificado: true, redesExtra: true, wishlistPremium: false, wishlistCompartible: true, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false, competitivo: true, subastas: true, sorteos: false, modoEvento: false,
   },
   ultraball: {
     nombre: "Amatista", emoji: "🟣", precio: 89, color: COLORS.violeta,
-    resumen: "Todo Zafiro + Wishlist Premium",
+    resumen: "Todo Zafiro + Alertas de precio con push",
     beneficios: [
       "Todo lo de Zafiro", "Publicaciones ilimitadas", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente",
       "Cambia los colores de la página según tipos de Pokémon (agua, fuego, psíquico, etc.)",
       "Deck Builder visual: arma varios mazos con selector de cartas, cantidad, nombre y etiquetas",
-      "Catálogo de sets: marca qué cartas ya tienes y cuáles deseas (se agregan solas a tu wishlist)",
+      "Catálogo de sets: marca qué cartas ya tienes y sigue tu progreso por set (Master Sets)",
       "1 Boost gratis cada mes (destaca una publicación 3 días)",
       "Modo Evento: lleva el control de tus ventas, costos y gastos en vivo cuando vendes en un evento presencial, con reporte en PDF al final",
     ],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true, competitivo: true, boostsGratisMes: 1, subastas: true, sorteos: false, modoEvento: true,
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, wishlistCompartible: true, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true, competitivo: true, boostsGratisMes: 1, subastas: true, sorteos: false, modoEvento: true,
   },
   masterball: {
     nombre: "Diamante", emoji: "🟡", precio: 149, color: COLORS.azulPalido,
@@ -222,7 +223,7 @@ export const PLAN_INFO = {
       "Todo lo de Amatista", "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante",
       "2 Boosts gratis cada mes", "Si eres tienda: panel de Mis Estadísticas (ventas, contactos y seguidores, con gráfica de crecimiento)",
     ],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true, ubicacion: true, mazoBuilder: true, competitivo: true, boostsGratisMes: 2, subastas: true, sorteos: false, modoEvento: true,
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, wishlistCompartible: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true, ubicacion: true, mazoBuilder: true, competitivo: true, boostsGratisMes: 2, subastas: true, sorteos: false, modoEvento: true,
   },
   enteball: {
     nombre: "Aurora", emoji: "🔴", precio: 349, color: COLORS.gold,
@@ -232,7 +233,7 @@ export const PLAN_INFO = {
       "3 Boosts gratis cada mes", "Aparece en el carrusel de tiendas destacadas del Mercado",
       "Organiza sorteos con premio para tus clientes",
     ],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, importadorMasivo: true, soloTienda: true, carpetas: true, holo: true, ubicacion: true, mazoBuilder: true, competitivo: true, diamante: true, boostsGratisMes: 3, subastas: true, sorteos: true, modoEvento: true,
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, wishlistCompartible: true, importadorMasivo: true, soloTienda: true, carpetas: true, holo: true, ubicacion: true, mazoBuilder: true, competitivo: true, diamante: true, boostsGratisMes: 3, subastas: true, sorteos: true, modoEvento: true,
   },
 };
 

@@ -17,6 +17,7 @@ import {
 import { setUidActual } from "./lib/errorReporting.jsx";
 import { moderarFotoReal } from "./lib/moderacion.js";
 import { comprimirImagen } from "./lib/imagen.js";
+import { generarImagenWishlist } from "./lib/wishlistImagen.js";
 import {
   pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
   parseNumeroYSet, buscarImagenRespaldoPorTcg, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
@@ -5678,6 +5679,85 @@ function CarpetaPublicaView({ carpetaId, onAbrirDetalle, onVerPerfil, onAbrirTie
   );
 }
 
+// ---- Wishlist pública: la carpeta visual de cartas "quiero" de un
+// perfil, sin sesión -- mismo patrón que CarpetaPublicaView de arriba.
+// La visibilidad la decide RLS (coleccion_usuario, migración 078,
+// respeta perfiles.visibilidad.wishlist), no esta vista -- si está
+// oculta o el perfil no existe, la lista simplemente sale vacía y se
+// muestra el mismo mensaje para los dos casos (no se distingue "no
+// existe" de "está oculta", para no filtrar esa información).
+function WishlistPublicaView({ perfilId, onVerPerfil, onVolver }) {
+  const [perfil, setPerfil] = useState(undefined); // undefined = cargando
+  const [cartas, setCartas] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      sb(`perfiles?select=id,nombre,avatar_url,slug&id=eq.${perfilId}`),
+      sb(`coleccion_usuario?select=*&perfil_id=eq.${perfilId}&estado=eq.quiero&order=created_at.desc`),
+    ])
+      .then(([pRows, cRows]) => { setPerfil(pRows[0] || null); setCartas(cRows); })
+      .catch(() => { setPerfil(null); setCartas([]); })
+      .finally(() => setLoading(false));
+  }, [perfilId]);
+
+  const linkWishlist = perfil?.slug ? `${window.location.origin}/?wishlist=${encodeURIComponent(perfil.slug)}` : null;
+
+  if (loading || perfil === undefined) return <div>{onVolver && <button onClick={onVolver} style={{ color: COLORS.muted }} className="flex items-center gap-1 text-sm mb-6"><ChevronLeft size={16} /> Volver</button>}<Loading label="Cargando wishlist..." /></div>;
+
+  if (!perfil || cartas.length === 0) {
+    return (
+      <div className="text-center py-16">
+        {onVolver && <button onClick={onVolver} style={{ color: COLORS.azulPalido }} className="text-sm font-semibold mb-6">← Volver a Inicio</button>}
+        <p style={{ color: COLORS.muted }} className="text-sm">Esta wishlist no está disponible.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {onVolver && (
+        <button onClick={onVolver} style={{ color: COLORS.muted }} className="flex items-center gap-1 text-sm mb-6">
+          <ChevronLeft size={16} /> Volver
+        </button>
+      )}
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}66` }} className="rounded-2xl p-5 mb-6">
+        <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-2">🎁 Wishlist</p>
+        <button onClick={() => onVerPerfil?.(perfil.id)} className="flex items-center gap-2 hover:brightness-125">
+          <AvatarImg url={perfil.avatar_url} size={40} />
+          <div className="text-left">
+            <p className="font-semibold">{perfil.nombre}</p>
+            <p style={{ color: COLORS.muted }} className="text-xs">está buscando estas cartas · <ExternalLink size={11} className="inline" /> ver perfil</p>
+          </div>
+        </button>
+      </div>
+
+      <div className="mb-6"><BotonGenerarImagenWishlist perfil={perfil} cartas={cartas} linkWishlist={linkWishlist} /></div>
+
+      <div className="columns-2 sm:columns-3 lg:columns-4 gap-4">
+        {cartas.map((c) => (
+          <div key={c.id} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${COLORS.azulClaro}29` }}
+            className="rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid">
+            <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
+              {c.imagen_url ? (
+                <img src={c.imagen_url} alt={c.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+              ) : (
+                <Package size={40} color={COLORS.muted} />
+              )}
+            </div>
+            <div className="p-3 flex flex-col gap-1">
+              <p className="font-semibold text-sm leading-snug line-clamp-2">{c.carta}</p>
+              <p style={{ color: COLORS.muted }} className="text-xs truncate">{c.set_nombre || TCG_LABEL[c.tcg] || c.tcg}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ---- "Mis estadísticas" para tiendas (Diamante+, ver info.diamante) --
 // reusa StatTile/MiniAreaChart/serieAcumuladaPorSemana, los mismos
 // componentes que ya construimos para el panel de Admin, pero con las
@@ -10132,7 +10212,7 @@ function ComprasVentasView({ session }) {
   );
 }
 
-function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTienda, onAbrirDetalle, onSlugResuelto }) {
+function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTienda, onAbrirDetalle, onSlugResuelto, onVerWishlistPublica }) {
   const [perfil, setPerfil] = useState(undefined); // undefined = cargando, null = no existe
   const [cartas, setCartas] = useState([]);
   const [sellado, setSellado] = useState([]);
@@ -10168,8 +10248,13 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
         if (p.tipo === "tienda") {
           tareas.push(sb(`tiendas?select=id,nombre,zona&perfil_id=eq.${perfilId}`).then((filas) => setTienda(filas[0] || null)));
         }
+        // La sección "wishlist" del perfil público muestra la carpeta
+        // rediseñada de cartas "quiero" (coleccion_usuario), no las
+        // alertas de precio -- RLS (migración 078) ya respeta
+        // visibilidad.wishlist por su cuenta, este chequeo aquí es
+        // nada más para no pedir el fetch de más si de plano está oculta.
         if (vis.wishlist !== false) {
-          tareas.push(sb(`alertas?select=*&perfil_id=eq.${perfilId}&order=created_at.desc`).then(setWishlist));
+          tareas.push(sb(`coleccion_usuario?select=*&perfil_id=eq.${perfilId}&estado=eq.quiero&order=created_at.desc`).then(setWishlist));
         }
         if (vis.carpetas !== false) {
           tareas.push(sb(`carpetas?select=*,carpeta_fotos(id,imagen_url)&perfil_id=eq.${perfilId}&order=created_at.desc`).then(setCarpetas));
@@ -10364,15 +10449,25 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
           ),
           wishlist: vis.wishlist !== false && wishlist.length > 0 && (
             <div key="wishlist" className="mb-8">
-              <h3 style={{ color: acento }} className="font-semibold mb-3 text-sm uppercase">Lista de deseos</h3>
-              <div className="grid gap-2">
-                {wishlist.map((a) => (
-                  <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3">
-                    {a.imagen_url && <img src={a.imagen_url} alt={a.carta} style={{ width: 40, height: 56, objectFit: "contain" }} />}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{a.carta}</p>
-                      {a.precio_max && <p style={{ color: COLORS.muted }} className="text-xs">Hasta ${Number(a.precio_max).toLocaleString("es-MX")}</p>}
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <h3 style={{ color: acento }} className="font-semibold text-sm uppercase">🎁 Wishlist</h3>
+                {onVerWishlistPublica && (
+                  <button onClick={() => onVerWishlistPublica(perfilId, perfil.slug)} style={{ color: acento }} className="text-xs font-semibold flex items-center gap-1">
+                    Ver completa <ExternalLink size={11} />
+                  </button>
+                )}
+              </div>
+              <div className="columns-2 sm:columns-3 gap-3">
+                {wishlist.slice(0, 9).map((c) => (
+                  <div key={c.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl overflow-hidden mb-3 break-inside-avoid">
+                    <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
+                      {c.imagen_url ? (
+                        <img src={c.imagen_url} alt={c.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                      ) : (
+                        <Package size={28} color={COLORS.muted} />
+                      )}
                     </div>
+                    <p className="text-xs font-medium p-2 line-clamp-2">{c.carta}</p>
                   </div>
                 ))}
               </div>
@@ -12591,7 +12686,238 @@ function UpsellCard({ requiere, plan, children, onIrAPlanes }) {
   );
 }
 
-function AlertasPanel({ session, perfil, onIrAPlanes }) {
+// Botón compartido para generar/descargar/compartir la imagen de una
+// Wishlist (ver src/lib/wishlistImagen.js) -- lo usan tanto MiWishlistView
+// (el dueño, editando) como WishlistPublicaView (cualquier visitante, sin
+// sesión, para guardar/reenviar la imagen sin necesitar el link).
+function BotonGenerarImagenWishlist({ perfil, cartas, linkWishlist }) {
+  const [generando, setGenerando] = useState(false);
+  const [error, setError] = useState(null);
+  const [preview, setPreview] = useState(null); // { url, blob }
+
+  const generar = async () => {
+    setGenerando(true); setError(null); setPreview(null);
+    try {
+      const blob = await generarImagenWishlist({ perfil, cartas, linkWishlist: linkWishlist || "encuentracartasmx.com" });
+      if (!blob) throw new Error("No se pudo generar la imagen.");
+      setPreview({ url: URL.createObjectURL(blob), blob });
+    } catch (e) { setError(e.message || "No se pudo generar la imagen."); } finally { setGenerando(false); }
+  };
+
+  const compartir = async () => {
+    if (!preview) return;
+    try {
+      const archivo = new File([preview.blob], "wishlist.png", { type: "image/png" });
+      if (navigator.canShare?.({ files: [archivo] })) {
+        await navigator.share({ files: [archivo], title: "Mi Wishlist -- Encuentra Cartas" });
+      }
+    } catch (e) { if (e?.name !== "AbortError") setError("No se pudo compartir la imagen."); }
+  };
+
+  if (cartas.length === 0) return null;
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 grid gap-3">
+      <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase">🖼️ Imagen para compartir</p>
+      {error && <ErrorBox message={error} />}
+      {!preview ? (
+        <button onClick={generar} disabled={generando} style={{ background: COLORS.azulMedio, color: COLORS.text }} className="rounded-lg px-4 py-2 text-sm font-semibold w-fit">
+          {generando ? "Generando..." : "Generar imagen"}
+        </button>
+      ) : (
+        <>
+          <img src={preview.url} alt="Vista previa de tu wishlist" style={{ maxWidth: "100%", borderRadius: 12 }} />
+          <div className="flex gap-2 flex-wrap">
+            <a href={preview.url} download={`wishlist-${(perfil?.slug || "encuentra-cartas")}.png`}
+              style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+              Descargar
+            </a>
+            {typeof navigator !== "undefined" && navigator.share && (
+              <button onClick={compartir} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+                Compartir
+              </button>
+            )}
+            <button onClick={generar} disabled={generando} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+              {generando ? "..." : "Volver a generar"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---- Mi Wishlist: carpeta visual de cartas "quiero" (Zafiro+), con link
+// público compartible e imagen descargable -- ver sección de
+// SUSCRIPCIONES.md sobre el rediseño de la Wishlist. Construida sobre
+// coleccion_usuario (estado='quiero'), NO sobre la tabla wishlist vieja
+// (sin imagen, ya discontinuada -- ver CatalogoView.marcar()).
+function MiWishlistView({ session, perfil, onIrAPlanes, onVerWishlistPublica }) {
+  const info = planDe(perfil);
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [cartas, setCartas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [tcgAgregar, setTcgAgregar] = useState("pokemon");
+  const [agregando, setAgregando] = useState(false);
+  const [quitando, setQuitando] = useState(null);
+  const [copiado, setCopiado] = useState(false);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    sb(`coleccion_usuario?select=*&perfil_id=eq.${session.user.id}&estado=eq.quiero&order=created_at.desc`, session)
+      .then(setCartas)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { if (info.wishlistCompartible) cargar(); }, []);
+
+  if (!info.wishlistCompartible) {
+    return (
+      <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+        Arma una carpeta visual con las cartas que buscas, comparte su link o descarga una imagen para mandarla directo (ej. en un grupo de WhatsApp).
+      </UpsellCard>
+    );
+  }
+
+  // Puede que la misma carta ya exista con estado='tengo' (marcada desde
+  // Master Sets) -- coleccion_usuario tiene un unique(perfil_id, tcg,
+  // card_api_id), así que un POST directo chocaría (23505). En ese caso
+  // se hace PATCH para pasarla a 'quiero' en vez de fallar.
+  const agregarCarta = async (c) => {
+    if (!c.card_api_id) return;
+    setAgregando(true); setError(null);
+    try {
+      try {
+        await sbWrite("POST", "coleccion_usuario", {
+          perfil_id: session.user.id, tcg: tcgAgregar, card_api_id: c.card_api_id, carta: c.name,
+          set_nombre: c.set_nombre || null, imagen_url: c.imagen_url || null, estado: "quiero",
+        }, session);
+      } catch (e) {
+        if (e?.code === "23505" || /duplicad|unique/i.test(e.message || "")) {
+          await sbWrite("PATCH", `coleccion_usuario?perfil_id=eq.${session.user.id}&tcg=eq.${tcgAgregar}&card_api_id=eq.${encodeURIComponent(c.card_api_id)}`, { estado: "quiero" }, session);
+        } else throw e;
+      }
+      cargar();
+    } catch (e) { setError(e.message); } finally { setAgregando(false); }
+  };
+
+  const quitar = async (id) => {
+    setQuitando(id);
+    try { await sbWrite("DELETE", `coleccion_usuario?id=eq.${id}`, {}, session); cargar(); }
+    catch (e) { setError(e.message); } finally { setQuitando(null); }
+  };
+
+  const linkWishlist = perfil?.slug ? `${window.location.origin}/?wishlist=${encodeURIComponent(perfil.slug)}` : null;
+  const copiarLink = async () => {
+    if (!linkWishlist) return;
+    try { await navigator.clipboard.writeText(linkWishlist); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch {}
+  };
+
+  return (
+    <div>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">Arma tu carpeta visual de cartas deseadas y compártela con un link o una imagen.</p>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6 grid gap-2">
+        <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase">Agregar carta</p>
+        <select value={tcgAgregar} onChange={(e) => setTcgAgregar(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
+          {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+        <CardPickerUniversal tcg={tcgAgregar} onSelect={agregarCarta} />
+        {agregando && <p style={{ color: COLORS.muted }} className="text-xs">Agregando...</p>}
+      </div>
+
+      {linkWishlist && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azul}55` }} className="rounded-xl p-4 mb-6 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-1">Comparte tu wishlist</p>
+            <p style={{ color: COLORS.muted }} className="text-xs break-all">{linkWishlist}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {onVerWishlistPublica && (
+              <button onClick={onVerWishlistPublica} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">
+                👁️ Verla como público
+              </button>
+            )}
+            <button onClick={copiarLink} style={{ border: `1px solid ${copiado ? COLORS.azulClaro : COLORS.surface2}`, color: copiado ? COLORS.azulClaro : COLORS.muted }}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+              {copiado ? <Check size={13} /> : <Copy size={13} />}
+              {copiado ? "¡Copiado!" : "Copiar link"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <Loading label="Cargando tu wishlist..." /> : (
+        <>
+          {cartas.length === 0 ? (
+            <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Todavía no has agregado cartas. Búscalas arriba o márcalas "quiero" desde el Catálogo.</p>
+          ) : (
+            <>
+              <div className="mb-6"><BotonGenerarImagenWishlist perfil={perfil} cartas={cartas} linkWishlist={linkWishlist} /></div>
+              <div className="columns-2 sm:columns-3 lg:columns-4 gap-4">
+                {cartas.map((c) => (
+                  <div key={c.id} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${COLORS.azulClaro}29` }}
+                    className="rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid">
+                    <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
+                      {c.imagen_url ? (
+                        <img src={c.imagen_url} alt={c.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                      ) : (
+                        <Package size={40} color={COLORS.muted} />
+                      )}
+                    </div>
+                    <div className="p-3 flex flex-col gap-1">
+                      <p className="font-semibold text-sm leading-snug line-clamp-2">{c.carta}</p>
+                      <p style={{ color: COLORS.muted }} className="text-xs truncate">{c.set_nombre || TCG_LABEL[c.tcg] || c.tcg}</p>
+                      <button onClick={() => quitar(c.id)} disabled={quitando === c.id} style={{ color: "#C24444" }} className="text-xs font-semibold text-left mt-1">
+                        {quitando === c.id ? "..." : "Quitar"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---- "Lista de deseos": envoltura de 2 pestañas -- "🎁 Mi Wishlist"
+// (rediseñada, ver MiWishlistView, Zafiro+) y "🔔 Alertas de precio con
+// notificación push" (sin cambios, Amatista+ vía info.wishlistPremium).
+// Se conservan el nombre de función y el view="alertas" de siempre para
+// no tener que tocar el nav/routing -- solo se reestructura por dentro.
+function AlertasPanel({ session, perfil, onIrAPlanes, onVerWishlistPublica }) {
+  const [tab, setTab] = useState("wishlist");
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Lista de deseos</h2>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Tu carpeta de cartas deseadas, y tus alertas de precio.</p>
+      <div className="flex gap-2 mb-6 flex-wrap">
+        <button onClick={() => setTab("wishlist")}
+          style={{ background: tab === "wishlist" ? COLORS.surface2 : "transparent", border: `1px solid ${tab === "wishlist" ? COLORS.azulPalido : COLORS.surface2}`, color: tab === "wishlist" ? COLORS.azulPalido : COLORS.muted }}
+          className="rounded-lg px-4 py-2 text-sm font-semibold">🎁 Mi Wishlist</button>
+        <button onClick={() => setTab("alertas")}
+          style={{ background: tab === "alertas" ? COLORS.surface2 : "transparent", border: `1px solid ${tab === "alertas" ? COLORS.azulPalido : COLORS.surface2}`, color: tab === "alertas" ? COLORS.azulPalido : COLORS.muted }}
+          className="rounded-lg px-4 py-2 text-sm font-semibold">🔔 Alertas de precio</button>
+      </div>
+      {tab === "wishlist" ? (
+        <MiWishlistView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} onVerWishlistPublica={onVerWishlistPublica} />
+      ) : (
+        <AlertasPrecioView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
+      )}
+    </div>
+  );
+}
+
+// Alertas de precio con notificación push -- exactamente la misma lógica
+// que ya existía, solo separada en su propio componente (antes vivía
+// mezclada con "Mi lista de deseos" dentro de AlertasPanel).
+function AlertasPrecioView({ session, perfil, onIrAPlanes }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const info = planDe(perfil);
   const [alertas, setAlertas] = useState([]);
@@ -12603,27 +12929,6 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
   const [tipo, setTipo] = useState("carta"); // carta | sellado
   const vacio = { tcg: "pokemon", carta: "", precio_max: "", zona: "", card_api_id: "", imagen_url: "", precio_ref_mxn: null, precio_ref_fuente: null };
   const [nueva, setNueva] = useState(vacio);
-
-  // "Mi Wishlist" (tabla wishlist, cartas marcadas "quiero" desde el Catálogo)
-  // es gratis para cualquiera con sesión -- distinto de las alertas de precio
-  // con push de más abajo, que siguen siendo exclusivas Amatista+.
-  const [misDeseos, setMisDeseos] = useState([]);
-  const [loadingDeseos, setLoadingDeseos] = useState(true);
-
-  const cargarDeseos = () => {
-    setLoadingDeseos(true);
-    sb(`wishlist?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc`, session)
-      .then(setMisDeseos)
-      .catch(() => setMisDeseos([]))
-      .finally(() => setLoadingDeseos(false));
-  };
-
-  useEffect(() => { cargarDeseos(); }, []);
-
-  const borrarDeseo = async (id) => {
-    setMisDeseos((prev) => prev.filter((d) => d.id !== id));
-    try { await sbWrite("DELETE", `wishlist?id=eq.${id}`, {}, session); } catch (e) { setError(e.message); }
-  };
 
   const cargar = () => {
     setLoading(true); setError(null);
@@ -12673,31 +12978,7 @@ function AlertasPanel({ session, perfil, onIrAPlanes }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Lista de deseos</h2>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Cartas que marcaste como "quiero" en el Catálogo, y tus alertas de precio.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
-
-      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Mi lista de deseos</h3>
-      {loadingDeseos ? <Loading label="Cargando tu wishlist..." /> : (
-        <div className="grid gap-2 mb-8">
-          {misDeseos.length === 0 && (
-            <p style={{ color: COLORS.muted }} className="text-sm">
-              Aún no has marcado ninguna carta como "quiero". Hazlo desde el Catálogo para verla aquí.
-            </p>
-          )}
-          {misDeseos.map((d) => (
-            <div key={d.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
-              <div className="flex-1 min-w-[140px]">
-                <p className="font-medium text-sm">{d.carta}</p>
-                <p style={{ color: COLORS.muted }} className="text-xs">{TCG_LABEL[d.tcg] || d.tcg}</p>
-              </div>
-              <button onClick={() => borrarDeseo(d.id)} style={{ color: COLORS.azulPalido }} className="text-xs px-2">Borrar</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Alertas de precio con notificación push</h3>
       {!info.wishlistPremium ? (
         <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
           Configura alertas como "avísame si sale Charizard a menos de $500" y recibe una notificación push apenas alguien lo publique.
@@ -13133,7 +13414,7 @@ function MiCuentaView({ session, perfil, onGuardado, onVerMiPerfil }) {
             <p style={{ color: COLORS.azulPalido }} className="text-xs font-semibold uppercase mb-1">Qué se ve en tu perfil público</p>
             {[
               { key: "publicaciones", label: "Mis cartas y producto sellado en venta" },
-              { key: "wishlist", label: "Mi lista de deseos" },
+              { key: "wishlist", label: "Mi Wishlist (también controla el link directo que compartes)" },
               { key: "favoritos", label: "Mis Pokémon favoritos" },
               { key: "carpetas", label: "Mis carpetas" },
             ].map((op) => (
@@ -14132,14 +14413,15 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
         await sbWrite("DELETE", `coleccion_usuario?perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}&card_api_id=eq.${encodeURIComponent(carta.id)}`, {}, session);
       }
       if (nuevoEstado) {
+        // "quiero" ya no se espeja también en la tabla wishlist (vieja,
+        // sin imagen) -- coleccion_usuario es autosuficiente para la
+        // Wishlist rediseñada (carpeta visual + link público, ver
+        // MiWishlistView/WishlistPublicaView) y ya trae su propio
+        // unique(perfil_id, tcg, card_api_id) para el dedup.
         await sbWrite("POST", "coleccion_usuario", {
           perfil_id: session.user.id, tcg: tcgSel, card_api_id: carta.id, carta: carta.name,
           set_nombre: setSel?.nombre || null, imagen_url: carta.image || null, estado: nuevoEstado,
         }, session);
-        if (nuevoEstado === "quiero") {
-          const existe = await sb(`wishlist?select=id&perfil_id=eq.${session.user.id}&tcg=eq.${tcgSel}&carta=eq.${encodeURIComponent(carta.name)}`, session);
-          if (!existe.length) await sbWrite("POST", "wishlist", { perfil_id: session.user.id, tcg: tcgSel, carta: carta.name }, session);
-        }
       }
     } catch (e) { setError(e.message); }
   };
@@ -14703,6 +14985,7 @@ export default function EncuentraCartas() {
   const [selectedSorteoId, setSelectedSorteoId] = useState(null);
   const [selectedSubastaId, setSelectedSubastaId] = useState(null);
   const [selectedCarpetaPublicaId, setSelectedCarpetaPublicaId] = useState(null);
+  const [selectedWishlistPerfilId, setSelectedWishlistPerfilId] = useState(null);
   const [vistaAntesDePerfil, setVistaAntesDePerfil] = useState("search");
   const [vistaAntesLegal, setVistaAntesLegal] = useState("search");
   const irALegal = (id) => { setVistaAntesLegal(view); setView(id); };
@@ -14954,7 +15237,7 @@ export default function EncuentraCartas() {
   const actualizarUrlCompartible = (params) => {
     try {
       const u = new URL(window.location.href);
-      ["listing", "tabla", "u", "tienda", "sorteo", "ref", "c", "subasta", "carpeta"].forEach((k) => u.searchParams.delete(k));
+      ["listing", "tabla", "u", "tienda", "sorteo", "ref", "c", "subasta", "carpeta", "wishlist"].forEach((k) => u.searchParams.delete(k));
       Object.entries(params || {}).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
       window.history.pushState({}, "", u);
     } catch {}
@@ -15045,6 +15328,7 @@ export default function EncuentraCartas() {
     const campanaCodigo = params.get("c");
     const subastaId = params.get("subasta");
     const carpetaId = params.get("carpeta");
+    const wishlistSlug = params.get("wishlist");
     // Link de referido de un sorteo (?sorteo=X&ref=Y): se guarda para
     // acreditárselo a quien invitó en cuanto esta visita termine de
     // registrarse (ver procesarNuevoRegistro) -- puede pasar varias
@@ -15080,6 +15364,13 @@ export default function EncuentraCartas() {
     } else if (carpetaId) {
       setSelectedCarpetaPublicaId(carpetaId);
       setView("carpetaPublica");
+    } else if (wishlistSlug) {
+      // La wishlist no es una fila con su propio id (es "las cartas quiero
+      // de este perfil"), así que el link usa el slug del perfil, igual
+      // que ?u=<slug> -- se resuelve a un id antes de abrir la vista.
+      sb(`perfiles?select=id&slug=eq.${encodeURIComponent(wishlistSlug)}`)
+        .then((rows) => { if (rows[0]) abrirWishlistPublica(rows[0].id); })
+        .catch(() => {});
     }
   }, []);
 
@@ -15087,6 +15378,12 @@ export default function EncuentraCartas() {
     setSelectedCarpetaPublicaId(id);
     setView("carpetaPublica");
     actualizarUrlCompartible({ carpeta: id });
+  };
+
+  const abrirWishlistPublica = (perfilId, slug) => {
+    setSelectedWishlistPerfilId(perfilId);
+    setView("wishlistPublica");
+    if (slug) actualizarUrlCompartible({ wishlist: slug });
   };
 
   const verTiendaDesdePerfil = (tiendaId) => {
@@ -16045,7 +16342,7 @@ export default function EncuentraCartas() {
 
         {/* WISHLIST / ALERTAS */}
         {view === "alertas" && session && (
-          <AlertasPanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />
+          <AlertasPanel session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} onVerWishlistPublica={() => abrirWishlistPublica(session.user.id, perfil?.slug)} />
         )}
 
         {/* AYUDA */}
@@ -16286,6 +16583,14 @@ export default function EncuentraCartas() {
           />
         )}
 
+        {view === "wishlistPublica" && selectedWishlistPerfilId && (
+          <WishlistPublicaView
+            perfilId={selectedWishlistPerfilId}
+            onVerPerfil={verPerfil}
+            onVolver={() => { setSelectedWishlistPerfilId(null); setView("search"); actualizarUrlCompartible({}); }}
+          />
+        )}
+
         {view === "perfilPublico" && selectedPerfilId && (
           <PerfilPublicoView
             perfilId={selectedPerfilId}
@@ -16295,6 +16600,7 @@ export default function EncuentraCartas() {
             onVerTienda={verTiendaDesdePerfil}
             onAbrirDetalle={abrirDetalle}
             onSlugResuelto={(slug) => actualizarUrlCompartible(slug ? { u: slug } : {})}
+            onVerWishlistPublica={(id, slug) => abrirWishlistPublica(id, slug)}
           />
         )}
 
