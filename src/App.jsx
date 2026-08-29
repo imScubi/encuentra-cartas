@@ -9801,6 +9801,7 @@ function TarjetaVentaEventoGrid({ v, onEditar, onBorrar }) {
       </div>
       <p className="text-[11px] text-center line-clamp-2 leading-tight" style={{ minHeight: 28 }}>{v.nombre}</p>
       {v.cantidad > 1 && <p style={{ color: COLORS.muted }} className="text-[10px] -mt-1">×{v.cantidad}</p>}
+      {v.precio_lista ? <p style={{ color: COLORS.azulPalido }} className="text-[11px] font-semibold -mt-0.5">{fmtMoneyEvento(v.precio_lista)}</p> : null}
       <div className="flex gap-1">
         <button onClick={onEditar} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-[10px] px-1.5 py-0.5 rounded font-semibold">Vender</button>
         <button onClick={onBorrar} style={{ color: "#E27070" }} className="p-0.5"><Trash2 size={12} /></button>
