@@ -19,6 +19,10 @@ import { moderarFotoReal } from "./lib/moderacion.js";
 import { comprimirImagen } from "./lib/imagen.js";
 import { generarImagenWishlist } from "./lib/wishlistImagen.js";
 import {
+  sbWriteConCola, esErrorDeRed, nuevoId, nuevoTimestamp, sincronizarCola,
+  colaTieneAlgo, contarCola, guardarCacheEvento, leerCacheEvento, guardarCacheEventos, leerCacheEventos,
+} from "./lib/offlineEventos.js";
+import {
   pokemonSpriteUrl, randomPokemonAvatar, obtenerListaPokemon,
   parseNumeroYSet, buscarImagenRespaldoPorTcg, buscarCartaTCGdex, buscarCartasVisual, obtenerPrecioRefActual,
   buscarCartasCatalogo, obtenerPrecioRefActualPorTcg, categoriaIdTCGplayer,
@@ -8659,6 +8663,51 @@ const METODO_PAGO_EVENTO_LABEL = Object.fromEntries(METODO_PAGO_EVENTO_OPCIONES.
 // combinan en un solo número con signo (intercambio_ajuste) al guardar.
 const ingresoDeVenta = (v) => (v.tipo_operacion === "intercambio" ? Number(v.intercambio_ajuste || 0) : Number(v.precio_venta || 0) * v.cantidad);
 
+// Barra de estado de la cola de sincronización offline (ver
+// src/lib/offlineEventos.js) -- compartida entre ModoEventoView y
+// EventoDetalle. Sondea contarCola() cada pocos segundos en vez de recibir
+// el número por props: la cola la puede tocar cualquiera de los ~12
+// guardados de Modo Evento, y sondear un número es más simple que hacer
+// pasar ese estado por todos ellos para algo que es solo un indicador
+// visual (la corrección real vive en la cola misma, no en este contador).
+function EstadoOfflineBar({ session, onSincronizado }) {
+  const [cuenta, setCuenta] = useState(() => contarCola());
+  const [sincronizando, setSincronizando] = useState(false);
+  const [enLinea, setEnLinea] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+
+  useEffect(() => {
+    const actualizar = () => { setCuenta(contarCola()); setEnLinea(navigator.onLine); };
+    actualizar();
+    window.addEventListener("online", actualizar);
+    window.addEventListener("offline", actualizar);
+    const id = setInterval(actualizar, 4000);
+    return () => { window.removeEventListener("online", actualizar); window.removeEventListener("offline", actualizar); clearInterval(id); };
+  }, []);
+
+  const sincronizar = async () => {
+    setSincronizando(true);
+    try {
+      const resultado = await sincronizarCola(session);
+      setCuenta(contarCola());
+      onSincronizado?.(resultado);
+    } finally { setSincronizando(false); }
+  };
+
+  if (cuenta === 0 && enLinea) return null;
+  return (
+    <div style={{ background: `${COLORS.gold}18`, border: `1px solid ${COLORS.gold}55` }} className="rounded-lg px-3 py-2 mb-4 flex items-center justify-between gap-2 flex-wrap text-xs">
+      <span style={{ color: COLORS.gold }} className="font-semibold">
+        {!enLinea ? "📴 Sin conexión" : "🔄 Hay cambios pendientes"}{cuenta > 0 ? ` · ${cuenta} cambio${cuenta === 1 ? "" : "s"} sin sincronizar` : ""}
+      </span>
+      {cuenta > 0 && (
+        <button onClick={sincronizar} disabled={sincronizando} style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}77` }} className="rounded-lg px-2.5 py-1 font-semibold">
+          {sincronizando ? "Sincronizando..." : "Sincronizar ahora"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ModoEventoView({ session, perfil, onIrAPlanes }) {
   const info = planDe(perfil);
   const [eventos, setEventos] = useState([]);
@@ -8671,15 +8720,40 @@ function ModoEventoView({ session, perfil, onIrAPlanes }) {
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
-  const cargar = () => {
+  // ---- Sin internet: mientras la cola de sincronización tenga algo
+  // pendiente, nunca se pisa el estado local con un fetch (que estaría
+  // desactualizado) -- se reintenta la cola primero, y solo si queda
+  // vacía se hace la carga normal. Ver src/lib/offlineEventos.js.
+  const cargar = async () => {
     setLoading(true); setError(null);
-    sb(`eventos?select=*&perfil_id=eq.${session.user.id}&order=fecha_inicio.desc`, session)
-      .then(setEventos)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+    if (colaTieneAlgo()) await sincronizarCola(session).catch(() => {});
+    if (colaTieneAlgo()) { setLoading(false); const cache = leerCacheEventos(); if (cache) setEventos(cache); return; }
+    try {
+      const datos = await sb(`eventos?select=*&perfil_id=eq.${session.user.id}&order=fecha_inicio.desc`, session);
+      setEventos(datos);
+    } catch (e) {
+      if (esErrorDeRed(e)) { const cache = leerCacheEventos(); if (cache) setEventos(cache); else setError(e.message); }
+      else setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { if (info.modoEvento) cargar(); }, []);
+
+  // Guarda en caché cada vez que la lista cambia (creaste/cerraste/borraste
+  // un evento) -- pero nunca durante la carga inicial en curso, para no
+  // pisar una caché buena con el arreglo vacío del primer render.
+  useEffect(() => { if (info.modoEvento && !loading) guardarCacheEventos(eventos); }, [eventos, loading]);
+
+  // Reintenta sola al reconectar -- mejor esfuerzo, el evento "online" del
+  // navegador no es 100% confiable en Android, por eso el botón manual de
+  // abajo sigue siendo la vía principal.
+  useEffect(() => {
+    if (!info.modoEvento) return;
+    window.addEventListener("online", cargar);
+    return () => window.removeEventListener("online", cargar);
+  }, [info.modoEvento]);
 
   if (!info.modoEvento) {
     return (
@@ -8696,13 +8770,16 @@ function ModoEventoView({ session, perfil, onIrAPlanes }) {
     if (!nuevo.nombre.trim() || !nuevo.fecha_inicio) { setError("Ponle un nombre y una fecha de inicio al evento."); return; }
     setCreando(true); setError(null);
     try {
-      const [fila] = await sbWrite("POST", "eventos", {
+      const [fila] = await sbWriteConCola("POST", "eventos", {
+        id: nuevoId(),
+        created_at: nuevoTimestamp(),
         perfil_id: session.user.id,
         nombre: nuevo.nombre.trim(),
         lugar: nuevo.lugar.trim() || null,
         fecha_inicio: nuevo.fecha_inicio,
         fecha_fin: nuevo.fecha_fin || null,
-      }, session);
+        estado: "activo",
+      }, session, { label: `Evento: ${nuevo.nombre.trim()}` });
       setEventos((e) => [fila, ...e]);
       setNuevo({ nombre: "", lugar: "", fecha_inicio: hoyISO(), fecha_fin: "" });
       setMostrarNuevo(false);
@@ -8734,7 +8811,8 @@ function ModoEventoView({ session, perfil, onIrAPlanes }) {
           {mostrarNuevo ? "Cancelar" : "+ Nuevo evento"}
         </button>
       </div>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Registra cada evento donde vendas en persona: importa tu inventario, marca lo que vayas vendiendo con su costo real, anota tus gastos del día y mira tu ganancia en vivo.</p>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Registra cada evento donde vendas en persona: importa tu inventario, marca lo que vayas vendiendo con su costo real, anota tus gastos del día y mira tu ganancia en vivo. Si se corta la señal, puedes seguir agregando ventas y gastos -- se guardan solos en cuanto vuelva la conexión.</p>
+      <EstadoOfflineBar session={session} onSincronizado={(r) => { if (r?.fallos?.length) setError(`${r.fallos.length} cambio(s) sin conexión no se pudieron guardar y se descartaron (revisa que el evento siga existiendo).`); cargar(); }} />
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
       {mostrarNuevo && (
@@ -8762,7 +8840,7 @@ function ModoEventoView({ session, perfil, onIrAPlanes }) {
           {eventos.map((ev) => (
             <button key={ev.id} onClick={() => setEventoAbiertoId(ev.id)} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 text-left flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <p className="font-semibold">{ev.nombre}</p>
+                <p className="font-semibold">{ev.nombre}{ev._pendiente && <span style={{ color: COLORS.gold }} className="text-[10px] font-normal ml-1">🕓 pendiente</span>}</p>
                 <p style={{ color: COLORS.muted }} className="text-xs mt-0.5">
                   {new Date(ev.fecha_inicio + "T00:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
                   {ev.fecha_fin && ev.fecha_fin !== ev.fecha_inicio ? ` – ${new Date(ev.fecha_fin + "T00:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}` : ""}
@@ -8787,15 +8865,43 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const [errorDetalle, setErrorDetalle] = useState(null);
   const [okDetalle, setOkDetalle] = useState(null);
 
-  const cargarDetalle = () => {
+  // Mismo invariante que ModoEventoView.cargar(): mientras la cola tenga
+  // algo de este evento sin sincronizar, nunca se pisa el estado local con
+  // un fetch (que estaría desactualizado) -- se reintenta la cola primero.
+  const cargarDetalle = async () => {
     setLoadingDetalle(true); setErrorDetalle(null);
-    Promise.all([
-      sb(`evento_ventas?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session).then(setVentas),
-      sb(`evento_gastos?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session).then(setGastos),
-      sb(`evento_adquisiciones?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session).then(setAdquisiciones),
-    ]).catch((e) => setErrorDetalle(e.message)).finally(() => setLoadingDetalle(false));
+    if (colaTieneAlgo()) await sincronizarCola(session).catch(() => {});
+    if (colaTieneAlgo()) {
+      setLoadingDetalle(false);
+      const cache = leerCacheEvento(evento.id);
+      if (cache) { setVentas(cache.ventas || []); setGastos(cache.gastos || []); setAdquisiciones(cache.adquisiciones || []); }
+      return;
+    }
+    try {
+      const [v, g, a] = await Promise.all([
+        sb(`evento_ventas?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session),
+        sb(`evento_gastos?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session),
+        sb(`evento_adquisiciones?select=*&evento_id=eq.${evento.id}&order=created_at.desc`, session),
+      ]);
+      setVentas(v); setGastos(g); setAdquisiciones(a);
+    } catch (e) {
+      if (esErrorDeRed(e)) {
+        const cache = leerCacheEvento(evento.id);
+        if (cache) { setVentas(cache.ventas || []); setGastos(cache.gastos || []); setAdquisiciones(cache.adquisiciones || []); }
+        else setErrorDetalle(e.message);
+      } else setErrorDetalle(e.message);
+    } finally {
+      setLoadingDetalle(false);
+    }
   };
   useEffect(() => { cargarDetalle(); }, [evento.id]);
+
+  // Guarda en caché la vista local (ya incluye cualquier fila optimista sin
+  // sincronizar) en cada cambio, para que recargar la página sin señal
+  // restaure exactamente lo que se estaba viendo -- nunca durante la carga
+  // inicial en curso, para no pisar una caché buena con los arreglos vacíos
+  // del primer render.
+  useEffect(() => { if (!loadingDetalle) guardarCacheEvento(evento.id, { ventas, gastos, adquisiciones }); }, [evento.id, ventas, gastos, adquisiciones, loadingDetalle]);
 
   const resumen = useMemo(() => {
     const vendidas = ventas.filter((v) => v.vendida);
@@ -8866,14 +8972,14 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
     setCambiandoEstado(true); setErrorDetalle(null);
     try {
       const nuevoEstado = evento.estado === "cerrado" ? "activo" : "cerrado";
-      await sbWrite("PATCH", `eventos?id=eq.${evento.id}`, { estado: nuevoEstado }, session);
+      await sbWriteConCola("PATCH", `eventos?id=eq.${evento.id}`, { estado: nuevoEstado }, session, { label: `Cerrar/reabrir: ${evento.nombre}` });
       onEventoActualizado({ estado: nuevoEstado });
     } catch (e) { setErrorDetalle(e.message); } finally { setCambiandoEstado(false); }
   };
   const borrarEvento = async () => {
     if (!window.confirm(`¿Borrar el evento "${evento.nombre}"? Se borran también todas sus ventas y gastos registrados. Esto no se puede deshacer.`)) return;
     try {
-      await sbWrite("DELETE", `eventos?id=eq.${evento.id}`, {}, session);
+      await sbWriteConCola("DELETE", `eventos?id=eq.${evento.id}`, {}, session, { label: `Borrar evento: ${evento.nombre}` });
       onEventoBorrado();
     } catch (e) { setErrorDetalle(e.message); }
   };
@@ -8891,6 +8997,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const SIN_CARPETA_KEY = "__sin_carpeta__";
 
   const abrirImportar = async () => {
+    if (!navigator.onLine) { setErrorDetalle("Se necesita conexión a internet para importar tu inventario (esto sí lee tus publicaciones en vivo)."); return; }
     setMostrarImportar(true);
     if (inventarioDisponible !== null || cargandoInventario) return;
     setCargandoInventario(true); setErrorDetalle(null);
@@ -9034,14 +9141,16 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const registrarAdquisicionDeIntercambio = async (ventaId, valor, dia) => {
     if (valor.tipo_operacion !== "intercambio" || !valor.recibioNombre.trim()) return;
     try {
-      const [fila] = await sbWrite("POST", "evento_adquisiciones", [{
+      const [fila] = await sbWriteConCola("POST", "evento_adquisiciones", [{
+        id: nuevoId(),
+        created_at: nuevoTimestamp(),
         evento_id: evento.id,
         nombre: valor.recibioNombre.trim(),
         imagen_url: valor.recibioImagenUrl || null,
         dia: dia || hoyISO(),
         costo: 0,
         origen_venta_id: ventaId,
-      }], session);
+      }], session, { label: `Recibido en intercambio: ${valor.recibioNombre.trim()}` });
       setAdquisiciones((a) => [fila, ...a]);
     } catch { /* no bloquea el guardado de la venta si esto falla */ }
   };
@@ -9052,7 +9161,9 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
     setGuardandoVenta(true); setErrorDetalle(null);
     try {
       const dia = nuevaVenta.vendidaYa ? (nuevaVenta.dia || hoyISO()) : hoyISO();
-      const [fila] = await sbWrite("POST", "evento_ventas", [{
+      const [fila] = await sbWriteConCola("POST", "evento_ventas", [{
+        id: nuevoId(),
+        created_at: nuevoTimestamp(),
         evento_id: evento.id,
         nombre: nuevaVenta.nombre.trim(),
         imagen_url: nuevaVenta.imagen_url || null,
@@ -9067,7 +9178,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
         tipo_operacion: nuevaVenta.vendidaYa ? nuevaVenta.tipo_operacion : "venta",
         metodo_pago: nuevaVenta.vendidaYa ? (nuevaVenta.metodo_pago || null) : null,
         intercambio_ajuste: nuevaVenta.vendidaYa ? calcularAjusteIntercambio(nuevaVenta) : null,
-      }], session);
+      }], session, { label: `Venta: ${nuevaVenta.nombre.trim()}` });
       setVentas((v) => [fila, ...v]);
       if (nuevaVenta.vendidaYa) await registrarAdquisicionDeIntercambio(fila.id, nuevaVenta, dia);
       setNuevaVenta(vacioAgregar);
@@ -9124,9 +9235,13 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
         metodo_pago: edit.vendida ? (edit.metodo_pago || null) : null,
         intercambio_ajuste: edit.vendida ? calcularAjusteIntercambio(edit) : null,
       };
-      const [fila] = await sbWrite("PATCH", `evento_ventas?id=eq.${editandoId}`, cambios, session);
-      setVentas((vs) => vs.map((v) => (v.id === fila.id ? fila : v)));
-      if (edit.vendida) await registrarAdquisicionDeIntercambio(fila.id, edit, dia);
+      const idEditado = editandoId;
+      await sbWriteConCola("PATCH", `evento_ventas?id=eq.${idEditado}`, cambios, session, { label: `Editar venta` });
+      // Se arma la fila localmente con lo que ya sabemos en vez de confiar en
+      // lo que regresa el server -- estando sin conexión no hay respuesta
+      // real que confiar, y el resultado es idéntico cuando sí la hay.
+      setVentas((vs) => vs.map((v) => (v.id === idEditado ? { ...v, ...cambios } : v)));
+      if (edit.vendida) await registrarAdquisicionDeIntercambio(idEditado, edit, dia);
       setEditandoId(null); setEdit(null);
     } catch (e) { setErrorDetalle(e.message); } finally { setGuardandoEdit(false); }
   };
@@ -9134,7 +9249,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const borrarVenta = async (v) => {
     if (!window.confirm(`¿Quitar "${v.nombre}" de este evento?`)) return;
     try {
-      await sbWrite("DELETE", `evento_ventas?id=eq.${v.id}`, {}, session);
+      await sbWriteConCola("DELETE", `evento_ventas?id=eq.${v.id}`, {}, session, { label: `Borrar venta: ${v.nombre}` });
       setVentas((vs) => vs.filter((x) => x.id !== v.id));
     } catch (e) { setErrorDetalle(e.message); }
   };
@@ -9149,13 +9264,15 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
     if (!nuevoGasto.monto || Number(nuevoGasto.monto) <= 0) { setErrorDetalle("Pon el monto del gasto."); return; }
     setGuardandoGasto(true); setErrorDetalle(null);
     try {
-      const [fila] = await sbWrite("POST", "evento_gastos", [{
+      const [fila] = await sbWriteConCola("POST", "evento_gastos", [{
+        id: nuevoId(),
+        created_at: nuevoTimestamp(),
         evento_id: evento.id,
         tipo: nuevoGasto.tipo,
         descripcion: nuevoGasto.descripcion.trim() || null,
         monto: Number(nuevoGasto.monto),
         dia: nuevoGasto.dia || null,
-      }], session);
+      }], session, { label: `Gasto: ${TIPO_GASTO_EVENTO_LABEL[nuevoGasto.tipo]}` });
       setGastos((g) => [fila, ...g]);
       setNuevoGasto(vacioGasto);
       setMostrarGasto(false);
@@ -9165,7 +9282,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const borrarGasto = async (g) => {
     if (!window.confirm("¿Borrar este gasto?")) return;
     try {
-      await sbWrite("DELETE", `evento_gastos?id=eq.${g.id}`, {}, session);
+      await sbWriteConCola("DELETE", `evento_gastos?id=eq.${g.id}`, {}, session, { label: "Borrar gasto" });
       setGastos((gs) => gs.filter((x) => x.id !== g.id));
     } catch (e) { setErrorDetalle(e.message); }
   };
@@ -9182,13 +9299,15 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
     if (!nuevaCompra.nombre.trim()) { setErrorDetalle("Ponle un nombre a la carta que compraste."); return; }
     setGuardandoCompra(true); setErrorDetalle(null);
     try {
-      const [fila] = await sbWrite("POST", "evento_adquisiciones", [{
+      const [fila] = await sbWriteConCola("POST", "evento_adquisiciones", [{
+        id: nuevoId(),
+        created_at: nuevoTimestamp(),
         evento_id: evento.id,
         nombre: nuevaCompra.nombre.trim(),
         costo: Number(nuevaCompra.costo) || 0,
         metodo_pago: nuevaCompra.metodo_pago || null,
         dia: nuevaCompra.dia || hoyISO(),
-      }], session);
+      }], session, { label: `Compra: ${nuevaCompra.nombre.trim()}` });
       setAdquisiciones((a) => [fila, ...a]);
       setNuevaCompra(vacioCompra);
       setMostrarCompra(false);
@@ -9198,7 +9317,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const borrarAdquisicion = async (a) => {
     if (!window.confirm(`¿Quitar "${a.nombre}" de lo que entró?`)) return;
     try {
-      await sbWrite("DELETE", `evento_adquisiciones?id=eq.${a.id}`, {}, session);
+      await sbWriteConCola("DELETE", `evento_adquisiciones?id=eq.${a.id}`, {}, session, { label: `Borrar compra: ${a.nombre}` });
       setAdquisiciones((as_) => as_.filter((x) => x.id !== a.id));
     } catch (e) { setErrorDetalle(e.message); }
   };
@@ -9352,6 +9471,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
         </button>
       </div>
 
+      <EstadoOfflineBar session={session} onSincronizado={(r) => { if (r?.fallos?.length) setErrorDetalle(`${r.fallos.length} cambio(s) sin conexión no se pudieron guardar y se descartaron.`); cargarDetalle(); }} />
       {errorDetalle && <div className="mb-4"><ErrorBox message={errorDetalle} /></div>}
       {okDetalle && <p style={{ color: COLORS.azulPalido }} className="text-sm mb-4">{okDetalle}</p>}
 
@@ -9544,6 +9664,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
             <div key={g.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-2.5 flex items-center justify-between gap-2">
               <div className="text-sm">
                 <span className="font-semibold">{TIPO_GASTO_EVENTO_LABEL[g.tipo] || g.tipo}</span>
+                {g._pendiente && <span style={{ color: COLORS.gold }} className="text-[10px] ml-1">🕓 pendiente</span>}
                 {g.descripcion && <span style={{ color: COLORS.muted }}> — {g.descripcion}</span>}
                 {g.dia && <span style={{ color: COLORS.muted }} className="text-xs"> · {fmtDia(g.dia)}</span>}
               </div>
@@ -9590,6 +9711,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
             <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-2.5 flex items-center justify-between gap-2 flex-wrap">
               <div className="text-sm">
                 <span className="font-semibold">{a.nombre}</span>
+                {a._pendiente && <span style={{ color: COLORS.gold }} className="text-[10px] ml-1">🕓 pendiente</span>}
                 {a.origen_venta_id ? (
                   <Badge color={COLORS.violeta}>🔁 Intercambio</Badge>
                 ) : a.metodo_pago ? (
@@ -9802,6 +9924,7 @@ function TarjetaVentaEventoGrid({ v, onEditar, onBorrar }) {
       <p className="text-[11px] text-center line-clamp-2 leading-tight" style={{ minHeight: 28 }}>{v.nombre}</p>
       {v.cantidad > 1 && <p style={{ color: COLORS.muted }} className="text-[10px] -mt-1">×{v.cantidad}</p>}
       {v.precio_lista ? <p style={{ color: COLORS.azulPalido }} className="text-[11px] font-semibold -mt-0.5">{fmtMoneyEvento(v.precio_lista)}</p> : null}
+      {v._pendiente && <span style={{ color: COLORS.gold }} className="text-[9px]">🕓 pendiente</span>}
       <div className="flex gap-1">
         <button onClick={onEditar} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-[10px] px-1.5 py-0.5 rounded font-semibold">Vender</button>
         <button onClick={onBorrar} style={{ color: "#E27070" }} className="p-0.5"><Trash2 size={12} /></button>
@@ -9865,7 +9988,7 @@ function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdi
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 flex items-center gap-3 flex-wrap">
       {v.imagen_url && <img src={v.imagen_url} alt="" style={{ width: 36, height: 50, objectFit: "contain" }} />}
       <div className="flex-1 min-w-[140px]">
-        <p className="text-sm font-semibold">{v.nombre}{v.cantidad > 1 ? ` ×${v.cantidad}` : ""}</p>
+        <p className="text-sm font-semibold">{v.nombre}{v.cantidad > 1 ? ` ×${v.cantidad}` : ""}{v._pendiente && <span style={{ color: COLORS.gold }} className="text-[10px] font-normal ml-1">🕓 pendiente</span>}</p>
         <p style={{ color: COLORS.muted }} className="text-xs">
           Costo {fmtMoneyEvento(v.costo)}
           {v.vendida ? ` · ${esIntercambioFila ? "Intercambiada" : "Vendida en " + fmtMoneyEvento(v.precio_venta)} · ${v.dia}${etiquetaVentaFila}` : v.precio_lista ? ` · Precio de lista ${fmtMoneyEvento(v.precio_lista)}` : ""}

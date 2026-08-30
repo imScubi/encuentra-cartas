@@ -134,6 +134,26 @@ export async function sbWrite(method, path, body, session) {
     error.code = data?.code || null;
     throw error;
   }
+  // Pedimos siempre Prefer: return=representation, así que un 2xx sin body
+  // parseable (conexión cortada justo después de que el servidor sí guardó,
+  // muy común en wifi de eventos/expos) no es un guardado exitoso con datos
+  // vacíos -- es una respuesta incompleta. POST/PATCH siempre esperan poder
+  // leer la fila de vuelta (varios sitios hacen `const [fila] = await
+  // sbWrite(...)`, que truena feo si data es null); dejamos DELETE fuera de
+  // este chequeo porque nada llama a sbWrite("DELETE", ...) para leer el
+  // resultado. Tirar aquí en vez de devolver null deja que quien llama (o la
+  // cola de reintentos offline de Modo Evento) decida qué hacer.
+  if (data === null && method !== "DELETE") {
+    reportarError(`Respuesta sin datos en ${method} ${path} (status ${res.status} ok)`);
+    const error = new Error("No se pudo confirmar el guardado. Intenta de nuevo en un momento.");
+    // No sabemos si el servidor sí guardó (guardó y se cortó la respuesta) o
+    // no -- ec_evento_queue (Modo Evento offline) trata esto igual que un
+    // error de red: lo reintenta más tarde y confía en el choque de llave
+    // única (23505) para notar que ya se había guardado, en vez de asumir
+    // que se perdió.
+    error.ambiguoDeRed = true;
+    throw error;
+  }
   return data;
 }
 
