@@ -5279,6 +5279,105 @@ inicio, sin importar en qué pantalla estuviera.
   que el dueño lo pruebe en producción, en un teléfono real, navegando
   varias pantallas seguidas.
 
+## 157. Modo Evento funciona sin internet: cola de sincronización
+
+Modo Evento (sección 70/140/141/151, Amatista+) dependía 100% de la
+conexión -- si se cortaba el wifi en el evento (el escenario típico de
+una expo), ni se podía abrir la lista de eventos, y cualquier venta o
+gasto que se intentara registrar en ese momento se perdía. Ahora, una
+vez que un evento ya cargó al menos una vez, se puede seguir viendo y
+agregando ventas/gastos/compras sin señal -- los cambios se guardan
+solos en Supabase en cuanto vuelve la conexión.
+
+- **Por qué es viable sin rediseñar la pantalla**: las 4 tablas de Modo
+  Evento (`eventos`/`evento_ventas`/`evento_gastos`/
+  `evento_adquisiciones`) usan `id uuid primary key default
+  gen_random_uuid()` -- ese default solo aplica si el INSERT omite la
+  columna. Ahora cada guardado nuevo genera su propio `id`
+  (`crypto.randomUUID()`) del lado del cliente, así que un registro
+  tiene su ID final desde que se crea en el navegador, sin importar si
+  llega a Supabase al toque o minutos después -- nunca hace falta
+  "reemplazar un ID temporal por el real" en ninguna FK
+  (`evento_id`, `origen_venta_id`).
+- **`src/lib/offlineEventos.js`** (nuevo): `sbWriteConCola` reemplaza a
+  `sbWrite` en los ~11 guardados de Modo Evento -- si `sbWrite` tira por
+  una razón de red (`TypeError`, cubre "Failed to fetch"/"NetworkError"/
+  "Load failed" de Chrome/Firefox/Safari por igual), encola la operación
+  en `localStorage['ec_evento_queue']` y devuelve una fila marcada
+  `_pendiente: true` para que la pantalla siga funcionando igual. Si
+  tira por cualquier otra razón (validación, permisos), no se encola --
+  eso sí es un error real y se muestra en el momento.
+- **`sincronizarCola`**: reintenta la cola **en orden estricto** (nunca
+  en paralelo, nunca reordenada) -- las policies RLS de las tablas hijas
+  exigen que el evento padre ya exista al insertar una venta/gasto/
+  compra, así que el orden de sincronización no es una optimización, es
+  un invariante duro. Si un evento (o sus ventas/gastos) se crearon
+  offline y luego se editaron o borraron también offline, todo eso se
+  reproduce en el mismo orden en que pasó.
+- **Corrección real encontrada al revisar el diseño con un segundo
+  agente** (ver `sbWrite` en `src/lib/supabase.js`): si la conexión se
+  corta justo después de que el servidor sí guardó una fila pero antes
+  de que el cliente termine de leer la respuesta, antes eso se colaba
+  como un guardado "exitoso" con datos vacíos (`data: null`), y cada
+  sitio que hace `const [fila] = await sbWrite(...)` truena feo al
+  desestructurar `null`. Ahora `sbWrite` lo trata como un error
+  (`error.ambiguoDeRed = true`) en vez de devolver `null` en silencio --
+  y como no sabemos si sí se guardó o no, `sincronizarCola` lo trata
+  igual que un error de red: lo reintenta, y si el reintento choca con
+  la llave única (`error.code === "23505"`) confirma que sí se había
+  guardado la primera vez, y lo quita de la cola sin reportarlo como
+  falla. Sin esto, cada corte de señal a medio guardar hubiera generado
+  un error confuso en vez de resolverse solo.
+- **Fallas reales durante la sincronización** (ej. el evento se borró
+  desde otro dispositivo mientras este estaba offline, así que sus
+  ventas hijas ya no tienen dónde caer): se acumulan en una lista, no en
+  un solo mensaje -- un evento borrado puede tumbar varias filas hijas
+  de un jalón, y quitar cada una de la cola (en vez de bloquearla para
+  siempre por una sola) es lo que deja que la cola llegue a vacío de
+  todos modos.
+- **`guardarEdit`** (marcar vendida/editar una venta) dejó de confiar en
+  la fila que regresa el servidor -- arma la fila localmente con los
+  mismos datos que ya tenía en mano, porque offline no hay ninguna
+  respuesta real que confiar (y el resultado es idéntico estando
+  online).
+- **Caché local reactiva**: un efecto que observa
+  `[ventas, gastos, adquisiciones]` (mismo patrón que ya se usó para el
+  fix del botón atrás, sección 156) guarda la vista actual en
+  `localStorage` en cada cambio -- así recargar la página sin señal
+  restaura exactamente lo que se estaba viendo, incluyendo cambios
+  todavía no sincronizados. Mismo criterio para la lista de eventos.
+  Nunca se pisa el estado local con un fetch nuevo mientras la cola
+  tenga algo pendiente de ese evento -- se sincroniza primero.
+- **UI**: una barra (`EstadoOfflineBar`, compartida entre la lista de
+  eventos y el detalle de uno) muestra cuántos cambios están sin
+  sincronizar y un botón "Sincronizar ahora" -- el evento `online` del
+  navegador dispara un intento automático, pero no es 100% confiable en
+  Android, así que el botón manual es la vía principal. Insignia
+  "🕓 pendiente" en cada venta/gasto/compra/evento todavía sin
+  sincronizar.
+- **Fuera de alcance, a propósito**: "Importar de mi inventario"
+  necesita leer las publicaciones en vivo del perfil, así que sigue
+  requiriendo internet (avisa con un mensaje si no hay conexión, en vez
+  de fallar sin explicación). Reabrir la app totalmente cerrada sin
+  señal tampoco funciona -- no existe un service worker que cachee el
+  shell de la app (eso sería un proyecto aparte, mucho más grande);
+  mientras la pestaña siga abierta (aunque sea en segundo plano), todo
+  lo de arriba funciona. Dos dispositivos editando el mismo evento
+  mientras uno está offline no se reconcilian -- gana lo último que se
+  sincroniza, sin aviso de conflicto (aceptable para el uso real: una
+  persona, un celular, su propio evento).
+
+Verificado con `npm run build` y con una prueba aislada en Node
+(mockeando `fetch`/`localStorage`, ya que Supabase no es alcanzable
+desde este sandbox de todos modos) que cubrió: cola que se llena al
+fallar por red y se vacía al reintentar con éxito, el caso 23505
+(insert que sí había llegado) contándose como éxito y no como falla,
+fallas reales acumulándose en una lista sin bloquear el resto de la
+cola, y el orden FIFO preservado en una cadena evento→venta→adquisición
+creada offline. No se pudo probar el guardado real contra Supabase
+desde este sandbox (bloqueado) -- pedirle al dueño probarlo de verdad
+en un evento con wifi débil una vez desplegado.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
