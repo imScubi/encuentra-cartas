@@ -8851,8 +8851,11 @@ function ModoEventoView({ session, perfil, onIrAPlanes }) {
       ) : (
         <div className="grid gap-2">
           {eventos.map((ev) => (
-            <button key={ev.id} onClick={() => setEventoAbiertoId(ev.id)} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 text-left flex items-center justify-between gap-3 flex-wrap">
-              <div>
+            <button key={ev.id} onClick={() => setEventoAbiertoId(ev.id)} style={{ background: COLORS.surface, border: `1px solid ${ev.estado === "cerrado" ? COLORS.surface2 : `${COLORS.gold}44`} ` }} className="rounded-xl p-4 text-left flex items-center gap-3 flex-wrap">
+              <div style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 12, background: `${COLORS.gold}1f`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span className="text-lg">🎪</span>
+              </div>
+              <div className="flex-1 min-w-0">
                 <p className="font-semibold">{ev.nombre}{ev._pendiente && <span style={{ color: COLORS.gold }} className="text-[10px] font-normal ml-1">🕓 pendiente</span>}</p>
                 <p style={{ color: COLORS.muted }} className="text-xs mt-0.5">
                   {new Date(ev.fecha_inicio + "T00:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
@@ -8997,6 +9000,9 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
     } catch (e) { setErrorDetalle(e.message); }
   };
 
+  // ---- Modo rápido (POS): capturar ventas/compras a golpe de teclado ----
+  const [mostrarPOS, setMostrarPOS] = useState(false);
+
   // ---- Importar inventario propio (perfil individual o tienda(s)) ----
   const [mostrarImportar, setMostrarImportar] = useState(false);
   const [cargandoInventario, setCargandoInventario] = useState(false);
@@ -9009,9 +9015,11 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
 
   const SIN_CARPETA_KEY = "__sin_carpeta__";
 
-  const abrirImportar = async () => {
-    if (!navigator.onLine) { setErrorDetalle("Se necesita conexión a internet para importar tu inventario (esto sí lee tus publicaciones en vivo)."); return; }
-    setMostrarImportar(true);
+  // Separado de abrirImportar (que además abre el panel del importador) para
+  // que el modo POS de abajo pueda pedir el mismo inventario ya cargado
+  // (para la opción "elegir de mi inventario" al enriquecer un registro
+  // rápido) sin duplicar la llamada ni abrir ese panel.
+  const cargarInventarioSiHaceFalta = async () => {
     if (inventarioDisponible !== null || cargandoInventario) return;
     setCargandoInventario(true); setErrorDetalle(null);
     try {
@@ -9044,6 +9052,12 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
       setInventarioDisponible(items);
       setCarpetasDisponibles(carpetas);
     } catch (e) { setErrorDetalle(e.message); } finally { setCargandoInventario(false); }
+  };
+
+  const abrirImportar = () => {
+    if (!navigator.onLine) { setErrorDetalle("Se necesita conexión a internet para importar tu inventario (esto sí lee tus publicaciones en vivo)."); return; }
+    setMostrarImportar(true);
+    cargarInventarioSiHaceFalta();
   };
 
   const toggleSeleccionado = (clave) => {
@@ -9462,9 +9476,24 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
 
   if (loadingDetalle) return <Loading label="Cargando el evento..." />;
 
-  const statCard = (label, valor, color) => (
-    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3">
-      <p style={{ color: COLORS.muted }} className="text-[11px] uppercase font-semibold">{label}</p>
+  if (mostrarPOS) {
+    return (
+      <ModoEventoPOS
+        session={session} evento={evento}
+        inventarioDisponible={inventarioDisponible} cargandoInventario={cargandoInventario}
+        onCargarInventario={cargarInventarioSiHaceFalta}
+        onCerrar={() => setMostrarPOS(false)}
+        onRegistro={(tabla, fila) => {
+          const setEstado = tabla === "ventas" ? setVentas : setAdquisiciones;
+          setEstado((items) => (items.some((x) => x.id === fila.id) ? items.map((x) => (x.id === fila.id ? { ...x, ...fila } : x)) : [fila, ...items]));
+        }}
+      />
+    );
+  }
+
+  const statCard = (label, valor, color, emoji) => (
+    <div style={{ background: color ? `${color}14` : COLORS.surface, border: `1px solid ${color ? `${color}44` : COLORS.surface2}`, borderLeft: `3px solid ${color || COLORS.surface2}` }} className="rounded-xl p-3">
+      <p style={{ color: COLORS.muted }} className="text-[11px] uppercase font-semibold">{emoji ? `${emoji} ` : ""}{label}</p>
       <p style={{ color: color || COLORS.text, fontFamily: "'Cabin', sans-serif" }} className="text-lg font-bold mt-0.5">{valor}</p>
     </div>
   );
@@ -9475,24 +9504,26 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
         <ChevronLeft size={16} /> Todos mis eventos
       </button>
 
-      <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">{evento.nombre}</h2>
-        <Badge color={evento.estado === "cerrado" ? COLORS.muted : COLORS.azulPalido}>{evento.estado === "cerrado" ? "Cerrado" : "Activo"}</Badge>
-      </div>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
-        {fmtDia(evento.fecha_inicio)}{evento.fecha_fin && evento.fecha_fin !== evento.fecha_inicio ? ` – ${fmtDia(evento.fecha_fin)}` : ""}{evento.lugar ? ` · ${evento.lugar}` : ""}
-      </p>
+      <div style={{ background: `linear-gradient(135deg, ${COLORS.gold}14, transparent)`, border: `1px solid ${COLORS.gold}33` }} className="rounded-2xl p-4 mb-6">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">🎪 {evento.nombre}</h2>
+          <Badge color={evento.estado === "cerrado" ? COLORS.muted : COLORS.azulPalido}>{evento.estado === "cerrado" ? "Cerrado" : "Activo"}</Badge>
+        </div>
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+          {fmtDia(evento.fecha_inicio)}{evento.fecha_fin && evento.fecha_fin !== evento.fecha_inicio ? ` – ${fmtDia(evento.fecha_fin)}` : ""}{evento.lugar ? ` · ${evento.lugar}` : ""}
+        </p>
 
-      <div className="flex items-center gap-2 flex-wrap mb-6">
-        <button onClick={generarPdf} disabled={generandoPdf} style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1.5">
-          <Download size={14} /> {generandoPdf ? "Generando..." : "Descargar reporte PDF"}
-        </button>
-        <button onClick={cambiarEstado} disabled={cambiandoEstado} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-3 py-2 text-xs font-semibold">
-          {evento.estado === "cerrado" ? "Reabrir evento" : "Cerrar evento"}
-        </button>
-        <button onClick={borrarEvento} style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1">
-          <Trash2 size={13} /> Borrar evento
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={generarPdf} disabled={generandoPdf} style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1.5">
+            <Download size={14} /> {generandoPdf ? "Generando..." : "Descargar reporte PDF"}
+          </button>
+          <button onClick={cambiarEstado} disabled={cambiandoEstado} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-3 py-2 text-xs font-semibold">
+            {evento.estado === "cerrado" ? "Reabrir evento" : "Cerrar evento"}
+          </button>
+          <button onClick={borrarEvento} style={{ color: "#E27070", border: "1px solid #E2707055" }} className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1">
+            <Trash2 size={13} /> Borrar evento
+          </button>
+        </div>
       </div>
 
       <EstadoOfflineBar session={session} onSincronizado={(r) => { if (r?.fallos?.length) setErrorDetalle(`${r.fallos.length} cambio(s) sin conexión no se pudieron guardar y se descartaron.`); cargarDetalle(); }} />
@@ -9500,18 +9531,21 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
       {okDetalle && <p style={{ color: COLORS.azulPalido }} className="text-sm mb-4">{okDetalle}</p>}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-8">
-        {statCard("Ingresos", fmtMoneyEvento(resumen.ingresos), COLORS.azulClaro)}
-        {statCard("Costo vendido", fmtMoneyEvento(resumen.costoVendido))}
-        {statCard("Gastos", fmtMoneyEvento(resumen.gastosTotal))}
-        {statCard("Compras", fmtMoneyEvento(resumen.costoCompras))}
-        {statCard("Ganancia neta", fmtMoneyEvento(resumen.gananciaNeta), resumen.gananciaNeta >= 0 ? "#5FD98A" : "#E27070")}
-        {statCard("Sin vender (a costo)", fmtMoneyEvento(resumen.valorRestante))}
+        {statCard("Ingresos", fmtMoneyEvento(resumen.ingresos), COLORS.azulClaro, "💰")}
+        {statCard("Costo vendido", fmtMoneyEvento(resumen.costoVendido), COLORS.muted, "🏷️")}
+        {statCard("Gastos", fmtMoneyEvento(resumen.gastosTotal), "#E2A070", "🧾")}
+        {statCard("Compras", fmtMoneyEvento(resumen.costoCompras), COLORS.violeta, "🛍️")}
+        {statCard("Ganancia neta", fmtMoneyEvento(resumen.gananciaNeta), resumen.gananciaNeta >= 0 ? "#5FD98A" : "#E27070", resumen.gananciaNeta >= 0 ? "📈" : "📉")}
+        {statCard("Sin vender (a costo)", fmtMoneyEvento(resumen.valorRestante), COLORS.gold, "📦")}
       </div>
 
       {/* ---- Inventario del evento (pendiente de vender) ---- */}
       <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
         <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase">📦 Inventario del evento ({resumen.pendientes.length})</h3>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setMostrarPOS(true)} style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
+            ⚡ Modo rápido
+          </button>
           <button onClick={abrirImportar} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
             <Layers size={13} /> Importar de mi inventario
           </button>
@@ -9963,6 +9997,181 @@ function FormVentaEvento({ valor, onChange, onGuardar, onCancelar, guardando, in
         </button>
         <button onClick={onCancelar} style={{ color: COLORS.muted }} className="rounded-lg px-4 py-2 text-sm">Cancelar</button>
       </div>
+    </div>
+  );
+}
+
+// ---- Modo rápido (POS): capturar ventas/compras a golpe de teclado, como
+// una terminal de cobro -- monto grande + teclado numérico, un switch
+// venta/compra arriba, descripción opcional. Crea el registro de inmediato
+// (una terminal real nunca bloquea la siguiente captura esperando más
+// datos) y, después de creado, ofrece enriquecerlo con una carta
+// específica (de tu inventario, del catálogo, o un concepto libre a mano)
+// sin bloquear el flujo si no hace falta. Todo pasa por sbWriteConCola,
+// igual que el resto de Modo Evento (offline-seguro).
+const POS_MAX_CENTAVOS = 9999999900; // tope defensivo, no un límite real de negocio
+
+function ModoEventoPOS({ session, evento, inventarioDisponible, cargandoInventario, onCargarInventario, onCerrar, onRegistro }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [tipo, setTipo] = useState("venta"); // "venta" | "compra"
+  const [centavos, setCentavos] = useState(0);
+  const [descripcion, setDescripcion] = useState("");
+  const [mostrarDescripcion, setMostrarDescripcion] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState(null);
+  const [ultimoRegistro, setUltimoRegistro] = useState(null); // { tabla, fila, monto }
+  const [enriqueciendo, setEnriqueciendo] = useState(null); // "catalogo" | "inventario" | "concepto" | null
+  const [tcgEnriquecer, setTcgEnriquecer] = useState("pokemon");
+  const [buscarInventario, setBuscarInventario] = useState("");
+  const [conceptoTexto, setConceptoTexto] = useState("");
+  const [guardandoEnriquecer, setGuardandoEnriquecer] = useState(false);
+
+  useEffect(() => { onCargarInventario(); }, []); // listo para "elegir de mi inventario" sin esperar a que se pida
+
+  const monto = centavos / 100;
+  const digitar = (d) => setCentavos((c) => Math.min(POS_MAX_CENTAVOS, c * 10 + d));
+  const borrarDigito = () => setCentavos((c) => Math.floor(c / 10));
+
+  const confirmar = async () => {
+    if (centavos === 0) return;
+    setGuardando(true); setError(null);
+    const montoActual = monto;
+    try {
+      const id = nuevoId();
+      let fila;
+      if (tipo === "venta") {
+        [fila] = await sbWriteConCola("POST", "evento_ventas", [{
+          id, created_at: nuevoTimestamp(), evento_id: evento.id,
+          nombre: descripcion.trim() || "Venta rápida", costo: 0, precio_venta: montoActual,
+          cantidad: 1, dia: hoyISO(), vendida: true, tipo_operacion: "venta",
+        }], session, { label: `POS venta: ${fmtMoneyEvento(montoActual)}` });
+        onRegistro("ventas", fila);
+      } else {
+        [fila] = await sbWriteConCola("POST", "evento_adquisiciones", [{
+          id, created_at: nuevoTimestamp(), evento_id: evento.id,
+          nombre: descripcion.trim() || "Compra rápida", costo: montoActual, dia: hoyISO(),
+        }], session, { label: `POS compra: ${fmtMoneyEvento(montoActual)}` });
+        onRegistro("adquisiciones", fila);
+      }
+      setUltimoRegistro({ tabla: tipo === "venta" ? "ventas" : "adquisiciones", fila, monto: montoActual });
+      setCentavos(0); setDescripcion(""); setMostrarDescripcion(false);
+    } catch (e) { setError(e.message); } finally { setGuardando(false); }
+  };
+
+  const enriquecerCon = async (cambios) => {
+    if (!ultimoRegistro) return;
+    setGuardandoEnriquecer(true); setError(null);
+    try {
+      const path = ultimoRegistro.tabla === "ventas" ? "evento_ventas" : "evento_adquisiciones";
+      await sbWriteConCola("PATCH", `${path}?id=eq.${ultimoRegistro.fila.id}`, cambios, session, { label: "POS: asignar carta" });
+      onRegistro(ultimoRegistro.tabla, { ...ultimoRegistro.fila, ...cambios });
+      setUltimoRegistro(null); setEnriqueciendo(null); setBuscarInventario(""); setConceptoTexto("");
+    } catch (e) { setError(e.message); } finally { setGuardandoEnriquecer(false); }
+  };
+
+  const inventarioFiltrado = (inventarioDisponible || []).filter((it) => !buscarInventario.trim() || it.nombre.toLowerCase().includes(buscarInventario.trim().toLowerCase()));
+
+  const digitos = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+  return (
+    <div>
+      <button onClick={onCerrar} style={{ color: COLORS.muted }} className="text-sm mb-3 flex items-center gap-1">
+        <ChevronLeft size={16} /> Volver a {evento.nombre}
+      </button>
+
+      <div className="flex gap-2 mb-4">
+        {[{ k: "venta", l: "🏷️ Venta" }, { k: "compra", l: "🛍️ Compra" }].map((o) => (
+          <button key={o.k} onClick={() => setTipo(o.k)}
+            style={{ background: tipo === o.k ? (o.k === "venta" ? `${COLORS.azulClaro}33` : `${COLORS.violeta}33`) : "transparent", border: `1px solid ${tipo === o.k ? (o.k === "venta" ? COLORS.azulClaro : COLORS.violeta) : COLORS.surface2}`, color: tipo === o.k ? COLORS.text : COLORS.muted }}
+            className="flex-1 rounded-lg py-2 text-sm font-semibold">
+            {o.l}
+          </button>
+        ))}
+      </div>
+
+      {error && <div className="mb-3"><ErrorBox message={error} /></div>}
+
+      <div className="text-center mb-2">
+        <p style={{ fontFamily: "'Cabin', sans-serif" }} className="text-5xl font-bold">
+          <span style={{ color: COLORS.muted, fontSize: "0.5em" }}>$</span>{monto.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </p>
+      </div>
+      <div className="text-center mb-4">
+        {mostrarDescripcion ? (
+          <input autoFocus placeholder="Descripción (opcional)" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full max-w-xs mx-auto" />
+        ) : (
+          <button onClick={() => setMostrarDescripcion(true)} style={{ color: COLORS.azulClaro }} className="text-sm font-semibold">+ Agregar descripción</button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 max-w-xs mx-auto mb-4">
+        {digitos.map((d) => (
+          <button key={d} onClick={() => digitar(d)} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg py-4 text-xl font-semibold">{d}</button>
+        ))}
+        <button onClick={borrarDigito} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}`, color: COLORS.muted }} className="rounded-lg py-4 text-xl">⌫</button>
+        <button onClick={() => digitar(0)} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg py-4 text-xl font-semibold">0</button>
+        <button onClick={() => setCentavos(0)} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}`, color: COLORS.muted }} className="rounded-lg py-4 text-xs font-semibold">Borrar todo</button>
+      </div>
+
+      <button onClick={confirmar} disabled={centavos === 0 || guardando} style={{ background: tipo === "venta" ? COLORS.azulClaro : COLORS.violeta, color: tipo === "venta" ? COLORS.textoOscuro : "#fff", opacity: centavos === 0 ? 0.5 : 1 }} className="w-full max-w-xs mx-auto block rounded-lg py-3 text-sm font-semibold mb-4">
+        {guardando ? "Guardando..." : tipo === "venta" ? "Cobrar" : "Registrar compra"}
+      </button>
+
+      {ultimoRegistro && (
+        <div style={{ background: `${COLORS.azulClaro}18`, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-xl p-3 max-w-xs mx-auto mb-3">
+          <p className="text-sm mb-2">✅ {fmtMoneyEvento(ultimoRegistro.monto)} registrado{ultimoRegistro.tabla === "ventas" ? " como venta" : " como compra"}.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setEnriqueciendo("elegir")} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">Asignar carta</button>
+            <button onClick={() => setUltimoRegistro(null)} style={{ color: COLORS.muted }} className="rounded-lg px-3 py-1.5 text-xs">Listo, siguiente</button>
+          </div>
+        </div>
+      )}
+
+      {enriqueciendo && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-xl p-4 max-w-md mx-auto grid gap-3">
+          {enriqueciendo === "elegir" && (
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={() => setEnriqueciendo("catalogo")} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">Buscar en catálogo</button>
+              <button onClick={() => setEnriqueciendo("inventario")} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">Elegir de mi inventario</button>
+              <button onClick={() => setEnriqueciendo("concepto")} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">Escribir concepto</button>
+            </div>
+          )}
+          {enriqueciendo === "catalogo" && (
+            <>
+              <select value={tcgEnriquecer} onChange={(e) => setTcgEnriquecer(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
+                {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+              <CardPickerUniversal tcg={tcgEnriquecer} onSelect={(c) => enriquecerCon(ultimoRegistro?.tabla === "ventas" ? { nombre: c.name || c.producto, imagen_url: c.imagen_url || null, carta_ref: c } : { nombre: c.name || c.producto, imagen_url: c.imagen_url || null })} />
+            </>
+          )}
+          {enriqueciendo === "inventario" && (
+            cargandoInventario ? <p style={{ color: COLORS.muted }} className="text-sm">Cargando tu inventario...</p> : (
+              <>
+                <input placeholder="Buscar en tu inventario..." value={buscarInventario} onChange={(e) => setBuscarInventario(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+                <div className="grid gap-1.5 max-h-56 overflow-y-auto">
+                  {inventarioFiltrado.length === 0 ? (
+                    <p style={{ color: COLORS.muted }} className="text-sm">Nada por aquí.</p>
+                  ) : inventarioFiltrado.map((it) => (
+                    <button key={`${it.tabla}:${it.id}`} onClick={() => enriquecerCon({ nombre: it.nombre, imagen_url: it.imagen_url || null })} className="rounded-lg p-2 flex items-center gap-2 text-left" style={{ border: `1px solid ${COLORS.surface2}` }}>
+                      {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 28, height: 38, objectFit: "contain" }} />}
+                      <span className="text-sm flex-1 truncate">{it.nombre}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )
+          )}
+          {enriqueciendo === "concepto" && (
+            <>
+              <input autoFocus placeholder="Concepto" value={conceptoTexto} onChange={(e) => setConceptoTexto(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+              <button onClick={() => conceptoTexto.trim() && enriquecerCon({ nombre: conceptoTexto.trim() })} disabled={!conceptoTexto.trim() || guardandoEnriquecer} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold w-fit">
+                {guardandoEnriquecer ? "Guardando..." : "Guardar"}
+              </button>
+            </>
+          )}
+          <button onClick={() => { setEnriqueciendo(null); setBuscarInventario(""); }} style={{ color: COLORS.muted }} className="text-xs underline w-fit">Cancelar</button>
+        </div>
+      )}
     </div>
   );
 }
