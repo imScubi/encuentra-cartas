@@ -8663,6 +8663,19 @@ const METODO_PAGO_EVENTO_LABEL = Object.fromEntries(METODO_PAGO_EVENTO_OPCIONES.
 // combinan en un solo número con signo (intercambio_ajuste) al guardar.
 const ingresoDeVenta = (v) => (v.tipo_operacion === "intercambio" ? Number(v.intercambio_ajuste || 0) : Number(v.precio_venta || 0) * v.cantidad);
 
+// Convierte dirección+monto (cómo lo captura el formulario, tanto en Modo
+// Evento como en el builder de intercambio de la Colección personal) en un
+// solo número con signo -- positivo si la persona recibió ese extra,
+// negativo si lo puso ella. null si el intercambio no tuvo dinero de por
+// medio (trueque puro). Compartida para no duplicar la misma cuenta en dos
+// lugares.
+const calcularAjusteIntercambio = (valor) => {
+  if (valor.tipo_operacion !== "intercambio" || !valor.intercambio_direccion || !valor.intercambio_monto) return null;
+  const monto = Number(valor.intercambio_monto) || 0;
+  if (!monto) return null;
+  return valor.intercambio_direccion === "recibio" ? monto : -monto;
+};
+
 // Barra de estado de la cola de sincronización offline (ver
 // src/lib/offlineEventos.js) -- compartida entre ModoEventoView y
 // EventoDetalle. Sondea contarCola() cada pocos segundos en vez de recibir
@@ -9118,41 +9131,52 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
   const vacioAgregar = {
     nombre: "", imagen_url: "", carta_ref: null, costo: "", precio_venta: "", cantidad: "1", dia: hoyISO(), carpeta: "", vendidaYa: true,
     tipo_operacion: "venta", metodo_pago: "", intercambio_direccion: "", intercambio_monto: "",
-    recibioNombre: "", recibioImagenUrl: "", recibioTcg: "pokemon", recibioManual: false,
+    recibidas: [],
   };
   const [nuevaVenta, setNuevaVenta] = useState(vacioAgregar);
   const [guardandoVenta, setGuardandoVenta] = useState(false);
 
-  // Convierte dirección+monto (cómo lo captura el formulario) en un solo
-  // número con signo -- positivo si el vendedor recibió ese extra,
-  // negativo si lo puso él. null si el intercambio no tuvo dinero de por
-  // medio (trueque puro).
-  const calcularAjusteIntercambio = (valor) => {
-    if (valor.tipo_operacion !== "intercambio" || !valor.intercambio_direccion || !valor.intercambio_monto) return null;
-    const monto = Number(valor.intercambio_monto) || 0;
-    if (!monto) return null;
-    return valor.intercambio_direccion === "recibio" ? monto : -monto;
-  };
-
-  // Si el intercambio incluyó una carta recibida a cambio, se registra
-  // como una adquisición ligada a la venta que la originó -- así el
-  // resumen la puede mostrar en "lo que entró" sin contar su dinero por
-  // segunda vez (ese ya quedó en intercambio_ajuste de la venta).
+  // Si el intercambio incluyó cartas recibidas a cambio (puede ser más de
+  // una), cada una se registra como una adquisición ligada a la venta que
+  // la originó -- así el resumen la puede mostrar en "lo que entró" sin
+  // contar su dinero por segunda vez (ese ya quedó en intercambio_ajuste
+  // de la venta) -- Y, si se pudo capturar su card_api_id (viene del
+  // picker de catálogo, no de "escribirlo a mano"), también entra a la
+  // colección personal (coleccion_usuario) vía la función que suma
+  // cantidad de forma atómica e idempotente (ver 079_coleccion_personal.sql
+  // y offlineEventos.js -- clave para que un reintento offline no duplique
+  // el incremento).
   const registrarAdquisicionDeIntercambio = async (ventaId, valor, dia) => {
-    if (valor.tipo_operacion !== "intercambio" || !valor.recibioNombre.trim()) return;
-    try {
-      const [fila] = await sbWriteConCola("POST", "evento_adquisiciones", [{
-        id: nuevoId(),
-        created_at: nuevoTimestamp(),
-        evento_id: evento.id,
-        nombre: valor.recibioNombre.trim(),
-        imagen_url: valor.recibioImagenUrl || null,
-        dia: dia || hoyISO(),
-        costo: 0,
-        origen_venta_id: ventaId,
-      }], session, { label: `Recibido en intercambio: ${valor.recibioNombre.trim()}` });
-      setAdquisiciones((a) => [fila, ...a]);
-    } catch { /* no bloquea el guardado de la venta si esto falla */ }
+    if (valor.tipo_operacion !== "intercambio" || !valor.recibidas?.length) return;
+    const fallosColeccion = [];
+    for (const r of valor.recibidas) {
+      if (!r.nombre?.trim()) continue;
+      try {
+        const [fila] = await sbWriteConCola("POST", "evento_adquisiciones", [{
+          id: nuevoId(),
+          created_at: nuevoTimestamp(),
+          evento_id: evento.id,
+          nombre: r.nombre.trim(),
+          imagen_url: r.imagenUrl || null,
+          dia: dia || hoyISO(),
+          costo: 0,
+          origen_venta_id: ventaId,
+        }], session, { label: `Recibido en intercambio: ${r.nombre.trim()}` });
+        setAdquisiciones((a) => [fila, ...a]);
+      } catch { /* no bloquea el resto del intercambio si esto falla */ }
+
+      if (r.cardApiId) {
+        try {
+          await sbWriteConCola("POST", "rpc/coleccion_registrar_entrada", {
+            p_historial_id: nuevoId(), p_tcg: r.tcg, p_card_api_id: r.cardApiId, p_carta: r.nombre.trim(),
+            p_set_nombre: r.setNombre || null, p_imagen_url: r.imagenUrl || null, p_cantidad: 1,
+            p_precio_ref_mxn: r.precioRefMxn ?? null, p_motivo: "intercambio", p_monto: null,
+            p_grupo_id: null, p_ajuste_efectivo: null, p_nota: `Modo Evento: ${evento.nombre}`,
+          }, session, { label: `Colección: ${r.nombre.trim()}` });
+        } catch { fallosColeccion.push(r.nombre.trim()); }
+      }
+    }
+    if (fallosColeccion.length) setErrorDetalle(`Se registró el intercambio, pero no se pudo agregar a tu colección: ${fallosColeccion.join(", ")}.`);
   };
 
   const agregarVenta = async () => {
@@ -9215,7 +9239,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
       metodo_pago: v.metodo_pago || "",
       intercambio_direccion: v.intercambio_ajuste > 0 ? "recibio" : v.intercambio_ajuste < 0 ? "dio" : "",
       intercambio_monto: v.intercambio_ajuste ? String(Math.abs(v.intercambio_ajuste)) : "",
-      recibioNombre: "", recibioImagenUrl: "", recibioTcg: "pokemon", recibioManual: false,
+      recibidas: [],
     });
   };
 
@@ -9817,31 +9841,63 @@ function CamposOperacionEvento({ valor, onChange, inputStyle }) {
             </div>
           )}
           <div className="grid gap-1.5">
-            <p style={{ color: COLORS.muted }} className="text-xs -mb-0.5">¿Qué recibiste a cambio? (opcional, puedes buscar la carta exacta)</p>
-            {valor.recibioNombre ? (
-              <div className="flex items-center gap-2">
-                {valor.recibioImagenUrl && <img src={valor.recibioImagenUrl} alt="" style={{ width: 32, height: 45, objectFit: "contain" }} />}
-                <Badge color={COLORS.violeta}>{valor.recibioNombre}</Badge>
-                <button type="button" onClick={() => onChange({ ...valor, recibioNombre: "", recibioImagenUrl: "" })} style={{ color: COLORS.muted }} className="text-xs">Cambiar</button>
+            <p style={{ color: COLORS.muted }} className="text-xs -mb-0.5">¿Qué recibiste a cambio? (opcional, puedes agregar varias cartas)</p>
+            {(valor.recibidas || []).map((r, i) => (
+              <div key={i} className="flex items-center gap-2">
+                {r.imagenUrl && <img src={r.imagenUrl} alt="" style={{ width: 32, height: 45, objectFit: "contain" }} />}
+                <Badge color={COLORS.violeta}>{r.nombre}</Badge>
+                {!r.cardApiId && <span style={{ color: COLORS.muted }} className="text-[10px]">(a mano, no entra a tu colección)</span>}
+                <button type="button" onClick={() => onChange({ ...valor, recibidas: valor.recibidas.filter((_, j) => j !== i) })} style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
               </div>
-            ) : !valor.recibioManual ? (
-              <>
-                <select value={valor.recibioTcg || "pokemon"} onChange={(e) => onChange({ ...valor, recibioTcg: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
-                  {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-                </select>
-                <CardPickerUniversal tcg={valor.recibioTcg || "pokemon"} onSelect={(c) => onChange({ ...valor, recibioNombre: c.name || c.producto, recibioImagenUrl: c.imagen_url || "" })} />
-                <button type="button" onClick={() => onChange({ ...valor, recibioManual: true })} style={{ color: COLORS.muted }} className="text-xs underline w-fit">¿No la encuentras? Escribirlo a mano</button>
-              </>
-            ) : (
-              <>
-                <input placeholder="Nombre de la carta que recibiste" value={valor.recibioNombre} onChange={(e) => onChange({ ...valor, recibioNombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
-                <button type="button" onClick={() => onChange({ ...valor, recibioManual: false })} style={{ color: COLORS.muted }} className="text-xs underline w-fit">Volver a buscar en el catálogo</button>
-              </>
-            )}
+            ))}
+            <CartaRecibidaAgregar inputStyle={inputStyle} onAgregar={(r) => onChange({ ...valor, recibidas: [...(valor.recibidas || []), r] })} />
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+// Formulario chico y autosuficiente para agregar UNA carta recibida a la
+// lista de un intercambio (CamposOperacionEvento) -- se resetea solo
+// después de cada "Agregar" para poder meter varias seguidas. Captura
+// cardApiId/precioRefMxn de los pickers (antes se descartaban) porque sin
+// cardApiId no hay con qué hacer el upsert a coleccion_usuario más
+// adelante -- una carta escrita a mano no tiene id de catálogo y por eso
+// no puede entrar a la colección personal automáticamente.
+function CartaRecibidaAgregar({ onAgregar, inputStyle }) {
+  const [tcg, setTcg] = useState("pokemon");
+  const [manual, setManual] = useState(false);
+  const [nombreManual, setNombreManual] = useState("");
+
+  const agregarDesdePicker = (c) => {
+    onAgregar({
+      nombre: c.name || c.producto, imagenUrl: c.imagen_url || "", tcg,
+      cardApiId: c.card_api_id || null, setNombre: c.set_nombre || null, precioRefMxn: c.precio_ref_mxn ?? null,
+    });
+  };
+  const agregarManual = () => {
+    if (!nombreManual.trim()) return;
+    onAgregar({ nombre: nombreManual.trim(), imagenUrl: "", tcg, cardApiId: null, setNombre: null, precioRefMxn: null });
+    setNombreManual(""); setManual(false);
+  };
+
+  return !manual ? (
+    <>
+      <select value={tcg} onChange={(e) => setTcg(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
+        {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      <CardPickerUniversal tcg={tcg} onSelect={agregarDesdePicker} />
+      <button type="button" onClick={() => setManual(true)} style={{ color: COLORS.muted }} className="text-xs underline w-fit">¿No la encuentras? Escribirlo a mano</button>
+    </>
+  ) : (
+    <>
+      <input placeholder="Nombre de la carta que recibiste" value={nombreManual} onChange={(e) => setNombreManual(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+      <div className="flex gap-2">
+        <button type="button" onClick={agregarManual} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="text-xs px-2 py-1 rounded-lg font-semibold">Agregar</button>
+        <button type="button" onClick={() => setManual(false)} style={{ color: COLORS.muted }} className="text-xs underline w-fit">Volver a buscar en el catálogo</button>
+      </div>
+    </>
   );
 }
 
@@ -10000,6 +10056,407 @@ function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdi
         {v.vendida ? "Editar" : "Marcar vendida"}
       </button>
       <button onClick={onBorrar} style={{ color: "#E27070" }}><Trash2 size={14} /></button>
+    </div>
+  );
+}
+
+// ---- Colección/Portafolio personal (Zafiro+, ver 079_coleccion_personal.sql) ----
+// coleccion_usuario ya se usaba (estado='quiero' para la Wishlist,
+// estado='tengo' como checkbox binario de Master Sets) -- aquí se le suma
+// cantidad/precio de referencia para que "tengo" sea un portafolio de
+// verdad, con un historial de movimientos aparte (coleccion_historial) y
+// dos funciones RPC (coleccion_registrar_entrada/salida) que hacen el
+// upsert/decremento de forma atómica -- nunca se calcula "cantidad + 1" del
+// lado del cliente ni se usa merge-duplicates (sobreescribiría en vez de
+// sumar). Deliberadamente 100% privada: no hay toggle de visibilidad ni
+// sección pública, a diferencia de la Wishlist (ver el comentario de la
+// migración 078 sobre por qué nunca se hizo público estado='tengo').
+const MOTIVO_HISTORIAL_LABEL = { compra: "Compra", venta: "Venta", intercambio: "Intercambio", ajuste_manual: "Agregado a mano" };
+
+// Agrega UNA carta a la colección sin que venga de un intercambio (ej. la
+// compraste suelta, o ya la tenías y solo la estás registrando).
+function AgregarAColeccionForm({ session, onAgregado, onCancelar }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [tcg, setTcg] = useState("pokemon");
+  const [manual, setManual] = useState(false);
+  const [elegida, setElegida] = useState(null); // { nombre, imagenUrl, cardApiId, setNombre, precioRefMxn }
+  const [nombreManual, setNombreManual] = useState("");
+  const [cantidad, setCantidad] = useState("1");
+  const [costo, setCosto] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const guardar = async () => {
+    const carta = elegida || (nombreManual.trim() ? { nombre: nombreManual.trim(), cardApiId: null, imagenUrl: "", setNombre: null, precioRefMxn: null } : null);
+    if (!carta) { setError("Elige o escribe una carta."); return; }
+    if (!carta.cardApiId) { setError("Solo se pueden agregar cartas encontradas en el catálogo (con ficha) -- \"escribirlo a mano\" no trae un id para llevar el control de cantidades."); return; }
+    setGuardando(true); setError(null);
+    try {
+      await sbWrite("POST", "rpc/coleccion_registrar_entrada", {
+        p_historial_id: nuevoId(), p_tcg: tcg, p_card_api_id: carta.cardApiId, p_carta: carta.nombre,
+        p_set_nombre: carta.setNombre || null, p_imagen_url: carta.imagenUrl || null, p_cantidad: Number(cantidad) || 1,
+        p_precio_ref_mxn: carta.precioRefMxn ?? null, p_motivo: "ajuste_manual",
+        p_monto: costo ? Number(costo) : null, p_grupo_id: null, p_ajuste_efectivo: null, p_nota: null,
+      }, session);
+      onAgregado();
+    } catch (e) { setError(e.message); } finally { setGuardando(false); }
+  };
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-xl p-4 mb-4 grid gap-2">
+      {error && <ErrorBox message={error} />}
+      {elegida ? (
+        <div className="flex items-center gap-2">
+          {elegida.imagenUrl && <img src={elegida.imagenUrl} alt="" style={{ width: 32, height: 45, objectFit: "contain" }} />}
+          <Badge color={COLORS.azulPalido}>{elegida.nombre}</Badge>
+          <button type="button" onClick={() => setElegida(null)} style={{ color: COLORS.muted }} className="text-xs">Cambiar</button>
+        </div>
+      ) : !manual ? (
+        <>
+          <select value={tcg} onChange={(e) => setTcg(e.target.value)} style={inputStyle} className="rounded-lg px-2 py-2 text-sm w-fit">
+            {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+          <CardPickerUniversal tcg={tcg} onSelect={(c) => setElegida({ nombre: c.name || c.producto, imagenUrl: c.imagen_url || "", cardApiId: c.card_api_id || null, setNombre: c.set_nombre || null, precioRefMxn: c.precio_ref_mxn ?? null })} />
+          <button type="button" onClick={() => setManual(true)} style={{ color: COLORS.muted }} className="text-xs underline w-fit">¿No la encuentras? Escribirlo a mano</button>
+        </>
+      ) : (
+        <>
+          <input placeholder="Nombre de la carta" value={nombreManual} onChange={(e) => setNombreManual(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+          <p style={{ color: COLORS.muted }} className="text-xs">Sin ficha del catálogo no se puede llevar cantidad/precio -- mejor búscala arriba si la encuentras.</p>
+          <button type="button" onClick={() => setManual(false)} style={{ color: COLORS.muted }} className="text-xs underline w-fit">Volver a buscar en el catálogo</button>
+        </>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-xs" style={{ color: COLORS.muted }}>
+          Cantidad
+          <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+        </label>
+        <label className="text-xs" style={{ color: COLORS.muted }}>
+          Te costó (opcional)
+          <input type="number" placeholder="0.00" value={costo} onChange={(e) => setCosto(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mt-1" />
+        </label>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={guardar} disabled={guardando} style={{ background: COLORS.azulPalido, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+          {guardando ? "Guardando..." : "Agregar a mi colección"}
+        </button>
+        <button onClick={onCancelar} style={{ color: COLORS.muted }} className="rounded-lg px-4 py-2 text-sm">Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// Builder de intercambio: eliges qué das (tu inventario/colección) y qué
+// recibes (catálogo externo, no requiere que la otra persona tenga
+// cuenta), con dinero extra opcional -- al confirmar, cada carta que diste
+// sale (coleccion_registrar_salida) y cada carta que recibiste entra
+// (coleccion_registrar_entrada), todas ligadas por un mismo grupo_id para
+// poder verlas como un solo movimiento en el historial. Vive fuera de
+// Modo Evento -- usa sbWrite normal, sin cola offline (esta pantalla no la
+// necesita, igual que el resto de la app fuera de Modo Evento).
+function IntercambioBuilderView({ session, perfil, onVolver, onCompletado }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [cargandoPropio, setCargandoPropio] = useState(true);
+  const [propio, setPropio] = useState([]); // { origen: 'listing'|'coleccion', tabla, id, nombre, imagen_url, card_api_id, tcg, cantidad }
+  const [buscarPropio, setBuscarPropio] = useState("");
+  const [dasSeleccionadas, setDasSeleccionadas] = useState(new Set());
+  const [recibidas, setRecibidas] = useState([]);
+  const [direccion, setDireccion] = useState("");
+  const [monto, setMonto] = useState("");
+  const [nota, setNota] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setCargandoPropio(true);
+    (async () => {
+      let items = [];
+      if (perfil?.tipo === "individual") {
+        const filas = await sb(`mercado_listings?select=id,carta,imagen_url,card_api_id,tcg&perfil_id=eq.${session.user.id}&en_venta=eq.true`, session);
+        items = filas.map((f) => ({ origen: "listing", tabla: "mercado_listings", id: f.id, nombre: f.carta, imagen_url: f.imagen_url, card_api_id: f.card_api_id, tcg: f.tcg || "pokemon" }));
+      } else if (perfil?.tipo === "tienda") {
+        const tiendas = await sb(`tiendas?select=id&perfil_id=eq.${session.user.id}`, session);
+        const ids = tiendas.map((t) => t.id);
+        if (ids.length) {
+          const filas = await sb(`inventario_tienda?select=id,carta,imagen_url,card_api_id,tcg&tienda_id=in.(${ids.join(",")})&en_venta=eq.true`, session);
+          items = filas.map((f) => ({ origen: "listing", tabla: "inventario_tienda", id: f.id, nombre: f.carta, imagen_url: f.imagen_url, card_api_id: f.card_api_id, tcg: f.tcg || "pokemon" }));
+        }
+      }
+      const propias = await sb(`coleccion_usuario?select=id,carta,imagen_url,card_api_id,tcg,cantidad&perfil_id=eq.${session.user.id}&estado=eq.tengo`, session);
+      items = [...items, ...propias.map((f) => ({ origen: "coleccion", tabla: "coleccion_usuario", id: f.id, nombre: f.carta, imagen_url: f.imagen_url, card_api_id: f.card_api_id, tcg: f.tcg, cantidad: f.cantidad }))];
+      setPropio(items);
+    })().catch((e) => setError(e.message)).finally(() => setCargandoPropio(false));
+  }, []);
+
+  const propioFiltrado = propio.filter((it) => !buscarPropio.trim() || it.nombre.toLowerCase().includes(buscarPropio.trim().toLowerCase()));
+  const toggleDas = (clave) => {
+    setDasSeleccionadas((s) => {
+      const copia = new Set(s);
+      if (copia.has(clave)) copia.delete(clave); else copia.add(clave);
+      return copia;
+    });
+  };
+
+  const ajuste = calcularAjusteIntercambio({ tipo_operacion: "intercambio", intercambio_direccion: direccion, intercambio_monto: monto });
+
+  const confirmar = async () => {
+    const dando = propio.filter((it) => dasSeleccionadas.has(`${it.tabla}:${it.id}`));
+    if (dando.length === 0 && recibidas.length === 0) { setError("Agrega al menos una carta de cada lado, o solo lo que aplique."); return; }
+    setGuardando(true); setError(null);
+    const grupoId = nuevoId();
+    const fallos = [];
+    try {
+      for (const it of dando) {
+        try {
+          if (it.origen === "listing") await sbWrite("DELETE", `${it.tabla}?id=eq.${it.id}`, {}, session);
+          if (it.card_api_id) {
+            await sbWrite("POST", "rpc/coleccion_registrar_salida", {
+              p_historial_id: nuevoId(), p_tcg: it.tcg, p_card_api_id: it.card_api_id, p_carta: it.nombre, p_imagen_url: it.imagen_url || null,
+              p_cantidad: 1, p_motivo: "intercambio", p_monto: null, p_grupo_id: grupoId, p_ajuste_efectivo: ajuste, p_nota: nota || null,
+            }, session);
+          }
+        } catch (e) { fallos.push(it.nombre); }
+      }
+      for (const r of recibidas) {
+        if (!r.cardApiId) continue; // a mano: no hay id para llevar cantidad, se queda solo en la confirmación visual
+        try {
+          await sbWrite("POST", "rpc/coleccion_registrar_entrada", {
+            p_historial_id: nuevoId(), p_tcg: r.tcg, p_card_api_id: r.cardApiId, p_carta: r.nombre, p_set_nombre: r.setNombre || null,
+            p_imagen_url: r.imagenUrl || null, p_cantidad: 1, p_precio_ref_mxn: r.precioRefMxn ?? null, p_motivo: "intercambio",
+            p_monto: null, p_grupo_id: grupoId, p_ajuste_efectivo: ajuste, p_nota: nota || null,
+          }, session);
+        } catch (e) { fallos.push(r.nombre); }
+      }
+      if (fallos.length) setError(`Algunas cartas no se pudieron registrar: ${fallos.join(", ")}. El resto del intercambio sí se guardó.`);
+      onCompletado();
+    } finally { setGuardando(false); }
+  };
+
+  return (
+    <div>
+      <button onClick={onVolver} style={{ color: COLORS.muted }} className="text-sm mb-3 flex items-center gap-1">
+        <ChevronLeft size={16} /> Volver a mi colección
+      </button>
+      <h3 style={{ fontFamily: "'Rye', serif" }} className="text-lg font-bold mb-4">🔁 Registrar intercambio</h3>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      <div className="grid sm:grid-cols-2 gap-4 mb-4">
+        <div>
+          <p style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase mb-2">Tu lado (lo que das)</p>
+          <input placeholder="Buscar en tu inventario/colección..." value={buscarPropio} onChange={(e) => setBuscarPropio(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mb-2" />
+          {cargandoPropio ? <p style={{ color: COLORS.muted }} className="text-sm">Cargando...</p> : propioFiltrado.length === 0 ? (
+            <p style={{ color: COLORS.muted }} className="text-sm">No encontramos cartas tuyas para dar (publicadas o en tu colección).</p>
+          ) : (
+            <div className="grid gap-1.5 max-h-72 overflow-y-auto">
+              {propioFiltrado.map((it) => {
+                const clave = `${it.tabla}:${it.id}`;
+                const marcado = dasSeleccionadas.has(clave);
+                return (
+                  <label key={clave} style={{ background: marcado ? `${COLORS.azulClaro}18` : "transparent", border: `1px solid ${marcado ? COLORS.azulClaro : COLORS.surface2}` }} className="rounded-lg p-2 flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={marcado} onChange={() => toggleDas(clave)} />
+                    {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 28, height: 38, objectFit: "contain" }} />}
+                    <span className="text-sm flex-1 min-w-0 truncate">{it.nombre}</span>
+                    {it.origen === "coleccion" && <span style={{ color: COLORS.muted }} className="text-[10px]">colección{it.cantidad > 1 ? ` ×${it.cantidad}` : ""}</span>}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div>
+          <p style={{ color: COLORS.violeta }} className="font-semibold text-sm uppercase mb-2">Su lado (lo que recibes)</p>
+          {recibidas.map((r, i) => (
+            <div key={i} className="flex items-center gap-2 mb-1.5">
+              {r.imagenUrl && <img src={r.imagenUrl} alt="" style={{ width: 28, height: 38, objectFit: "contain" }} />}
+              <Badge color={COLORS.violeta}>{r.nombre}</Badge>
+              {!r.cardApiId && <span style={{ color: COLORS.muted }} className="text-[10px]">(a mano)</span>}
+              <button type="button" onClick={() => setRecibidas((rs) => rs.filter((_, j) => j !== i))} style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
+            </div>
+          ))}
+          <CartaRecibidaAgregar inputStyle={inputStyle} onAgregar={(r) => setRecibidas((rs) => [...rs, r])} />
+        </div>
+      </div>
+
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 grid gap-2 mb-4">
+        <p style={{ color: COLORS.muted }} className="text-xs -mt-1">¿Hubo dinero extra además de las cartas?</p>
+        <div className="flex gap-2 flex-wrap">
+          {[{ k: "", l: "Sin dinero extra" }, { k: "recibio", l: "Me dieron dinero extra" }, { k: "dio", l: "Yo di dinero extra" }].map((o) => (
+            <button key={o.k || "nada"} type="button" onClick={() => setDireccion(o.k)}
+              style={{ background: direccion === o.k ? `${COLORS.violeta}33` : "transparent", border: `1px solid ${direccion === o.k ? COLORS.violeta : COLORS.surface2}`, color: direccion === o.k ? COLORS.violeta : COLORS.muted }}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+              {o.l}
+            </button>
+          ))}
+        </div>
+        {direccion && <input type="number" placeholder="Monto" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-fit" />}
+        <input placeholder="Nota (opcional, ej. con quién intercambiaste)" value={nota} onChange={(e) => setNota(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm" />
+      </div>
+
+      <button onClick={confirmar} disabled={guardando} style={{ background: COLORS.violeta, color: "#fff" }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+        {guardando ? "Guardando..." : "Confirmar intercambio"}
+      </button>
+    </div>
+  );
+}
+
+function MiColeccionView({ session, perfil, onIrAPlanes }) {
+  const [items, setItems] = useState([]);
+  const [historial, setHistorial] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [mostrarHistorial, setMostrarHistorial] = useState(false);
+  const [mostrarAgregar, setMostrarAgregar] = useState(false);
+  const [mostrarIntercambio, setMostrarIntercambio] = useState(false);
+  const [actualizandoId, setActualizandoId] = useState(null);
+
+  const cargar = () => {
+    setLoading(true); setError(null);
+    Promise.all([
+      sb(`coleccion_usuario?select=*&perfil_id=eq.${session.user.id}&estado=eq.tengo&order=created_at.desc`, session).then(setItems),
+      sb(`coleccion_historial?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc&limit=50`, session).then(setHistorial),
+    ]).catch((e) => setError(e.message)).finally(() => setLoading(false));
+  };
+  useEffect(() => { cargar(); }, []);
+
+  const valorTotal = useMemo(() => items.reduce((s, it) => s + (Number(it.precio_ref_mxn) || 0) * (it.cantidad || 1), 0), [items]);
+
+  const actualizarPrecio = async (it) => {
+    setActualizandoId(it.id);
+    try {
+      const info = await obtenerPrecioRefActualPorTcg(it.tcg, it.card_api_id);
+      if (info?.precioRefMxn != null) {
+        await sbWrite("PATCH", `coleccion_usuario?id=eq.${it.id}`, { precio_ref_mxn: info.precioRefMxn, precio_ref_actualizado_en: new Date().toISOString() }, session);
+        setItems((its) => its.map((x) => (x.id === it.id ? { ...x, precio_ref_mxn: info.precioRefMxn } : x)));
+      }
+    } catch { /* se queda con el precio guardado si falla */ } finally { setActualizandoId(null); }
+  };
+
+  const borrar = async (it) => {
+    if (!window.confirm(`¿Quitar "${it.carta}" de tu colección?`)) return;
+    try {
+      await sbWrite("DELETE", `coleccion_usuario?id=eq.${it.id}`, {}, session);
+      setItems((its) => its.filter((x) => x.id !== it.id));
+    } catch (e) { setError(e.message); }
+  };
+
+  if (loading) return <Loading label="Cargando tu colección..." />;
+
+  if (mostrarIntercambio) {
+    return <IntercambioBuilderView session={session} perfil={perfil} onVolver={() => setMostrarIntercambio(false)} onCompletado={() => { setMostrarIntercambio(false); cargar(); }} />;
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <div>
+          <p style={{ color: COLORS.muted }} className="text-[11px] uppercase font-semibold">Valor de referencia (puede estar desactualizado)</p>
+          <p style={{ fontFamily: "'Cabin', sans-serif" }} className="text-2xl font-bold">{fmtMoneyEvento(valorTotal)}</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setMostrarIntercambio(true)} style={{ background: COLORS.violeta, color: "#fff" }} className="rounded-lg px-3 py-2 text-xs font-semibold">🔁 Intercambiar</button>
+          <button onClick={() => setMostrarAgregar((v) => !v)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="rounded-lg px-3 py-2 text-xs font-semibold">{mostrarAgregar ? "Cancelar" : "+ Agregar a mano"}</button>
+        </div>
+      </div>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+      {mostrarAgregar && <AgregarAColeccionForm session={session} onAgregado={() => { setMostrarAgregar(false); cargar(); }} onCancelar={() => setMostrarAgregar(false)} />}
+
+      {items.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Todavía no agregas ninguna carta a tu colección. Usa "+ Agregar a mano" o registra un intercambio.</p>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 mb-6">
+          {items.map((it) => (
+            <div key={it.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-2 flex flex-col items-center gap-1">
+              <div style={{ width: 72, height: 96, background: COLORS.bg, borderRadius: 8, overflow: "hidden" }} className="flex items-center justify-center">
+                {it.imagen_url ? <img src={it.imagen_url} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Package size={20} style={{ color: COLORS.muted }} />}
+              </div>
+              <p className="text-[11px] text-center line-clamp-2 leading-tight" style={{ minHeight: 26 }}>{it.carta}</p>
+              {it.cantidad > 1 && <p style={{ color: COLORS.muted }} className="text-[10px] -mt-1">×{it.cantidad}</p>}
+              <p style={{ color: COLORS.azulPalido }} className="text-[11px] font-semibold">{it.precio_ref_mxn != null ? fmtMoneyEvento(it.precio_ref_mxn) : "Sin precio"}</p>
+              <div className="flex gap-1">
+                <button onClick={() => actualizarPrecio(it)} disabled={actualizandoId === it.id} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="text-[9px] px-1.5 py-0.5 rounded font-semibold">
+                  {actualizandoId === it.id ? "..." : "Precio"}
+                </button>
+                <button onClick={() => borrar(it)} style={{ color: "#E27070" }} className="p-0.5"><Trash2 size={11} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <button onClick={() => setMostrarHistorial((v) => !v)} className="flex items-center gap-2 mb-2">
+        {mostrarHistorial ? <ChevronUp size={16} style={{ color: COLORS.muted }} /> : <ChevronDown size={16} style={{ color: COLORS.muted }} />}
+        <span className="text-sm font-semibold">📜 Historial de movimientos</span>
+      </button>
+      {mostrarHistorial && (
+        historial.length === 0 ? <p style={{ color: COLORS.muted }} className="text-sm">Todavía no hay movimientos.</p> : (
+          <div className="grid gap-1.5">
+            {historial.map((h) => (
+              <div key={h.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-2.5 flex items-center justify-between gap-2 text-sm">
+                <div>
+                  <span className="font-semibold">{h.tipo === "entrada" ? "⬅️" : "➡️"} {h.carta}</span>
+                  {h.cantidad > 1 && <span style={{ color: COLORS.muted }}> ×{h.cantidad}</span>}
+                  <span style={{ color: COLORS.muted }} className="text-xs"> · {MOTIVO_HISTORIAL_LABEL[h.motivo] || h.motivo} · {new Date(h.created_at).toLocaleDateString("es-MX")}</span>
+                </div>
+                {h.monto != null && <span style={{ color: COLORS.muted }} className="text-xs">{fmtMoneyEvento(h.monto)}</span>}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+function ColeccionView({ session, perfil, onIrAPlanes, onIrAMiTienda }) {
+  const info = planDe(perfil);
+  const [tab, setTab] = useState("mia");
+
+  if (!session) {
+    return (
+      <div>
+        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-6">🗂️ Colección</h2>
+        <p style={{ color: COLORS.muted }} className="text-sm">Inicia sesión para llevar el control de las cartas que ya tienes.</p>
+      </div>
+    );
+  }
+
+  if (!info.coleccionPersonal) {
+    return (
+      <div>
+        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-6">🗂️ Colección</h2>
+        <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+          Lleva el control de las cartas que ya tienes -- cantidad, valor de referencia -- e intercambia cartas registrando ambos lados, con historial de entradas y salidas.
+        </UpsellCard>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-4">🗂️ Colección</h2>
+      <div className="flex gap-2 mb-4">
+        {[{ k: "mia", l: "Mi colección" }, { k: "carpetas", l: "Mis carpetas" }].map((t) => (
+          <button key={t.k} onClick={() => setTab(t.k)}
+            style={{ background: tab === t.k ? `${COLORS.azulClaro}22` : "transparent", border: `1px solid ${tab === t.k ? COLORS.azulClaro : COLORS.surface2}`, color: tab === t.k ? COLORS.azulPalido : COLORS.muted }}
+            className="rounded-lg px-3 py-1.5 text-sm font-semibold">
+            {t.l}
+          </button>
+        ))}
+      </div>
+      {tab === "mia" ? (
+        <MiColeccionView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
+      ) : !info.carpetas ? (
+        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
+          Las carpetas (álbumes de fotos de tu inventario para vender, compartibles u ocultas) están disponibles desde Amatista.
+        </UpsellCard>
+      ) : perfil?.tipo === "tienda" ? (
+        <div>
+          <p style={{ color: COLORS.muted }} className="text-sm mb-3">Las carpetas de tu tienda se manejan desde "Mi Tienda".</p>
+          <button onClick={onIrAMiTienda} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-4 py-2 text-sm font-semibold">Ir a Mi Tienda</button>
+        </div>
+      ) : (
+        <CarpetasPanel session={session} perfil={perfil} contexto="mercado" onPublicado={() => {}} />
+      )}
     </div>
   );
 }
@@ -13808,6 +14265,7 @@ function CintillaMovilAbajo({ view, setView, irAVender }) {
     { id: "search", label: "Inicio", icon: Search },
     { id: "directory", label: "Tiendas", icon: Store },
     { id: "catalogo", label: "Catálogo", icon: BookOpen },
+    { id: "coleccion", label: "Colección", icon: Layers },
   ];
   const vendiendoActivo = view === "myMarket" || view === "myStore";
   const tabButton = (id, label, Icon, active, onClick) => (
@@ -15612,6 +16070,7 @@ export default function EncuentraCartas() {
         { id: "subastas", label: "Subastas", icon: Gavel },
         ...(session ? [{ id: "comprasVentas", label: "Mis compras y ventas", icon: Star }] : []),
         ...(session ? [{ id: "modoEvento", label: "Modo Evento", icon: Calendar }] : []),
+        ...(session ? [{ id: "coleccion", label: "Colección", icon: Layers }] : []),
       ],
     },
     {
@@ -16820,6 +17279,9 @@ export default function EncuentraCartas() {
         {view === "siguiendo" && session && <SiguiendoView session={session} onVerPerfil={verPerfil} onVerTienda={verTiendaDesdePerfil} />}
         {view === "comprasVentas" && session && <ComprasVentasView session={session} />}
         {view === "modoEvento" && session && <ModoEventoView session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} />}
+        {view === "coleccion" && (
+          <ColeccionView session={session} perfil={perfil} onIrAPlanes={() => setView("planes")} onIrAMiTienda={() => setView("myStore")} />
+        )}
         {view === "miCuenta" && session && (
           <MiCuentaView session={session} perfil={perfil} onGuardado={() => cargarOCrearPerfil(session)} onVerMiPerfil={() => verPerfil(session.user.id)} />
         )}
