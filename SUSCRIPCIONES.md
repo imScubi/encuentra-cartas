@@ -5496,6 +5496,58 @@ se pudo probar es el flujo completo end-to-end contra Supabase (no
 alcanzable desde aquí) ni la carga de `mercado_listings`/
 `inventario_tienda` con datos reales.
 
+## 159. Modo Evento: "Modo rápido" (POS) para capturar ventas/compras a golpe de teclado + pulido visual
+
+Pedido explícito: una forma de capturar ventas y compras en un evento
+tan rápido como una terminal de cobro real (referencia: la pantalla
+"Cobrar" de Mercado Pago -- monto grande + teclado numérico), sin tener
+que llenar el formulario detallado de siempre en el momento -- y de
+paso, pulir el look de la pantalla de Modo Evento (sin cambiarle el
+flujo ni la estructura, confirmado con el dueño antes de tocar nada).
+
+- **`ModoEventoPOS`** (nuevo, botón "⚡ Modo rápido" junto a "Importar
+  de mi inventario"): switch Venta/Compra arriba, un monto grande que
+  se arma con teclado numérico (buffer de centavos, no de texto --
+  `centavos = centavos*10 + dígito`, evita los problemas típicos de
+  parsear un input de texto como dinero), una descripción opcional, y
+  un botón grande para confirmar. **Es un atajo adicional, no
+  reemplaza nada**: los formularios detallados de siempre (costo, día,
+  intercambio, etc.) se quedan exactamente igual para cuando sí hace
+  falta ese detalle -- confirmado con el dueño antes de construirlo.
+- Al confirmar, el registro se guarda DE INMEDIATO (mismo criterio que
+  una terminal de cobro real: nunca bloquea la siguiente captura
+  esperando más datos) -- una venta rápida crea una fila en
+  `evento_ventas` ya marcada `vendida`, una compra rápida crea una fila
+  en `evento_adquisiciones`. Sin nombre específico, se guarda como
+  "Venta rápida"/"Compra rápida" -- no se bloquea la captura por falta
+  de un nombre.
+- **Enriquecer después** (justo lo que se pidió: "con la opción de
+  asignarle una carta... después de generar el registro"): tras
+  guardar, aparece un aviso con "Asignar carta" (opcional, no bloquea
+  seguir capturando) con tres formas de completarlo -- buscar en el
+  catálogo (`CardPickerUniversal`, igual que en el resto de la app),
+  elegir de tu propio inventario (reusa la misma carga que ya usa
+  "Importar de mi inventario" -- se separó esa carga en una función
+  aparte, `cargarInventarioSiHaceFalta`, para no duplicarla ni abrir el
+  panel del importador de paso), o escribir un concepto libre.
+- Todo el modo rápido pasa por `sbWriteConCola` (la cola offline de la
+  sección 157) -- es justo el escenario donde más importa: cobrar en el
+  momento con wifi débil de una expo.
+- **Pulido visual** (sin restructurar, según lo confirmado): el
+  encabezado del evento ahora vive en una tarjeta con degradado sutil
+  en vez de texto suelto; cada tarjeta de resumen (Ingresos, Gastos,
+  Ganancia neta, etc.) tiene un emoji y un acento de color a la
+  izquierda para escanearse más rápido; cada evento en la lista tiene
+  un ícono circular en vez de solo texto.
+
+Verificado con `npm run build`. No se pudo probar el flujo capturado
+con sesión real (Modo Evento requiere Amatista+ y Supabase no es
+alcanzable desde este sandbox, misma limitación que el resto de Modo
+Evento) -- cada campo que escribe el modo rápido se revisó a mano
+contra el esquema real de `evento_ventas`/`evento_adquisiciones` (ya
+confirmado con Postgres real en la sección 158) para no adivinar
+nombres de columna.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
