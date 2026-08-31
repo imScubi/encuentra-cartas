@@ -5378,6 +5378,124 @@ creada offline. No se pudo probar el guardado real contra Supabase
 desde este sandbox (bloqueado) -- pedirle al dueño probarlo de verdad
 en un evento con wifi débil una vez desplegado.
 
+## 158. Colección/Portafolio personal + intercambios (Zafiro+), y Modo Evento ahora acepta varias cartas recibidas en un intercambio
+
+Botón nuevo "Colección" en la cintilla móvil (junto a Inicio/Tiendas/
+Catálogo/Vender) y en el menú de escritorio -- un portafolio tipo
+Collectr: tu colección real (lo que tienes, con cantidad y valor de
+referencia), una función de intercambio (eliges qué das y qué recibes,
+con dinero extra opcional) con historial de entradas/salidas, y acceso
+directo a tus carpetas de venta existentes.
+
+- **`coleccion_usuario`** (ya usada por la Wishlist y "Tengo esta
+  carta") se extiende con `cantidad`, `precio_ref_mxn`,
+  `precio_ref_actualizado_en`, `costo_adquisicion` -- no se creó una
+  tabla nueva para "lo que tengo", se le agregó lo que le faltaba para
+  ser un portafolio de verdad.
+- **`coleccion_historial`** (nueva, `079_coleccion_personal.sql`):
+  una fila por movimiento (entrada/salida, motivo compra/venta/
+  intercambio/ajuste_manual), con un `grupo_id` opcional que agrupa
+  ambos lados de un mismo intercambio -- sin tabla padre aparte (mismo
+  criterio que ya usa Modo Evento: `origen_venta_id` como FK simple, no
+  un objeto padre, para la misma relación).
+- **Dos funciones RPC** (`coleccion_registrar_entrada`/
+  `coleccion_registrar_salida`) hacen el alta/baja de forma ATÓMICA
+  (`cantidad = cantidad + excluded.cantidad` en SQL, nunca "leer y
+  sumar" del lado del cliente -- eso sí sería una carrera real: dos
+  cartas iguales en el mismo intercambio, o dos pestañas abiertas,
+  perderían un incremento) e IDEMPOTENTE por un `p_historial_id`
+  generado en el cliente (`insert ... on conflict (id) do nothing`,
+  seguido de un `if not found then return` que corta el resto de la
+  función) -- necesario porque estas mismas llamadas pueden pasar por
+  la cola offline de Modo Evento (sección 157): un reintento con el
+  mismo id nunca vuelve a sumar la cantidad, aunque el insert anterior
+  sí haya llegado a Supabase y solo se haya perdido la respuesta.
+  **Verificado de verdad**, no solo revisado: se levantó un Postgres 16
+  local en este sandbox (`service postgresql start`, sin red hacia
+  Supabase pero corriendo la migración real) y se corrieron las
+  funciones a mano -- primera entrada crea la fila con cantidad 1,
+  segunda entrada (id de historial distinto) suma a 2, **reintentar el
+  mismo id de historial NO vuelve a sumar** (se queda en 2, con solo 2
+  filas de historial, no 3), salida parcial resta bien, salida total
+  borra la fila, una salida de una carta que nunca estuvo en la
+  colección no truena (solo registra el historial), y una entrada con
+  `card_api_id` nulo (carta escrita a mano) se queda solo en el
+  historial sin tocar `coleccion_usuario`.
+- **Deliberadamente descartado: `Prefer: resolution=merge-duplicates`**
+  (PostgREST) y el patrón que ya usa `MiWishlistView.agregarCarta`
+  (POST → catch 23505 → PATCH a un valor fijo) -- ninguno de los dos
+  sirve para "sumar": `merge-duplicates` sobreescribe columnas con el
+  valor nuevo (mandar `cantidad: 1` la dejaría en 1, no la
+  incrementaría), y un PATCH calculado del lado del cliente (leer
+  cantidad actual, mandar cantidad+1) es una carrera real. La suma
+  tiene que resolverse en SQL, atómica.
+- **Colección 100% privada, a propósito**: no se agregó ningún toggle
+  de visibilidad ni sección pública en el perfil para esto. La propia
+  migración 078 (la que sí hizo pública la Wishlist) explica por qué
+  nunca se hizo lo mismo con `estado='tengo'` -- revela qué cartas
+  valiosas tiene alguien. Agregar cantidad y precio de referencia
+  encima lo hace peor, no mejor, así que se decidió no construir la
+  capacidad en absoluto (ni el toggle ni la política RLS pública) en
+  vez de dejarla apagada por default.
+- **Sin refresco masivo de precios**: los precios de referencia
+  (`obtenerPrecioRefActualPorTcg`) son llamadas una-por-carta, sin
+  caché ni lote, a tres APIs de terceros distintas -- pedirle a cada una
+  el precio de 200 cartas de un jalón cada vez que se abre la pantalla
+  no es un patrón seguro en este código. El "valor total" se calcula
+  sumando del lado del cliente el precio YA GUARDADO en cada fila; cada
+  carta tiene su propio botón "Precio" (una sola llamada, igual que ya
+  hace `CartaDetalleView`), y el total dice explícitamente "puede estar
+  desactualizado".
+- **Modo Evento: intercambios con varias cartas recibidas**
+  (`CamposOperacionEvento`, la queja original -- "ahora solo deja una"):
+  el campo pasó de escalar a un arreglo `recibidas`, con "+ Agregar
+  otra carta recibida" y un componente nuevo (`CartaRecibidaAgregar`)
+  reusado también en el builder de intercambio general. Se corrigió de
+  paso un hueco real: el picker de cartas ya traía `card_api_id` y
+  `precio_ref_mxn` (`CardPickerUniversal`/`CardPicker.seleccionar`)
+  pero `CamposOperacionEvento` los descartaba -- sin `card_api_id` no
+  había con qué hacer el alta en la colección personal. Una carta
+  escrita a mano (sin ficha del catálogo) se sigue guardando en el
+  registro del evento pero no entra a la colección -- se avisa en la
+  UI, no falla en silencio.
+- **Asimetría intencional**: lo que SALE en un intercambio de Modo
+  Evento (la venta en sí) no se intenta quitar de la colección
+  personal automáticamente -- `evento_ventas` no guarda `card_api_id`
+  (solo un `carta_ref` jsonb libre), así que no hay con qué ligarla de
+  forma confiable sin arriesgar borrar la fila equivocada de la
+  colección real de alguien.
+- **Builder de intercambio** (fuera de Modo Evento, `IntercambioBuilderView`):
+  "tu lado" junta tus publicaciones en venta (`mercado_listings`/
+  `inventario_tienda`) + tu colección personal en un solo buscador con
+  checkboxes; "su lado" reusa el mismo picker de Modo Evento (la otra
+  persona no necesita cuenta). Al confirmar: lo que diste que estaba en
+  venta se borra de la publicación, lo que diste de tu colección se
+  descuenta (`coleccion_registrar_salida`), lo que recibiste entra
+  (`coleccion_registrar_entrada`) -- todo ligado por un mismo `grupo_id`.
+  Usa `sbWrite` normal (sin cola offline): esta pantalla vive fuera de
+  Modo Evento y no la necesita.
+- **"Mis carpetas"** (segunda pestaña de la pantalla nueva): para
+  cuentas individuales embebe `CarpetasPanel` tal cual, sin tocarlo.
+  Para cuentas de tienda, en vez de duplicar cómo se resuelve el
+  `tienda_id` (ya lo hace bien "Mi Tienda"), se manda ahí con un botón
+  -- evita repetir esa lógica en dos lugares.
+- Gate: `coleccionPersonal` en `theme.js`, bandera nueva desde Zafiro
+  en adelante (nunca se reusó `wishlistCompartible` ni `carpetas` --
+  son funciones distintas). "Mis carpetas" dentro de la pantalla nueva
+  sí reusa a propósito la bandera `carpetas` (Amatista+) ya existente,
+  porque es literalmente la misma función con una entrada nueva -- un
+  usuario Zafiro puede ver "Mi colección" funcionando y un upsell en
+  "Mis carpetas" en la misma pantalla; es intencional, no un bug.
+
+Verificado con `npm run build` y con Playwright contra el dev server
+(la pestaña "Colección" aparece en la cintilla de 5 botones sin romper
+el layout, y sin sesión muestra el aviso de login correcto, no una
+pantalla en blanco). Las funciones RPC se probaron de verdad contra un
+Postgres real levantado en este sandbox (ver arriba) -- lo único que no
+se pudo probar es el flujo completo end-to-end contra Supabase (no
+alcanzable desde aquí) ni la carga de `mercado_listings`/
+`inventario_tienda` con datos reales.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -5398,3 +5516,4 @@ en un evento con wifi débil una vez desplegado.
 - Falta correr `077_sorteos_exclusivos_campana.sql` en Supabase (ver sección 154) para que los sorteos exclusivos por link de campaña funcionen en producción -- y falta probar el flujo completo end-to-end (cuenta nueva y cuenta existente, correo y Google) una vez desplegado.
 - Falta correr `078_coleccion_usuario_wishlist_publica.sql` en Supabase (ver sección 155) para que el link público de la Wishlist rediseñada funcione en producción -- y falta confirmar en vivo que los hostnames de imagen del proxy nuevo (`?fuente=imgproxy`) son los correctos para pokemontcg.io/apitcg.com/TCGplayer (se infirieron, no se pudieron probar desde este sandbox). El avatar (GitHub/Google) ya se confirmó y arregló -- ver sección 156.
 - Falta que el dueño pruebe en un celular Android real el gesto/tecla física de "atrás" (ver sección 156) -- se verificó con Playwright que el botón "atrás" del navegador funciona correctamente, pero el gesto físico de un teléfono real no se pudo probar desde este sandbox.
+- Falta correr `079_coleccion_personal.sql` en Supabase (ver sección 158) para que la Colección/Portafolio y los intercambios funcionen en producción -- las funciones RPC ya se probaron de verdad contra un Postgres real en este sandbox (idempotencia, suma, resta, casos sin card_api_id), pero falta el flujo end-to-end contra Supabase real y con datos de `mercado_listings`/`inventario_tienda` reales.
