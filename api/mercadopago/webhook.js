@@ -7,6 +7,7 @@
 import { MercadoPagoConfig, Payment } from "mercadopago";
 
 const DURACION_DIAS = 30;
+const DURACION_DIAS_ANUAL = 365;
 const TABLAS_VALIDAS = ["mercado_listings", "inventario_tienda", "sellado_tienda"];
 
 export default async function handler(req, res) {
@@ -46,6 +47,8 @@ export default async function handler(req, res) {
 
     if ((pago.external_reference || "").startsWith("boost:")) {
       await procesarBoost(pago, dataId, supabaseUrl, headers);
+    } else if ((pago.external_reference || "").startsWith("plan_anual:")) {
+      await procesarPagoAnual(pago, dataId, supabaseUrl, headers);
     }
 
     res.status(200).json({ ok: true });
@@ -85,6 +88,50 @@ async function procesarBoost(pago, paymentId, supabaseUrl, headers) {
       headers,
       body: JSON.stringify({ destacado_hasta: destacadoHasta }),
     });
+  }
+}
+
+// Plan anual: pago ÚNICO (Preference, no preapproval) -- por eso, a
+// diferencia de procesarPagoRecurrente, nunca toca mp_preapproval_id (no
+// hay nada que cancelar después, porque no vuelve a cobrar solo). Extiende
+// plan_vence 365 días desde AHORA (mismo criterio simplificado que ya usa
+// procesarPagoRecurrente con los 30 días del mensual -- no acumula sobre
+// el plan_vence anterior si ya tenía tiempo restante).
+async function procesarPagoAnual(pago, paymentId, supabaseUrl, headers) {
+  const [, perfilId, plan] = pago.external_reference.split(":");
+  if (!perfilId || !plan) return;
+
+  const aprobado = pago.status === "approved";
+  const inicio = new Date();
+  const fin = new Date(inicio.getTime() + DURACION_DIAS_ANUAL * 24 * 60 * 60 * 1000);
+
+  await fetch(`${supabaseUrl}/rest/v1/pagos`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      perfil_id: perfilId,
+      plan,
+      mp_payment_id: String(paymentId),
+      status: pago.status,
+      monto: pago.transaction_amount,
+      periodo_inicio: inicio.toISOString(),
+      periodo_fin: fin.toISOString(),
+    }),
+  });
+
+  if (aprobado) {
+    await fetch(`${supabaseUrl}/rest/v1/perfiles?id=eq.${perfilId}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ plan, plan_vence: fin.toISOString() }),
+    });
+    if (plan === "masterball") {
+      await fetch(`${supabaseUrl}/rest/v1/perfiles?id=eq.${perfilId}&diamante_desde=is.null`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ diamante_desde: inicio.toISOString() }),
+      });
+    }
   }
 }
 

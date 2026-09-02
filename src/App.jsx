@@ -12748,6 +12748,32 @@ function sorteoEstadoLabel(s) {
 // su organizador marcó como "destacado". Si hay varios, se usa el más
 // reciente -- no hace falta forzar que solo exista uno a la vez con RLS,
 // esto ya evita amontonar varios banners.
+// Panel mediano en el inicio que invita a conocer los planes -- para que
+// quien visita la página se entere de que existen sin tener que buscarlos
+// en el menú. Mismo estilo visual que SorteoDestacadoBanner (gradiente
+// dorado, misma estructura), pero sin fetch (no depende de datos, solo del
+// plan actual). Se oculta solo para quien ya tiene el plan más alto
+// (Aurora) -- para todos los demás, incluidos visitantes sin cuenta, sigue
+// habiendo algo que ofrecerles.
+function PlanesPromoBanner({ perfil, onVerPlanes }) {
+  if (perfil?.plan === "enteball") return null;
+  return (
+    <button onClick={onVerPlanes}
+      style={{ background: `linear-gradient(120deg, ${COLORS.gold}22, ${COLORS.azulClaro}22)`, border: `1px solid ${COLORS.gold}77` }}
+      className="w-full rounded-2xl p-4 sm:p-5 mb-3 flex items-center gap-4 flex-wrap sm:flex-nowrap text-left hover:brightness-110 transition">
+      <div style={{ background: COLORS.surface2, width: 88, height: 88 }} className="rounded-xl overflow-hidden shrink-0 flex items-center justify-center">
+        <Sparkles size={36} color={COLORS.gold} />
+      </div>
+      <div className="flex-1 min-w-[180px]">
+        <Badge color={COLORS.gold}>✨ Planes</Badge>
+        <p style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-lg sm:text-xl font-bold mt-1">Lleva tu cuenta al siguiente nivel</p>
+        <p style={{ color: COLORS.muted }} className="text-xs mt-1">Wishlist compartible, Modo Evento, Colección con varios tableros y más -- desde $49/mes, o ahorra hasta 28% pagando el año.</p>
+      </div>
+      <span style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-bold whitespace-nowrap">Ver planes →</span>
+    </button>
+  );
+}
+
 function SorteoDestacadoBanner({ onAbrirSorteo }) {
   const [sorteo, setSorteo] = useState(null);
 
@@ -14160,6 +14186,7 @@ function AlertasPrecioView({ session, perfil, onIrAPlanes }) {
 }
 
 function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
+  const [periodo, setPeriodo] = useState("mensual"); // "mensual" | "anual"
   const [suscribiendo, setSuscribiendo] = useState(null);
   const [cancelando, setCancelando] = useState(false);
   const [error, setError] = useState(null);
@@ -14177,6 +14204,29 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo iniciar la suscripción");
+      window.location.href = data.init_point;
+    } catch (e) {
+      setError(e.message);
+      setSuscribiendo(null);
+    }
+  };
+
+  // Plan anual: pago único vía Preference de Mercado Pago (el mismo
+  // mecanismo que ya usan los Boosts, no una suscripción recurrente) --
+  // dura 365 días y no se renueva sola; al vencer, la persona vuelve a
+  // pagar a mano. Ver api/mercadopago/gestionar.js (crear_pago_anual) y
+  // webhook.js (procesarPagoAnual).
+  const pagarAnual = async (plan) => {
+    if (!session) { onRequireLogin(); return; }
+    setSuscribiendo(plan); setError(null);
+    try {
+      const res = await fetch("/api/mercadopago/gestionar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "crear_pago_anual", perfilId: session.user.id, plan, email: session.user.email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo iniciar el pago");
       window.location.href = data.init_point;
     } catch (e) {
       setError(e.message);
@@ -14206,9 +14256,19 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
   return (
     <div>
       <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Planes</h2>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-6">
-        Durante el lanzamiento, tiendas y vendedores activos tienen beneficios Premium de regalo. Elige tu rango cuando quieras hacerlo permanente — se renueva solo cada mes, cancela cuando quieras.
+      <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+        Durante el lanzamiento, tiendas y vendedores activos tienen beneficios Premium de regalo. Elige tu rango cuando quieras hacerlo permanente.
       </p>
+
+      <div className="flex gap-2 mb-6">
+        {[{ k: "mensual", l: "Mensual" }, { k: "anual", l: "Anual (ahorra hasta 28%)" }].map((o) => (
+          <button key={o.k} onClick={() => setPeriodo(o.k)}
+            style={{ background: periodo === o.k ? `${COLORS.azulClaro}22` : "transparent", border: `1px solid ${periodo === o.k ? COLORS.azulClaro : COLORS.surface2}`, color: periodo === o.k ? COLORS.azulPalido : COLORS.muted }}
+            className="rounded-lg px-3 py-1.5 text-sm font-semibold">
+            {o.l}
+          </button>
+        ))}
+      </div>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
       {renovacionActiva && (
@@ -14232,10 +14292,23 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
                 {esActual && <Badge color={info.color}>Tu plan</Badge>}
               </div>
               <p style={{ color: COLORS.muted }} className="text-sm mb-3">{info.resumen}</p>
-              <p style={{ fontFamily: "'Cabin', sans-serif", color: info.color }} className="text-2xl font-bold mb-1">
-                {info.precio === 0 ? "Gratis" : `$${info.precio} MXN/mes`}
-              </p>
-              {info.precio > 0 && <p style={{ color: COLORS.muted }} className="text-xs mb-2">Se renueva solo cada mes. Cancela cuando quieras.</p>}
+              {info.precio === 0 ? (
+                <p style={{ fontFamily: "'Cabin', sans-serif", color: info.color }} className="text-2xl font-bold mb-1">Gratis</p>
+              ) : periodo === "mensual" ? (
+                <>
+                  <p style={{ fontFamily: "'Cabin', sans-serif", color: info.color }} className="text-2xl font-bold mb-1">${info.precio} MXN/mes</p>
+                  <p style={{ color: COLORS.muted }} className="text-xs mb-2">Se renueva solo cada mes. Cancela cuando quieras.</p>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontFamily: "'Cabin', sans-serif", color: info.color }} className="text-2xl font-bold mb-0.5">
+                    ${info.precioAnual} MXN<span className="text-sm font-semibold">/año</span>
+                  </p>
+                  <p style={{ color: COLORS.gold }} className="text-xs font-semibold mb-2">
+                    Ahorra {Math.round((1 - info.precioAnual / (info.precio * 12)) * 100)}% vs. mensual · pago único, no se renueva sola
+                  </p>
+                </>
+              )}
               <ul className="text-sm grid gap-1 mb-4 flex-1">
                 {info.beneficios.map((b, i) => <li key={i} style={{ color: COLORS.text }}>✓ {b}</li>)}
               </ul>
@@ -14243,12 +14316,17 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
                 <p style={{ color: COLORS.muted }} className="text-xs text-center">Plan por defecto</p>
               ) : bloqueadoPorTipo ? (
                 <p style={{ color: COLORS.muted }} className="text-xs text-center">Exclusivo para cuentas de tienda</p>
-              ) : esActual ? (
+              ) : esActual && periodo === "mensual" ? (
                 <p style={{ color: info.color }} className="text-xs text-center">Ya tienes este plan activo</p>
-              ) : (
+              ) : periodo === "mensual" ? (
                 <button onClick={() => suscribirse(key)} disabled={suscribiendo === key}
                   style={{ background: info.color, color: textoSobre(info.color) }} className="rounded-lg py-2 text-sm font-semibold">
                   {suscribiendo === key ? "Redirigiendo a Mercado Pago..." : "Suscribirme"}
+                </button>
+              ) : (
+                <button onClick={() => pagarAnual(key)} disabled={suscribiendo === key}
+                  style={{ background: info.color, color: textoSobre(info.color) }} className="rounded-lg py-2 text-sm font-semibold">
+                  {suscribiendo === key ? "Redirigiendo a Mercado Pago..." : "Pagar 1 año"}
                 </button>
               )}
             </div>
@@ -16817,6 +16895,7 @@ export default function EncuentraCartas() {
               const banners = (
                 <>
                   <SorteoDestacadoBanner onAbrirSorteo={abrirSorteo} />
+                  <PlanesPromoBanner perfil={perfil} onVerPlanes={() => setView("planes")} />
                   <button onClick={() => (session ? setMostrarBuscarCarta(true) : setShowAccountModal(true))}
                     style={{ background: `${COLORS.violeta}1a`, border: `1px solid ${COLORS.violeta}55` }}
                     className="w-full rounded-xl p-3 mb-3 flex items-center gap-3 text-left hover:brightness-110 transition">

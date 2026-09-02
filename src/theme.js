@@ -185,13 +185,13 @@ export const PLAN_ORDER = ["pokeball", "superball", "ultraball", "masterball", "
 
 export const PLAN_INFO = {
   pokeball: {
-    nombre: "Cuarzo", emoji: "⚪", precio: 0, color: COLORS.muted,
+    nombre: "Cuarzo", emoji: "⚪", precio: 0, precioAnual: 0, color: COLORS.muted,
     resumen: "Básico y gratis",
     beneficios: ["Publica hasta 20 cartas/productos activos", "Aparece en búsquedas y en el directorio", "Modo día/noche"],
     limiteCartas: 20, verificado: false, redesExtra: false, wishlistPremium: false, wishlistCompartible: false, coleccionPersonal: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: false, mazoBuilder: false, competitivo: false, subastas: false, sorteos: false, modoEvento: false,
   },
   superball: {
-    nombre: "Zafiro", emoji: "🔵", precio: 49, color: COLORS.azulClaro,
+    nombre: "Zafiro", emoji: "🔵", precio: 49, precioAnual: 499, color: COLORS.azulClaro,
     resumen: "Insignia verificado + redes directas",
     beneficios: [
       "Publica hasta 50 cartas/productos activos", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)",
@@ -205,7 +205,7 @@ export const PLAN_INFO = {
     limiteCartas: 50, verificado: true, redesExtra: true, wishlistPremium: false, wishlistCompartible: true, coleccionPersonal: true, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false, competitivo: true, subastas: true, sorteos: false, modoEvento: false,
   },
   ultraball: {
-    nombre: "Amatista", emoji: "🟣", precio: 89, color: COLORS.violeta,
+    nombre: "Amatista", emoji: "🟣", precio: 89, precioAnual: 899, color: COLORS.violeta,
     resumen: "Todo Zafiro + Alertas de precio con push",
     beneficios: [
       "Todo lo de Zafiro", "Publicaciones ilimitadas", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente",
@@ -218,7 +218,7 @@ export const PLAN_INFO = {
     limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, wishlistCompartible: true, coleccionPersonal: true, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true, competitivo: true, boostsGratisMes: 1, subastas: true, sorteos: false, modoEvento: true,
   },
   masterball: {
-    nombre: "Diamante", emoji: "🟡", precio: 149, color: COLORS.azulPalido,
+    nombre: "Diamante", emoji: "🟡", precio: 149, precioAnual: 1499, color: COLORS.azulPalido,
     resumen: "Todos los beneficios, inventario ilimitado",
     beneficios: [
       "Todo lo de Amatista", "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante",
@@ -227,7 +227,7 @@ export const PLAN_INFO = {
     limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, wishlistCompartible: true, coleccionPersonal: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true, ubicacion: true, mazoBuilder: true, competitivo: true, boostsGratisMes: 2, subastas: true, sorteos: false, modoEvento: true,
   },
   enteball: {
-    nombre: "Aurora", emoji: "🔴", precio: 349, color: COLORS.gold,
+    nombre: "Aurora", emoji: "🔴", precio: 349, precioAnual: 2999, color: COLORS.gold,
     resumen: "Exclusivo tiendas: todo + importador masivo",
     beneficios: [
       "Todo lo de Diamante", "Importador masivo de inventario (texto, Excel, o directo desde tu tienda Shopify)", "Solo disponible para cuentas de tienda",
