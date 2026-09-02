@@ -5632,6 +5632,72 @@ Verificado con `npm run build` y una captura de pantalla del dev server
 overflow ni corte de texto donde antes cabía "Rye" (Baloo 2 es más
 ancha, pero los títulos ya tenían suficiente espacio).
 
+## 163. Varias colecciones privadas ("tableros", tipo "Choose Portfolio" de Collectr)
+
+"Mi colección" dejó de ser una sola lista plana -- ahora se pueden
+crear varias colecciones privadas nombrables (como el selector de
+portafolios de Collectr que mandó el dueño de referencia: Main,
+Wishlist Darkrai, komiya... cada una con su propio conteo), y la
+pantalla de Colección se ve dividida en dos bloques siempre visibles
+(no pestañas que se tapan): tus carpetas de venta arriba, tus
+colecciones privadas nuevas abajo.
+
+- **Hallazgo antes de construir nada**: "que se creen las carpetas
+  también en tu inventario y viceversa" ya estaba resuelto de origen --
+  `CarpetasPanel` (la función de carpetas de venta) ya soporta crear/
+  borrar varias carpetas con su propia UI, y es la MISMA tabla
+  compartida entre "Vender" y la pestaña de Colección -- no hizo falta
+  construir ninguna sincronización, solo dejar de esconder esa función
+  atrás de pestañas.
+- **`coleccion_tableros`** (nueva, `080_coleccion_tableros.sql`): un
+  tablero por colección privada (`nombre`, `es_principal`).
+  `coleccion_usuario` (estado='tengo') gana `tablero_id` -- la MISMA
+  carta ahora puede vivir en dos tableros distintos con cantidades
+  independientes (antes solo había una fila posible por carta por
+  usuario, sin importar cuántas "colecciones" quisieras tener).
+- **El índice único que ya existía se partió en dos** (uno por carta
+  por usuario, sin importar el tablero, ya no alcanza si quieres que la
+  misma carta viva en dos tableros con cantidades separadas): la
+  Wishlist (`estado='quiero'`) se quedó con EXACTAMENTE la misma regla
+  de antes (`unique(perfil_id, tcg, card_api_id)`, sin tocar); "tengo"
+  pasó a ser único POR TABLERO (`unique(tablero_id, tcg, card_api_id)`).
+  Esto es lo más delicado de este cambio -- **verificado de verdad**
+  contra un Postgres 16 real levantado en este sandbox (igual que las
+  secciones 157/158): se confirmó que la Wishlist sigue chocando en
+  23505 al agregar una carta repetida exactamente igual que antes (cero
+  regresión ahí), que la misma carta en dos tableros crea dos filas
+  independientes con sus propias cantidades, y que el nombre real de la
+  restricción vieja de Postgres (`coleccion_usuario_perfil_id_tcg_
+  card_api_id_key`) es el que se asumió para poder quitarla.
+- **Dos funciones RPC nuevas**: `coleccion_resolver_tablero_principal()`
+  (resuelve o crea el tablero "Principal" de un usuario nuevo de forma
+  seguRA ante llamadas casi simultáneas -- probado de verdad simulando
+  dos altas seguidas de un perfil sin tableros todavía, nunca crea dos
+  "Principal") y `coleccion_marcar_tablero_principal(id)` (cambia cuál
+  tablero es el principal en una sola transacción atómica, para que
+  nunca haya una ventana con cero o dos tableros principales al mismo
+  tiempo -- dos PATCH sueltos desde el cliente sí hubieran tenido ese
+  hueco).
+- **`coleccion_registrar_entrada`/`salida` ganan `p_tablero_id`**
+  (opcional, con default `null` -- Modo Evento sigue llamándolas sin
+  cambiar una sola línea, siempre cae en el tablero Principal). Los
+  llamadores nuevos (`MiColeccionView`, `AgregarAColeccionForm`,
+  `IntercambioBuilderView`) sí mandan el tablero activo.
+- **`MiColeccionView`**: selector de tableros arriba en forma de chips
+  (nombre + ⭐ si es el principal), con "+ Nueva", y un menú (✏️
+  renombrar, ⭐ marcar como principal, 🗑️ borrar) en el tablero activo
+  -- borrar pide confirmación explícita con cuántas cartas se van a
+  borrar en cascada, y está bloqueado si es el único tablero o el
+  marcado como principal (primero hay que quitarle la estrella).
+- La colección privada se sigue quedando 100% privada -- nada de esto
+  le agregó visibilidad pública a ningún tablero.
+
+Verificado con `npm run build`, Playwright (la pantalla de Colección
+navega sin tronar) y las pruebas SQL contra Postgres real ya descritas
+arriba. Falta correr `080_coleccion_tableros.sql` en Supabase (después
+de `079_coleccion_personal.sql`, si no se había corrido ya) y probar el
+flujo completo con datos reales.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -5652,4 +5718,4 @@ ancha, pero los títulos ya tenían suficiente espacio).
 - Falta correr `077_sorteos_exclusivos_campana.sql` en Supabase (ver sección 154) para que los sorteos exclusivos por link de campaña funcionen en producción -- y falta probar el flujo completo end-to-end (cuenta nueva y cuenta existente, correo y Google) una vez desplegado.
 - Falta correr `078_coleccion_usuario_wishlist_publica.sql` en Supabase (ver sección 155) para que el link público de la Wishlist rediseñada funcione en producción -- y falta confirmar en vivo que los hostnames de imagen del proxy nuevo (`?fuente=imgproxy`) son los correctos para pokemontcg.io/apitcg.com/TCGplayer (se infirieron, no se pudieron probar desde este sandbox). El avatar (GitHub/Google) ya se confirmó y arregló -- ver sección 156.
 - Falta que el dueño pruebe en un celular Android real el gesto/tecla física de "atrás" (ver sección 156) -- se verificó con Playwright que el botón "atrás" del navegador funciona correctamente, pero el gesto físico de un teléfono real no se pudo probar desde este sandbox.
-- Falta correr `079_coleccion_personal.sql` en Supabase (ver sección 158) para que la Colección/Portafolio y los intercambios funcionen en producción -- las funciones RPC ya se probaron de verdad contra un Postgres real en este sandbox (idempotencia, suma, resta, casos sin card_api_id), pero falta el flujo end-to-end contra Supabase real y con datos de `mercado_listings`/`inventario_tienda` reales.
+- Falta correr `079_coleccion_personal.sql` Y `080_coleccion_tableros.sql` en Supabase, en ese orden (ver secciones 158 y 163) para que la Colección/Portafolio, los intercambios y las varias colecciones privadas funcionen en producción -- las funciones RPC y el cambio del índice único ya se probaron de verdad contra un Postgres real en este sandbox (idempotencia, suma, resta, casos sin card_api_id, que la Wishlist no se afectó), pero falta el flujo end-to-end contra Supabase real y con datos de `mercado_listings`/`inventario_tienda` reales.
