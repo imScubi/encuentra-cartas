@@ -5754,6 +5754,53 @@ alcanzable desde este sandbox, así que el flujo de pago único en sí
 (crear la Preference, que el webhook la reciba y extienda `plan_vence`
 bien) queda sin probar de punta a punta hasta que se despliegue.
 
+## 165. Fix crítico: `coleccion_registrar_entrada`/`salida` duplicadas en Supabase real (bug activo, ya corregido en producción)
+
+Al revisar el proyecto real de Supabase con el MCP de Supabase (por
+primera vez con acceso directo a producción en esta sesión, en vez de
+solo Postgres local de prueba), se descubrió que **las migraciones 079
+y 080 YA estaban aplicadas en producción** -- buena noticia, ya no
+está pendiente correrlas -- pero también se encontró un bug activo
+introducido por la 080:
+
+- La 080 hace `create or replace function coleccion_registrar_entrada
+  (...los mismos parámetros de la 079..., p_tablero_id uuid default
+  null)`. En Postgres, **agregar un parámetro nuevo NO reemplaza una
+  función existente** -- como cambia la firma, crea una función
+  **sobrecargada aparte**. Se confirmó contra el proyecto real:
+  existían DOS versiones de `coleccion_registrar_entrada` (13 y 14
+  argumentos) y dos de `coleccion_registrar_salida` (11 y 12), no una.
+- La versión vieja de `coleccion_registrar_entrada` seguía apuntando su
+  `on conflict (perfil_id, tcg, card_api_id)` a la restricción que la
+  080 ya había borrado -- si PostgREST la llegaba a elegir, truena con
+  "no unique or exclusion constraint matching the ON CONFLICT
+  specification".
+- La versión vieja de `coleccion_registrar_salida` no filtraba por
+  `tablero_id` -- si PostgREST la elegía, podía restar/borrar de la
+  fila equivocada bajo el modelo nuevo de varios tableros.
+- **Modo Evento llama a `coleccion_registrar_entrada` sin mandar
+  `p_tablero_id`** (`registrarAdquisicionDeIntercambio`, App.jsx) --
+  exactamente el caso ambiguo entre las dos firmas (ambas quedan
+  compatibles con el mismo conjunto de parámetros cuando el nuevo es
+  opcional). Es decir: registrar un intercambio en Modo Evento estaba
+  en riesgo real de fallar en producción.
+
+**Corrección aplicada directamente en el proyecto real** (`nulypgaaekexlbxbxdwq`,
+vía el MCP de Supabase) con un `drop function` explícito de las dos
+firmas viejas, dejando solo las firmas nuevas (con `p_tablero_id
+default null`, que siguen funcionando igual para quien no lo manda).
+Se guardó también como `supabase/migrations/081_coleccion_registrar_
+fix_overload.sql` para que quede en el historial del repo. Se verificó
+después de aplicarlo que solo queda una función por nombre (aparte de
+`unaccent`, que es de la extensión de Postgres y siempre tuvo dos
+firmas legítimas) y que no hay más pares de funciones duplicadas en el
+esquema `public`.
+
+**Esta corrección se aplicó en caliente, directo a producción** -- no
+pasó por el ciclo de rama/PR de este repo (es un `drop function` sobre
+una función zombie que nadie debía estar usando ya, de bajo riesgo),
+pero el archivo `.sql` sí se commiteó para que quede documentado.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -5774,5 +5821,5 @@ bien) queda sin probar de punta a punta hasta que se despliegue.
 - Falta correr `077_sorteos_exclusivos_campana.sql` en Supabase (ver sección 154) para que los sorteos exclusivos por link de campaña funcionen en producción -- y falta probar el flujo completo end-to-end (cuenta nueva y cuenta existente, correo y Google) una vez desplegado.
 - Falta correr `078_coleccion_usuario_wishlist_publica.sql` en Supabase (ver sección 155) para que el link público de la Wishlist rediseñada funcione en producción -- y falta confirmar en vivo que los hostnames de imagen del proxy nuevo (`?fuente=imgproxy`) son los correctos para pokemontcg.io/apitcg.com/TCGplayer (se infirieron, no se pudieron probar desde este sandbox). El avatar (GitHub/Google) ya se confirmó y arregló -- ver sección 156.
 - Falta que el dueño pruebe en un celular Android real el gesto/tecla física de "atrás" (ver sección 156) -- se verificó con Playwright que el botón "atrás" del navegador funciona correctamente, pero el gesto físico de un teléfono real no se pudo probar desde este sandbox.
-- Falta correr `079_coleccion_personal.sql` Y `080_coleccion_tableros.sql` en Supabase, en ese orden (ver secciones 158 y 163) para que la Colección/Portafolio, los intercambios y las varias colecciones privadas funcionen en producción -- las funciones RPC y el cambio del índice único ya se probaron de verdad contra un Postgres real en este sandbox (idempotencia, suma, resta, casos sin card_api_id, que la Wishlist no se afectó), pero falta el flujo end-to-end contra Supabase real y con datos de `mercado_listings`/`inventario_tienda` reales.
+- `079_coleccion_personal.sql` y `080_coleccion_tableros.sql` ya están corridas en el Supabase real (confirmado directo contra producción, ver sección 165) -- y el bug de la función duplicada que dejó la 080 ya se corrigió en caliente. Sigue faltando probar el flujo end-to-end en la app real (crear un tablero, hacer un intercambio en Modo Evento, confirmar que `coleccion_usuario`/`coleccion_historial` quedan bien) con datos reales de `mercado_listings`/`inventario_tienda`.
 - Falta probar un pago real del plan anual de punta a punta (ver sección 164) -- Mercado Pago no es alcanzable desde este sandbox, así que ni crear la Preference ni que el webhook la reciba y extienda `plan_vence` se pudo probar en vivo. Antes de anunciarlo a los clientes, hacer una compra de prueba real (con una cuenta de Mercado Pago de prueba si se tiene, o una compra real chica) y confirmar que el plan se activa bien.
