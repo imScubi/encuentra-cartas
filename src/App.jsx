@@ -14677,8 +14677,11 @@ function CintillaMovilAbajo({ view, setView, irAVender }) {
   );
   return (
     <nav
-      style={{ background: conAlpha(COLORS.bg, 0.94), borderTop: `1px solid ${COLORS.azulClaro}2e`, backdropFilter: "blur(14px)", paddingBottom: "env(safe-area-inset-bottom)" }}
-      className="sm:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch"
+      style={{
+        background: conAlpha(COLORS.surface, 0.92), border: `1px solid ${COLORS.azulClaro}33`, backdropFilter: "blur(16px)",
+        bottom: "calc(env(safe-area-inset-bottom) + 12px)", boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
+      }}
+      className="sm:hidden fixed left-3 right-3 z-50 flex items-stretch rounded-2xl px-1"
     >
       {tabs.map((t) => tabButton(t.id, t.label, t.icon, view === t.id, () => setView(t.id)))}
       {tabButton("vender", "Vender", Tag, vendiendoActivo, irAVender)}
@@ -16686,7 +16689,7 @@ export default function EncuentraCartas() {
 
       {/* pb-24 en celular: deja espacio para que la cintilla de navegación
           fija de abajo (CintillaMovilAbajo) no tape lo último del contenido. */}
-      <main style={{ position: "relative", zIndex: 1 }} className="max-w-5xl mx-auto px-4 sm:px-8 pt-10 pb-24 sm:py-10">
+      <main style={{ position: "relative", zIndex: 1 }} className="max-w-5xl mx-auto px-4 sm:px-8 pt-10 pb-28 sm:py-10">
         {/* SEARCH */}
         {view === "search" && (
           <div>

@@ -5587,6 +5587,26 @@ desde este sandbox) -- se revisaron a mano los nombres de columna
 `inventario_tienda`, confirmado contra las migraciones 035/036; no
 existen en `sellado_tienda`, manejado como `null`).
 
+## 161. Cintilla de navegación móvil: rediseño flotante
+
+Pedido explícito con capturas de referencia: la barra de abajo en
+celular (Inicio/Tiendas/Catálogo/Colección/Vender) debía verse como una
+píldora flotante separada del borde, no pegada de lado a lado como
+antes.
+
+- `CintillaMovilAbajo`: pasa de `bottom-0 left-0 right-0` (pegada,
+  esquinas rectas) a `left-3 right-3` con `bottom: calc(env(safe-area-
+  inset-bottom) + 12px)`, esquinas redondeadas (`rounded-2xl`), sombra
+  y fondo semitransparente con blur -- mismo criterio visual que las
+  capturas de referencia.
+- `<main>` (el contenedor de toda la página) ganó un poco más de
+  `padding-bottom` (`pb-24` → `pb-28`) para que el nuevo espacio que
+  deja la cintilla flotante no tape el final del contenido.
+
+Verificado con `npm run build` y una captura de pantalla en viewport
+móvil (390×844) contra el dev server -- se ve igual que la referencia,
+sin overlap con el contenido.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
