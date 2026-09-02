@@ -10,6 +10,12 @@ import { MercadoPagoConfig, Preference } from "mercadopago";
 const TABLAS_VALIDAS = ["mercado_listings", "inventario_tienda", "sellado_tienda"];
 const PRECIOS_BOOST_MXN = { 3: 15, 7: 29 };
 const PRECIOS_PLAN_MXN = { superball: 49, ultraball: 89, masterball: 149, enteball: 349 };
+// Plan anual: pago único (no una suscripción recurrente) -- por eso vive
+// separado de PRECIOS_PLAN_MXN/crearSuscripcion. Debe coincidir con
+// `precioAnual` en src/theme.js (PLAN_INFO) -- no hay una sola fuente de
+// verdad compartida entre cliente y servidor para esto, igual que ya
+// pasa con PRECIOS_PLAN_MXN de arriba.
+const PRECIOS_PLAN_ANUAL_MXN = { superball: 499, ultraball: 899, masterball: 1499, enteball: 2999 };
 
 async function obtenerDuenoDeLista(tabla, listingId) {
   const supabaseUrl = process.env.SUPABASE_URL || "https://nulypgaaekexlbxbxdwq.supabase.co";
@@ -97,6 +103,40 @@ async function crearSuscripcion(req, res) {
   }
 }
 
+// Pago único del plan anual (Preference, igual que crearBoost) -- NO usa
+// preapproval, así que nunca cobra sola una segunda vez. El webhook
+// distingue este pago de un Boost por el prefijo "plan_anual:" en
+// external_reference (ver procesarPagoAnual en webhook.js).
+async function crearPagoAnual(req, res) {
+  const { perfilId, plan, email } = req.body || {};
+  if (!perfilId || !PRECIOS_PLAN_ANUAL_MXN[plan]) {
+    return res.status(400).json({ error: "Datos incompletos o plan inválido" });
+  }
+
+  const accessToken = process.env.MP_ACCESS_TOKEN;
+  if (!accessToken) return res.status(500).json({ error: "Mercado Pago todavía no está configurado (falta MP_ACCESS_TOKEN)." });
+
+  const baseUrl = process.env.PUBLIC_BASE_URL || `https://${req.headers.host}`;
+
+  try {
+    const client = new MercadoPagoConfig({ accessToken });
+    const preference = new Preference(client);
+    const resultado = await preference.create({
+      body: {
+        items: [{ title: `Encuentra Cartas · Plan ${plan} (1 año)`, quantity: 1, unit_price: PRECIOS_PLAN_ANUAL_MXN[plan], currency_id: "MXN" }],
+        payer: email ? { email } : undefined,
+        external_reference: `plan_anual:${perfilId}:${plan}`,
+        back_urls: { success: `${baseUrl}/?plan=exito`, failure: `${baseUrl}/?plan=fallo`, pending: `${baseUrl}/?plan=pendiente` },
+        auto_return: "approved",
+        notification_url: `${baseUrl}/api/mercadopago/webhook`,
+      },
+    });
+    res.status(200).json({ init_point: resultado.init_point, preference_id: resultado.id });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "No se pudo iniciar el pago del plan anual" });
+  }
+}
+
 async function cancelarSuscripcion(req, res) {
   const { perfilId } = req.body || {};
   if (!perfilId) return res.status(400).json({ error: "Falta perfilId" });
@@ -133,6 +173,7 @@ export default async function handler(req, res) {
   const { accion } = req.body || {};
   if (accion === "crear_boost") return crearBoost(req, res);
   if (accion === "crear_suscripcion") return crearSuscripcion(req, res);
+  if (accion === "crear_pago_anual") return crearPagoAnual(req, res);
   if (accion === "cancelar_suscripcion") return cancelarSuscripcion(req, res);
   return res.status(400).json({ error: "accion inválida" });
 }

@@ -5698,6 +5698,62 @@ arriba. Falta correr `080_coleccion_tableros.sql` en Supabase (después
 de `079_coleccion_personal.sql`, si no se había corrido ya) y probar el
 flujo completo con datos reales.
 
+## 164. Planes anuales + panel de planes en el inicio (empezar a monetizar más en serio)
+
+Pedido explícito: hacer que la gente sea más consciente de los planes
+(un panel en el inicio que lleve directo a "Planes") y agregar la
+opción de pagar el año completo, no solo mes a mes.
+
+- **`PlanesPromoBanner`** (nuevo, en el inicio, mismo estilo visual que
+  `SorteoDestacadoBanner` -- degradado dorado, sin fetch propio): "Lleva
+  tu cuenta al siguiente nivel" con un botón "Ver planes →" que manda a
+  la pantalla de Planes. Se oculta solo para quien ya tiene el plan más
+  alto (Aurora) -- todos los demás, incluidos visitantes sin cuenta,
+  todavía tienen algo que se les puede ofrecer.
+- **Precios anuales** (`precioAnual` nuevo en cada tier de `PLAN_INFO`,
+  `theme.js`): Zafiro $499 (ahorra 15%), Amatista $899 (16%), Diamante
+  $1,499 (16%), Aurora $2,999 (28%) -- los mismos números que ya se
+  habían platicado antes en la conversación cuando el dueño pidió una
+  recomendación de precios.
+- **Decisión importante, confirmada con el dueño antes de tocar código
+  de pagos**: el plan anual es un **pago único, sin renovación
+  automática** -- NO una suscripción recurrente anual de Mercado Pago.
+  Motivo: hoy el código de suscripciones (`crearSuscripcion`,
+  `api/mercadopago/gestionar.js`) solo maneja `frequency_type: "months"`
+  para el cobro recurrente -- no había forma de confirmar desde este
+  sandbox si Mercado Pago soporta "años" como frecuencia, así que
+  apostarle a eso sin poder probarlo era un riesgo real con dinero de
+  por medio. En cambio, el pago anual reusa el MISMO mecanismo que ya
+  funciona hoy para los Boosts (una `Preference` de pago único, no un
+  `preapproval`) -- mucho menos riesgo, y evita sorprender a alguien con
+  un cobro automático de cientos de pesos un año después.
+- **`api/mercadopago/gestionar.js`**: nueva acción `crear_pago_anual`
+  (`crearPagoAnual`), calca el patrón exacto de `crearBoost` (una
+  `Preference`, no un `preapproval`) con
+  `external_reference: "plan_anual:{perfilId}:{plan}"` para que el
+  webhook lo distinga de un Boost.
+- **`api/mercadopago/webhook.js`**: nueva función `procesarPagoAnual` --
+  extiende `plan_vence` 365 días desde el momento del pago (mismo
+  criterio simplificado que ya usa el mensual con sus 30 días: no
+  acumula sobre el `plan_vence` anterior si ya quedaba tiempo, y por
+  ahora es una limitación aceptada, no un bug nuevo) y, a diferencia del
+  pago recurrente, **nunca toca `mp_preapproval_id`** -- no hay nada que
+  cancelar después porque no vuelve a cobrar solo.
+- **`PlanesView`**: switch Mensual/Anual arriba de las tarjetas; en modo
+  anual cada tarjeta muestra el precio por año con el % de ahorro real
+  calculado (`1 - precioAnual / (precio × 12)`) y el botón cambia a
+  "Pagar 1 año" (llama la acción nueva) en vez de "Suscribirme".
+
+Verificado con `npm run build`, `node --check` en los dos archivos de
+`api/mercadopago/` (sintaxis válida) y Playwright contra el dev server
+-- el panel del inicio aparece (se confirmó que el banner vive dentro
+del mismo bloque que ya se colapsa para "visitante nuevo", nada nuevo
+ahí), el switch Mensual/Anual cambia el precio y el mensaje de ahorro
+correctamente. **No se pudo probar un pago real** -- Mercado Pago no es
+alcanzable desde este sandbox, así que el flujo de pago único en sí
+(crear la Preference, que el webhook la reciba y extienda `plan_vence`
+bien) queda sin probar de punta a punta hasta que se despliegue.
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
@@ -5719,3 +5775,4 @@ flujo completo con datos reales.
 - Falta correr `078_coleccion_usuario_wishlist_publica.sql` en Supabase (ver sección 155) para que el link público de la Wishlist rediseñada funcione en producción -- y falta confirmar en vivo que los hostnames de imagen del proxy nuevo (`?fuente=imgproxy`) son los correctos para pokemontcg.io/apitcg.com/TCGplayer (se infirieron, no se pudieron probar desde este sandbox). El avatar (GitHub/Google) ya se confirmó y arregló -- ver sección 156.
 - Falta que el dueño pruebe en un celular Android real el gesto/tecla física de "atrás" (ver sección 156) -- se verificó con Playwright que el botón "atrás" del navegador funciona correctamente, pero el gesto físico de un teléfono real no se pudo probar desde este sandbox.
 - Falta correr `079_coleccion_personal.sql` Y `080_coleccion_tableros.sql` en Supabase, en ese orden (ver secciones 158 y 163) para que la Colección/Portafolio, los intercambios y las varias colecciones privadas funcionen en producción -- las funciones RPC y el cambio del índice único ya se probaron de verdad contra un Postgres real en este sandbox (idempotencia, suma, resta, casos sin card_api_id, que la Wishlist no se afectó), pero falta el flujo end-to-end contra Supabase real y con datos de `mercado_listings`/`inventario_tienda` reales.
+- Falta probar un pago real del plan anual de punta a punta (ver sección 164) -- Mercado Pago no es alcanzable desde este sandbox, así que ni crear la Preference ni que el webhook la reciba y extienda `plan_vence` se pudo probar en vivo. Antes de anunciarlo a los clientes, hacer una compra de prueba real (con una cuenta de Mercado Pago de prueba si se tiene, o una compra real chica) y confirmar que el plan se activa bien.
