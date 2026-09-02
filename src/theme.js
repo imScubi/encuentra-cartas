@@ -1,5 +1,5 @@
 export const FONTS = `
-@import url('https://fonts.googleapis.com/css2?family=Rye&family=Cabin:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Cabin:wght@400;500;600;700&display=swap');
 @keyframes drift { 0% { transform: translate(0,0); } 50% { transform: translate(-2%,3%); } 100% { transform: translate(0,0); } }
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }

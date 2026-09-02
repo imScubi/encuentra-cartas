@@ -5607,6 +5607,31 @@ Verificado con `npm run build` y una captura de pantalla en viewport
 móvil (390×844) contra el dev server -- se ve igual que la referencia,
 sin overlap con el contenido.
 
+## 162. Tipografía de los títulos: de "Rye" (estilo vaquero) a "Baloo 2"
+
+Pedido explícito: la fuente "Rye" que se usaba en todos los títulos
+("Encuentra la carta que estás cazando", nombres de sección, etc.)
+tenía un estilo western/vaquero que ya no encajaba con el resto de la
+página. Se cambió por "Baloo 2" (Google Fonts) -- una fuente redonda,
+gruesa y moderna, que combina bien con "Cabin" (la que ya se usaba para
+texto normal/números) y encaja mejor con una app de cartas
+coleccionables.
+
+- Cambio mecánico de una sola cadena repetida 65 veces en `App.jsx`
+  (`fontFamily: "'Rye', serif"` → `fontFamily: "'Baloo 2', sans-serif"`),
+  hecho con `sed` en vez de 65 ediciones manuales -- se confirmó primero
+  que la cadena exacta era idéntica en las 65 apariciones antes de
+  reemplazar.
+- El `<link>` de Google Fonts en `index.html` y el `@import` equivalente
+  en `src/theme.js` (`FONTS`, usado como CSS global) se actualizaron
+  igual, pidiendo los pesos 500/600/700/800 de Baloo 2 (los títulos usan
+  negritas fuertes).
+
+Verificado con `npm run build` y una captura de pantalla del dev server
+-- el título de la portada ya se ve con la tipografía nueva, sin
+overflow ni corte de texto donde antes cabía "Rye" (Baloo 2 es más
+ancha, pero los títulos ya tenían suficiente espacio).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

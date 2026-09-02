@@ -1168,7 +1168,7 @@ function AccountModal({ onClose, onAuthed }) {
 
         {mode === "choose" && (
           <>
-            <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Mi cuenta</h2>
+            <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Mi cuenta</h2>
             <p style={{ color: COLORS.muted }} className="text-sm mb-5">Crea una cuenta o inicia sesión.</p>
             <div className="grid gap-3">
               <button onClick={() => { setAccountType("tienda"); setMode("signupForm"); }}
@@ -1261,7 +1261,7 @@ function AccountModal({ onClose, onAuthed }) {
 
         {mode === "login" && (
           <div className="grid gap-3">
-            <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Iniciar sesión</h2>
+            <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Iniciar sesión</h2>
             <input placeholder="Correo electrónico" value={email} onChange={(e) => setEmail(e.target.value)}
               style={{ background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-3 py-2 text-sm outline-none" />
             <input placeholder="Contraseña" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
@@ -1323,7 +1323,7 @@ function CompletarPerfilOAuthModal({ session, onCreado, onCancelar }) {
   return (
     <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 40px ${COLORS.azulMedio}33` }} className="w-full max-w-md rounded-2xl p-6">
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Completa tu registro</h2>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Completa tu registro</h2>
         <p style={{ color: COLORS.muted }} className="text-sm mb-4">Ya iniciaste sesión. Solo nos falta esto para terminar de crear tu cuenta.</p>
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-2">
@@ -1393,7 +1393,7 @@ function ConfirmarCorreoModal({ tokenHash, tipo, onConfirmado, onCerrar }) {
     <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulMedio}66`, boxShadow: `0 0 40px ${COLORS.azulMedio}33` }} className="w-full max-w-md rounded-2xl p-6 text-center">
         <Store size={32} color={COLORS.azulPalido} className="mx-auto mb-3" />
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Confirma tu cuenta</h2>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Confirma tu cuenta</h2>
         <p style={{ color: COLORS.muted }} className="text-sm mb-4">Dale clic para terminar de activar tu cuenta y entrar.</p>
         {error && <div className="mb-4 text-left"><ErrorBox message={error} /></div>}
         <button onClick={confirmar} disabled={loading}
@@ -2335,7 +2335,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Vender en el Mercado</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Vender en el Mercado</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Publica cartas sueltas o producto sellado para que otros usuarios te encuentren.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
@@ -2642,7 +2642,7 @@ function CambiarPlanAdmin({ session }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🎚️ Cambiar plan de un usuario</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🎚️ Cambiar plan de un usuario</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">
         Busca una cuenta por nombre o correo y cámbiale el plan a mano (útil, por ejemplo, si se reembolsó un pago).
       </p>
@@ -2767,7 +2767,7 @@ function UsuariosAdmin({ session }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">👥 Todos los usuarios</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">👥 Todos los usuarios</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">
         {visibles.length} de {usuarios.length} cuentas registradas. Cambia el plan o borra una cuenta por completo (borra también su tienda, publicaciones, mensajes, etc.).
       </p>
@@ -2837,7 +2837,7 @@ function StatTile({ label, value, sub, color = COLORS.azulClaro }) {
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4">
       <p style={{ color: COLORS.muted }} className="text-xs uppercase font-semibold mb-1">{label}</p>
-      <p style={{ color, fontFamily: "'Rye', serif" }} className="text-2xl font-bold">{value}</p>
+      <p style={{ color, fontFamily: "'Baloo 2', sans-serif" }} className="text-2xl font-bold">{value}</p>
       {sub && <p style={{ color: COLORS.muted }} className="text-xs mt-0.5">{sub}</p>}
     </div>
   );
@@ -2989,7 +2989,7 @@ function EstadisticasAdmin({ session }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Estadísticas</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Estadísticas</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">
         Cifras al momento, para monitorear el crecimiento de la plataforma con el tiempo.
       </p>
@@ -3786,7 +3786,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
 
   return (
     <div>
-      <h1 style={{ fontFamily: "'Rye', serif" }} className="text-2xl font-bold mb-6">Panel de administración</h1>
+      <h1 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-2xl font-bold mb-6">Panel de administración</h1>
 
       <div className="flex gap-2 flex-wrap mb-8" style={{ borderBottom: `1px solid ${COLORS.surface2}` }}>
         {tabs.map((t) => (
@@ -3812,7 +3812,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
         <div>
           <VerificacionesTiendaAdmin session={session} />
           <FotosFaltantesAdmin session={session} />
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Crear tienda</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Crear tienda</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-4">
             Da de alta una tienda nueva en el directorio con su nombre y dirección (la dirección se muestra sola en el mapa del perfil de la tienda, no requiere nada más). Opcionalmente puedes vincularla de una vez con una cuenta de tipo tienda.
           </p>
@@ -3870,7 +3870,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
             </button>
           </div>
 
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Vincular tiendas</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Vincular tiendas</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-6">
             Vincula cuentas de tienda registradas con su tienda real en el directorio. Una cuenta puede tener más de una tienda vinculada (ej. un dueño con dos locales de nombres distintos) -- el dueño puede cambiar entre ellas desde su panel de tienda.
           </p>
@@ -3904,7 +3904,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
             <p style={{ color: COLORS.muted }} className="text-xs mb-8">No hay cuentas de tipo tienda registradas todavía para vincular.</p>
           )}
 
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Todas las tiendas</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Todas las tiendas</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-4">
             Las marcadas en rojo comparten nombre con otra — probablemente duplicadas. Bórralas desde aquí (si tienen inventario, primero bórralo en "Publicaciones").
           </p>
@@ -3997,7 +3997,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
 
       {tabAdmin === "subperfiles" && (
         <div>
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Sub-perfiles</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Sub-perfiles</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-6">
             Cuentas de verdad que tú administras, sin necesitar un correo propio para cada una. Sirven, por ejemplo, para poblar el Mercado con publicaciones orgánicas. Puedes cambiarles el plan y "entrar" a usarlas como si fueras esa cuenta.
           </p>
@@ -4045,7 +4045,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
 
       {tabAdmin === "anuncios" && (
         <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">📢 Anuncios</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">📢 Anuncios</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">Crea un anuncio para publicarlo de inmediato o programarlo, y revisa los que proponen las tiendas.</p>
       {errorAnuncio && <div className="mb-4"><ErrorBox message={errorAnuncio} /></div>}
 
@@ -4187,7 +4187,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
 
       {tabAdmin === "publicaciones" && (
         <div>
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🔎 Publicaciones</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🔎 Publicaciones</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-4">
             Busca cualquier carta o producto (de tiendas o del Mercado entre usuarios) para revisarlo o borrarlo — por ejemplo, publicaciones sin imagen o duplicadas.
           </p>
@@ -4245,7 +4245,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
 
       {tabAdmin === "reportes" && (
         <div>
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🚩 Reportes</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🚩 Reportes</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-4">Publicaciones o perfiles reportados por usuarios. Revisa y márcalos como resueltos o descartados.</p>
           {loadingReportes ? <Loading label="Cargando reportes..." /> : reportes.length === 0 ? (
             <p style={{ color: COLORS.muted }} className="text-sm">Sin reportes pendientes. 🎉</p>
@@ -4286,7 +4286,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
 
       {tabAdmin === "vendedores" && (
         <div>
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Vendedores</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Vendedores</h2>
           <p style={{ color: COLORS.muted }} className="text-sm mb-4">Tratos realizados (ventas confirmadas) y reseñas de cada perfil, ordenado de más a menos ventas.</p>
           {loadingVendedores ? <Loading label="Cargando vendedores..." /> : (
             <div className="grid gap-2">
@@ -4333,7 +4333,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
 
       {tabAdmin === "errores" && (
         <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🐞 Errores detectados</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🐞 Errores detectados</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">Errores capturados automáticamente del navegador de los usuarios. Al resolverlos, márcalos para que desaparezcan de esta lista.</p>
       {loadingErrores ? <Loading label="Cargando errores..." /> : errores.length === 0 ? (
         <p style={{ color: COLORS.muted }} className="text-sm">Sin errores pendientes. 🎉</p>
@@ -4431,7 +4431,7 @@ function MigrarDescripcionesAdmin({ session }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🖼️ Migrar cartas viejas al nuevo API</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🖼️ Migrar cartas viejas al nuevo API</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-1">
         Vuelve a consultar apitcg.com para rellenar artista/descripción de publicaciones que ya existen. Solo cubre las que se buscaron con apitcg.com
         como fuente (identificable por su <code>card_api_id</code>) -- lo demás queda fuera de este primer paso.
@@ -5813,7 +5813,7 @@ function CarpetaPublicaView({ carpetaId, onAbrirDetalle, onVerPerfil, onAbrirTie
         <CarpetaCover color={carpeta.color} nombre={carpeta.nombre} alto={140} />
         <div className="p-5">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <h1 style={{ fontFamily: "'Rye', serif" }} className="text-2xl font-bold">{carpeta.nombre}</h1>
+            <h1 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-2xl font-bold">{carpeta.nombre}</h1>
             {carpeta.tipo === "exhibicion" && <Badge color={COLORS.violeta}>🖼️ Exhibición</Badge>}
           </div>
           <p style={{ color: COLORS.muted }} className="text-sm mt-1">{cards.length} carta{cards.length === 1 ? "" : "s"}</p>
@@ -6510,7 +6510,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
       )}
 
       <div className="flex items-center gap-2 flex-wrap mb-1">
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">{tienda.nombre}</h2>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold">{tienda.nombre}</h2>
         <PlanBadge perfil={perfil} size="lg" />
         <button onClick={() => (editandoInfo ? setEditandoInfo(false) : abrirEditarInfo())}
           style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-2 py-1 text-xs font-semibold ml-auto whitespace-nowrap">
@@ -7066,7 +7066,7 @@ function SeccionAyuda({ titulo, children }) {
 function AyudaView({ perfil }) {
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">❓ Ayuda / Tutorial</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">❓ Ayuda / Tutorial</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Un repaso rápido de todo lo que puedes hacer en Encuentra Cartas.</p>
 
       <h3 style={{ color: COLORS.azulClaro }} className="font-semibold mb-3 text-sm uppercase">Primeros pasos</h3>
@@ -7303,7 +7303,7 @@ function OnboardingTutorial({ onClose }) {
               )}
             </div>
 
-            <h2 key={`t${step}`} style={{ fontFamily: "'Rye', serif", animation: "fadeUp .45s ease both" }} className="text-xl font-bold mt-6 mb-2">
+            <h2 key={`t${step}`} style={{ fontFamily: "'Baloo 2', sans-serif", animation: "fadeUp .45s ease both" }} className="text-xl font-bold mt-6 mb-2">
               {actual.title}
             </h2>
             <p key={`b${step}`} style={{ color: COLORS.muted, animation: "fadeUp .45s ease .05s both", maxWidth: 340 }} className="text-sm leading-relaxed mx-auto">
@@ -7425,7 +7425,7 @@ function RecompensasView({ session, perfil }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🏆 Recompensas</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🏆 Recompensas</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Gana Destellos ✨ vendiendo, comprando, calificando y publicando — cánjialos por Boost gratis.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
       {ok && <p style={{ color: COLORS.azulPalido }} className="text-sm mb-4">{ok}</p>}
@@ -7577,7 +7577,7 @@ function ComunidadView({ session, onVerPerfil }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">📸 Comunidad</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">📸 Comunidad</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Comparte tus pulls, aperturas de sobres y logros — lo ve toda la comunidad.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
@@ -7750,7 +7750,7 @@ function ArmarMazoView({ session, onAbrirChat, onVerTienda }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🃏 Armar mazo</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🃏 Armar mazo</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">
         Escribe las cartas que te faltan (una por línea, ej. "4 Charizard ex" o "Charizard ex x4") y te decimos qué tiendas o vendedores te las pueden completar.
       </p>
@@ -7996,7 +7996,7 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
   if (!info.mazoBuilder && !info.competitivo) {
     return (
       <div>
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-6">🧩 Mis mazos</h2>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-6">🧩 Mis mazos</h2>
         <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
           Arma varios mazos con un selector visual de cartas, o impórtalos automáticamente de torneos reales con Limitless TCG.
         </UpsellCard>
@@ -8153,7 +8153,7 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
           </div>
         ) : (
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">{actual.nombre}</h2>
+            <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold">{actual.nombre}</h2>
             <button onClick={() => { setEditandoNombre(true); setNombreEdit(actual.nombre); setEtiquetasEdit((actual.etiquetas || []).join(", ")); }}
               style={{ color: COLORS.muted }} className="text-xs underline">Editar</button>
           </div>
@@ -8307,7 +8307,7 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
   // ---- Lista de mazos ----
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🧩 Mis mazos</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🧩 Mis mazos</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">
         {info.mazoBuilder ? "Arma tus mazos con un selector visual de cartas: elige la cantidad de cada una y ponles nombre y etiquetas." : "Importa mazos reales de torneos desde Competitivo (menú Comunidad), marca qué cartas ya tienes y busca quién vende las que faltan."}
       </p>
@@ -8794,7 +8794,7 @@ function CompetitivoSection({ session, perfil, onIrAPlanes }) {
   const [tab, setTab] = useState("torneos");
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🏆 Competitivo</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🏆 Competitivo</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Torneos recientes de Pokémon TCG (vía Limitless TCG): qué arquetipos se están jugando, su popularidad y su winrate. Importar un mazo real a tu perfil es de Zafiro en adelante.</p>
       <div className="flex gap-2 mb-6 flex-wrap">
         <button onClick={() => setTab("torneos")}
@@ -8961,7 +8961,7 @@ function ModoEventoView({ session, perfil, onIrAPlanes }) {
   if (!info.modoEvento) {
     return (
       <div>
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-6">🎪 Modo Evento</h2>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-6">🎪 Modo Evento</h2>
         <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
           Lleva el control de tus ventas en un evento presencial: qué te costó cada pieza, en cuánto la vendiste, tus gastos del día (cede, comida, transporte) y tu ganancia en tiempo real -- con reporte final en PDF.
         </UpsellCard>
@@ -9009,7 +9009,7 @@ function ModoEventoView({ session, perfil, onIrAPlanes }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">🎪 Modo Evento</h2>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold">🎪 Modo Evento</h2>
         <button onClick={() => setMostrarNuevo((v) => !v)} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">
           {mostrarNuevo ? "Cancelar" : "+ Nuevo evento"}
         </button>
@@ -9696,7 +9696,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
 
       <div style={{ background: `linear-gradient(135deg, ${COLORS.gold}14, transparent)`, border: `1px solid ${COLORS.gold}33` }} className="rounded-2xl p-4 mb-6">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">🎪 {evento.nombre}</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold">🎪 {evento.nombre}</h2>
           <Badge color={evento.estado === "cerrado" ? COLORS.muted : COLORS.azulPalido}>{evento.estado === "cerrado" ? "Cerrado" : "Activo"}</Badge>
         </div>
         <p style={{ color: COLORS.muted }} className="text-sm mb-4">
@@ -10636,7 +10636,7 @@ function IntercambioBuilderView({ session, perfil, onVolver, onCompletado }) {
       <button onClick={onVolver} style={{ color: COLORS.muted }} className="text-sm mb-3 flex items-center gap-1">
         <ChevronLeft size={16} /> Volver a mi colección
       </button>
-      <h3 style={{ fontFamily: "'Rye', serif" }} className="text-lg font-bold mb-4">🔁 Registrar intercambio</h3>
+      <h3 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-lg font-bold mb-4">🔁 Registrar intercambio</h3>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
       <div className="grid sm:grid-cols-2 gap-4 mb-4">
@@ -10813,7 +10813,7 @@ function ColeccionView({ session, perfil, onIrAPlanes, onIrAMiTienda }) {
   if (!session) {
     return (
       <div>
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-6">🗂️ Colección</h2>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-6">🗂️ Colección</h2>
         <p style={{ color: COLORS.muted }} className="text-sm">Inicia sesión para llevar el control de las cartas que ya tienes.</p>
       </div>
     );
@@ -10822,7 +10822,7 @@ function ColeccionView({ session, perfil, onIrAPlanes, onIrAMiTienda }) {
   if (!info.coleccionPersonal) {
     return (
       <div>
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-6">🗂️ Colección</h2>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-6">🗂️ Colección</h2>
         <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
           Lleva el control de las cartas que ya tienes -- cantidad, valor de referencia -- e intercambia cartas registrando ambos lados, con historial de entradas y salidas.
         </UpsellCard>
@@ -10832,7 +10832,7 @@ function ColeccionView({ session, perfil, onIrAPlanes, onIrAMiTienda }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-4">🗂️ Colección</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-4">🗂️ Colección</h2>
       <div className="flex gap-2 mb-4">
         {[{ k: "mia", l: "Mi colección" }, { k: "carpetas", l: "Mis carpetas" }].map((t) => (
           <button key={t.k} onClick={() => setTab(t.k)}
@@ -10928,7 +10928,7 @@ function SiguiendoView({ session, onVerPerfil, onVerTienda }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Siguiendo</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Siguiendo</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Tiendas y vendedores que sigues, y lo último que han publicado.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
@@ -11012,7 +11012,7 @@ function AparienciaView({ perfil, onCambio, onIrAPlanes }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🎨 Apariencia</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🎨 Apariencia</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Personaliza los colores de la página. Se guarda en este dispositivo.</p>
 
       <h3 style={{ color: COLORS.azulPalido }} className="font-semibold mb-3 text-sm uppercase">Modo día / noche</h3>
@@ -11112,7 +11112,7 @@ function ComprasVentasView({ session }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Mis compras y ventas</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Mis compras y ventas</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Cuando marcas o te marcan una publicación como vendida, aparece aquí hasta que la otra parte la confirme.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
@@ -11281,7 +11281,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
           </HoloAvatar>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">{perfil.nombre}</h2>
+              <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold">{perfil.nombre}</h2>
               <PlanBadge perfil={perfil} />
               <VerificadoBadge perfil={perfil} />
               <NivelBadge total={totalDestellos} />
@@ -11981,7 +11981,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
             {item.tipo === "carta" && <GradeoBadge gradeada={item.gradeada} grado_empresa={item.gradoEmpresa} grado_empresa_otro={item.gradoEmpresaOtro} grado_calificacion={item.gradoCalificacion} />}
             <BuzonBadge tienda={item.buzonTienda} />
           </div>
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-2xl font-bold mb-1">{item.nombre}</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-2xl font-bold mb-1">{item.nombre}</h2>
           {item.setNombre && <p style={{ color: COLORS.muted }} className="text-sm mb-4">{item.setNombre}</p>}
           {item.artista && <p style={{ color: COLORS.muted }} className="text-xs mb-2">🎨 Ilustrado por {item.artista}</p>}
           {item.descripcionApi && (
@@ -12293,7 +12293,7 @@ function BusquedasView({ session, onAbrirChat, onVerPerfil, onRequireLogin }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">🔍 Cartas que están buscando</h2>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold">🔍 Cartas que están buscando</h2>
         <button onClick={() => (session ? setMostrarModal(true) : onRequireLogin())} style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap">
           + Publicar búsqueda
         </button>
@@ -12395,7 +12395,7 @@ function TorneosView({ session, onRequireLogin }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-6">📅 Calendario de torneos</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-6">📅 Calendario de torneos</h2>
       {loading && <Loading label="Cargando torneos..." />}
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
       {!loading && !error && torneos.length === 0 && (
@@ -12648,7 +12648,7 @@ function SorteoDestacadoBanner({ onAbrirSorteo }) {
       </div>
       <div className="flex-1 min-w-[180px]">
         <Badge color={COLORS.gold}>🎁 Sorteo activo</Badge>
-        <p style={{ fontFamily: "'Rye', serif" }} className="text-lg sm:text-xl font-bold mt-1">{sorteo.titulo}</p>
+        <p style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-lg sm:text-xl font-bold mt-1">{sorteo.titulo}</p>
         <p style={{ color: COLORS.gold }} className="text-sm font-semibold">{sorteo.premio}</p>
         <p style={{ color: COLORS.muted }} className="text-xs mt-1">
           {sorteo.tiendas?.nombre ? `Organiza: ${sorteo.tiendas.nombre}` : "Organiza: Encuentra Cartas"} · Termina: {new Date(sorteo.fecha_fin).toLocaleDateString("es-MX")}
@@ -12700,7 +12700,7 @@ function SorteosView({ session, onAbrirSorteo }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🎁 Sorteos</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🎁 Sorteos</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">
         Sorteos organizados por Admin y tiendas Aurora. Participa gratis, comparte tu link para un boleto extra, e invita amigos nuevos a registrarse para todavía más boletos.
       </p>
@@ -12886,7 +12886,7 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
             {sorteo.destacado && activo && <Badge color={COLORS.violeta}>⭐ Destacado en Inicio</Badge>}
             <p style={{ color: COLORS.muted }} className="text-xs">{sorteo.tiendas?.nombre ? `Organiza: ${sorteo.tiendas.nombre}` : "Organiza: Encuentra Cartas"}</p>
           </div>
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-2xl font-bold mb-1">{sorteo.titulo}</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-2xl font-bold mb-1">{sorteo.titulo}</h2>
           <p style={{ color: COLORS.gold }} className="text-lg font-semibold mb-2">🎁 {sorteo.premio}</p>
           {sorteo.descripcion && <p style={{ color: COLORS.text }} className="text-sm mb-3 whitespace-pre-line">{sorteo.descripcion}</p>}
           <p style={{ color: COLORS.muted }} className="text-xs mb-4">
@@ -13229,7 +13229,7 @@ function AdminSorteosTab({ session, onAbrirSorteo }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🎁 Sorteos</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🎁 Sorteos</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">Organiza un sorteo oficial de Encuentra Cartas, o revisa/gestiona cualquier sorteo (incluyendo los de tiendas Aurora y afiliadas).</p>
       <CrearSorteoForm key={formKey} session={session} tiendaId={null} plantilla={plantilla} onCreado={cargar} />
 
@@ -13473,7 +13473,7 @@ function SubastasView({ session, perfil, onIrAPlanes, onAbrirSubasta, onRequireL
   return (
     <div>
       <div className="flex items-center justify-between gap-4 flex-wrap mb-1">
-        <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">🔨 Subastas</h2>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold">🔨 Subastas</h2>
         <button onClick={() => { if (!session) { onRequireLogin(); return; } setMostrarForm((v) => !v); }}
           style={{ background: COLORS.azulClaro, color: COLORS.textoOscuro }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
           {mostrarForm ? "Cancelar" : "+ Organizar subasta"}
@@ -13585,7 +13585,7 @@ function SubastaDetalleView({ subastaId, session, onAbrirChat, onVolver, onRequi
             {subasta.tipo === "carta" && <IdiomaBadge idioma={subasta.idioma} />}
             {subasta.tipo === "carta" && <EstadoCartaBadge condicion={subasta.condicion} />}
           </div>
-          <h2 style={{ fontFamily: "'Rye', serif" }} className="text-2xl font-bold mb-1">{subasta.producto}</h2>
+          <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-2xl font-bold mb-1">{subasta.producto}</h2>
           {subasta.set_nombre && <p style={{ color: COLORS.muted }} className="text-sm mb-3">{subasta.set_nombre}</p>}
           {subasta.descripcion && <p className="text-sm mb-3 whitespace-pre-line">{subasta.descripcion}</p>}
           <p style={{ color: COLORS.muted }} className="text-xs mb-4">
@@ -13875,7 +13875,7 @@ function AlertasPanel({ session, perfil, onIrAPlanes, onVerWishlistPublica }) {
   const [tab, setTab] = useState("wishlist");
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Lista de deseos</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Lista de deseos</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Tu carpeta de cartas deseadas, y tus alertas de precio.</p>
       <div className="flex gap-2 mb-6 flex-wrap">
         <button onClick={() => setTab("wishlist")}
@@ -14085,7 +14085,7 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Planes</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Planes</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">
         Durante el lanzamiento, tiendas y vendedores activos tienen beneficios Premium de regalo. Elige tu rango cuando quieras hacerlo permanente — se renueva solo cada mes, cancela cuando quieras.
       </p>
@@ -14169,7 +14169,7 @@ function MisPagosPanel({ session }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Mis pagos</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Mis pagos</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-6">Historial de tus suscripciones de plan y publicaciones destacadas.</p>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
 
@@ -14307,7 +14307,7 @@ function MiCuentaView({ session, perfil, onGuardado, onVerMiPerfil }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">Mi cuenta</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">Mi cuenta</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">Tus datos personales, y tus compras y ventas, en un mismo lugar.</p>
 
       <div className="flex gap-2 mb-6">
@@ -14474,7 +14474,7 @@ function LegalView({ tipo, onVolver }) {
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-6 grid gap-4 text-sm">
         {tipo === "privacidad" ? (
           <>
-            <h1 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">Aviso de Privacidad</h1>
+            <h1 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold">Aviso de Privacidad</h1>
             <p style={{ color: COLORS.muted }}>Última actualización: {hoy}</p>
             <p>Encuentra Cartas ("la plataforma") es responsable del tratamiento de tus datos personales conforme a este aviso.</p>
             <div>
@@ -14504,7 +14504,7 @@ function LegalView({ tipo, onVolver }) {
           </>
         ) : (
           <>
-            <h1 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">Términos de Uso</h1>
+            <h1 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold">Términos de Uso</h1>
             <p style={{ color: COLORS.muted }}>Última actualización: {hoy}</p>
             <div>
               <p style={{ color: COLORS.azulPalido }} className="font-semibold mb-1">Qué es Encuentra Cartas</p>
@@ -15182,7 +15182,7 @@ function CarritoView({ carrito, onQuitar, onRequireLogin, onEnviado, session }) 
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">🛒 Carrito</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">🛒 Carrito</h2>
       <p style={{ color: COLORS.muted }} className="text-sm mb-4">
         Un mensaje por vendedor, con todo lo que te interesa de él, en vez de escribirle uno por uno.
       </p>
@@ -15416,7 +15416,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-1">📚 Catálogo</h2>
+      <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">📚 Catálogo</h2>
       {/* Una vez que ya se eligió un set y se están viendo/marcando cartas
           (Paso 3), esta explicación de los 3 pasos y el selector de juego de
           arriba ya no aportan nada -- solo saturan la pantalla con
@@ -16546,7 +16546,7 @@ export default function EncuentraCartas() {
               ) : (
                 <>
                   <Sparkles size={22} color={COLORS.azulPalido} />
-                  <h1 style={{ fontFamily: "'Rye', serif" }} className="text-2xl sm:text-3xl font-bold">
+                  <h1 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-2xl sm:text-3xl font-bold">
                     Encuentra <span style={{ color: COLORS.azulClaro }}>Cartas</span>
                   </h1>
                 </>
@@ -16718,7 +16718,7 @@ export default function EncuentraCartas() {
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS.violeta, boxShadow: `0 0 8px ${COLORS.violeta}`, animation: "pulseGlow 1.6s ease-in-out infinite" }} />
                 NUEVO · Rangos rediseñados
               </div>
-              <h1 style={{ fontFamily: "'Rye', serif", fontSize: "clamp(28px,5vw,44px)", letterSpacing: "-0.5px", lineHeight: 1.08 }} className="font-bold mb-3">
+              <h1 style={{ fontFamily: "'Baloo 2', sans-serif", fontSize: "clamp(28px,5vw,44px)", letterSpacing: "-0.5px", lineHeight: 1.08 }} className="font-bold mb-3">
                 Encuentra la carta<br />
                 <span style={{ background: `linear-gradient(90deg, ${COLORS.azulPalido}, ${COLORS.azulClaro}, ${COLORS.violeta})`, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
                   que estás cazando
@@ -17111,7 +17111,7 @@ export default function EncuentraCartas() {
         {/* DIRECTORY */}
         {view === "directory" && (
           <div>
-            <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-3">Directorio de tiendas</h2>
+            <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-3">Directorio de tiendas</h2>
             <div className="flex flex-wrap items-center gap-1.5 mb-6">
               <p style={{ color: COLORS.muted }} className="text-xs mr-1">TCG:</p>
               {[{ key: "todos", label: "Todos" }, ...TCG_OPCIONES].map((o) => (
@@ -17209,7 +17209,7 @@ export default function EncuentraCartas() {
         {/* NEWS */}
         {view === "news" && (
           <div>
-            <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold mb-6">Anuncios y noticias</h2>
+            <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-6">Anuncios y noticias</h2>
             {loadingNews && <Loading label="Cargando..." />}
             {!loadingNews && news.length === 0 && (
               <p style={{ color: COLORS.muted }} className="text-sm text-center py-16">
@@ -17242,7 +17242,7 @@ export default function EncuentraCartas() {
         {view === "inbox" && session && (
           <div>
             <div className="flex items-center justify-between gap-2 flex-wrap mb-6">
-              <h2 style={{ fontFamily: "'Rye', serif" }} className="text-xl font-bold">Mensajes</h2>
+              <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold">Mensajes</h2>
               <div className="flex gap-2">
                 <button onClick={() => setTabInbox("mensajes")}
                   style={{ background: tabInbox === "mensajes" ? COLORS.surface2 : "transparent", border: `1px solid ${tabInbox === "mensajes" ? COLORS.azulPalido : COLORS.surface2}`, color: tabInbox === "mensajes" ? COLORS.azulPalido : COLORS.muted }}
@@ -17451,7 +17451,7 @@ export default function EncuentraCartas() {
                     </div>
                   </HoloAvatar>
                   <button onClick={() => verPerfil(selectedStore.perfil_id)} className="flex items-center gap-2 flex-wrap hover:underline pb-1" disabled={!selectedStore.perfil_id}>
-                    <h2 style={{ fontFamily: "'Rye', serif" }} className="text-2xl font-bold">{selectedStore.nombre}</h2>
+                    <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-2xl font-bold">{selectedStore.nombre}</h2>
                   </button>
                   <div className="flex items-center gap-2 pb-1.5">
                     <PlanBadge perfil={selectedStore.perfiles} size="lg" />
