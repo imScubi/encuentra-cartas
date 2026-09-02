@@ -10474,7 +10474,7 @@ const MOTIVO_HISTORIAL_LABEL = { compra: "Compra", venta: "Venta", intercambio: 
 
 // Agrega UNA carta a la colección sin que venga de un intercambio (ej. la
 // compraste suelta, o ya la tenías y solo la estás registrando).
-function AgregarAColeccionForm({ session, onAgregado, onCancelar }) {
+function AgregarAColeccionForm({ session, tableroId, onAgregado, onCancelar }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [tcg, setTcg] = useState("pokemon");
   const [manual, setManual] = useState(false);
@@ -10496,6 +10496,7 @@ function AgregarAColeccionForm({ session, onAgregado, onCancelar }) {
         p_set_nombre: carta.setNombre || null, p_imagen_url: carta.imagenUrl || null, p_cantidad: Number(cantidad) || 1,
         p_precio_ref_mxn: carta.precioRefMxn ?? null, p_motivo: "ajuste_manual",
         p_monto: costo ? Number(costo) : null, p_grupo_id: null, p_ajuste_efectivo: null, p_nota: null,
+        p_tablero_id: tableroId || null,
       }, session);
       onAgregado();
     } catch (e) { setError(e.message); } finally { setGuardando(false); }
@@ -10553,7 +10554,7 @@ function AgregarAColeccionForm({ session, onAgregado, onCancelar }) {
 // poder verlas como un solo movimiento en el historial. Vive fuera de
 // Modo Evento -- usa sbWrite normal, sin cola offline (esta pantalla no la
 // necesita, igual que el resto de la app fuera de Modo Evento).
-function IntercambioBuilderView({ session, perfil, onVolver, onCompletado }) {
+function IntercambioBuilderView({ session, perfil, tableroId, onVolver, onCompletado }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   const [cargandoPropio, setCargandoPropio] = useState(true);
   const [propio, setPropio] = useState([]); // { origen: 'listing'|'coleccion', tabla, id, nombre, imagen_url, card_api_id, tcg, cantidad }
@@ -10581,7 +10582,9 @@ function IntercambioBuilderView({ session, perfil, onVolver, onCompletado }) {
           items = filas.map((f) => ({ origen: "listing", tabla: "inventario_tienda", id: f.id, nombre: f.carta, imagen_url: f.imagen_url, card_api_id: f.card_api_id, tcg: f.tcg || "pokemon" }));
         }
       }
-      const propias = await sb(`coleccion_usuario?select=id,carta,imagen_url,card_api_id,tcg,cantidad&perfil_id=eq.${session.user.id}&estado=eq.tengo`, session);
+      const propias = tableroId
+        ? await sb(`coleccion_usuario?select=id,carta,imagen_url,card_api_id,tcg,cantidad&perfil_id=eq.${session.user.id}&estado=eq.tengo&tablero_id=eq.${tableroId}`, session)
+        : [];
       items = [...items, ...propias.map((f) => ({ origen: "coleccion", tabla: "coleccion_usuario", id: f.id, nombre: f.carta, imagen_url: f.imagen_url, card_api_id: f.card_api_id, tcg: f.tcg, cantidad: f.cantidad }))];
       setPropio(items);
     })().catch((e) => setError(e.message)).finally(() => setCargandoPropio(false));
@@ -10612,6 +10615,7 @@ function IntercambioBuilderView({ session, perfil, onVolver, onCompletado }) {
             await sbWrite("POST", "rpc/coleccion_registrar_salida", {
               p_historial_id: nuevoId(), p_tcg: it.tcg, p_card_api_id: it.card_api_id, p_carta: it.nombre, p_imagen_url: it.imagen_url || null,
               p_cantidad: 1, p_motivo: "intercambio", p_monto: null, p_grupo_id: grupoId, p_ajuste_efectivo: ajuste, p_nota: nota || null,
+              p_tablero_id: tableroId || null,
             }, session);
           }
         } catch (e) { fallos.push(it.nombre); }
@@ -10623,6 +10627,7 @@ function IntercambioBuilderView({ session, perfil, onVolver, onCompletado }) {
             p_historial_id: nuevoId(), p_tcg: r.tcg, p_card_api_id: r.cardApiId, p_carta: r.nombre, p_set_nombre: r.setNombre || null,
             p_imagen_url: r.imagenUrl || null, p_cantidad: 1, p_precio_ref_mxn: r.precioRefMxn ?? null, p_motivo: "intercambio",
             p_monto: null, p_grupo_id: grupoId, p_ajuste_efectivo: ajuste, p_nota: nota || null,
+            p_tablero_id: tableroId || null,
           }, session);
         } catch (e) { fallos.push(r.nombre); }
       }
@@ -10699,6 +10704,9 @@ function IntercambioBuilderView({ session, perfil, onVolver, onCompletado }) {
 }
 
 function MiColeccionView({ session, perfil, onIrAPlanes }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const [tableros, setTableros] = useState([]);
+  const [tableroActualId, setTableroActualId] = useState(null);
   const [items, setItems] = useState([]);
   const [historial, setHistorial] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10707,16 +10715,84 @@ function MiColeccionView({ session, perfil, onIrAPlanes }) {
   const [mostrarAgregar, setMostrarAgregar] = useState(false);
   const [mostrarIntercambio, setMostrarIntercambio] = useState(false);
   const [actualizandoId, setActualizandoId] = useState(null);
+  const [creandoTablero, setCreandoTablero] = useState(false);
+  const [nombreTableroNuevo, setNombreTableroNuevo] = useState("");
+  const [menuTablero, setMenuTablero] = useState(false);
+  const [renombrando, setRenombrando] = useState(false);
+  const [nombreRenombrar, setNombreRenombrar] = useState("");
 
-  const cargar = () => {
+  // Trae tableros + historial (global, no por tablero) + las cartas del
+  // tablero activo -- si el activo ya no existe (se borró) o todavía no
+  // hay ninguno elegido, cae al principal o al primero que haya.
+  const cargarTodo = async () => {
     setLoading(true); setError(null);
-    Promise.all([
-      sb(`coleccion_usuario?select=*&perfil_id=eq.${session.user.id}&estado=eq.tengo&order=created_at.desc`, session).then(setItems),
-      sb(`coleccion_historial?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc&limit=50`, session).then(setHistorial),
-    ]).catch((e) => setError(e.message)).finally(() => setLoading(false));
+    try {
+      const [tbs, hist] = await Promise.all([
+        sb(`coleccion_tableros?select=*&perfil_id=eq.${session.user.id}&order=created_at.asc`, session),
+        sb(`coleccion_historial?select=*&perfil_id=eq.${session.user.id}&order=created_at.desc&limit=50`, session),
+      ]);
+      setTableros(tbs);
+      setHistorial(hist);
+      const activo = tbs.find((t) => t.id === tableroActualId) || tbs.find((t) => t.es_principal) || tbs[0] || null;
+      setTableroActualId(activo?.id || null);
+      setItems(activo ? await sb(`coleccion_usuario?select=*&perfil_id=eq.${session.user.id}&estado=eq.tengo&tablero_id=eq.${activo.id}&order=created_at.desc`, session) : []);
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { cargarTodo(); }, []);
 
+  // Cambiar de tablero solo recarga las cartas (no vuelve a pedir la
+  // lista de tableros ni el historial, que no dependen de cuál esté activo).
+  const seleccionarTablero = async (id) => {
+    setTableroActualId(id); setMenuTablero(false);
+    setLoading(true); setError(null);
+    try {
+      setItems(await sb(`coleccion_usuario?select=*&perfil_id=eq.${session.user.id}&estado=eq.tengo&tablero_id=eq.${id}&order=created_at.desc`, session));
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  };
+
+  const crearTablero = async () => {
+    if (!nombreTableroNuevo.trim()) return;
+    try {
+      const [fila] = await sbWrite("POST", "coleccion_tableros", { id: nuevoId(), perfil_id: session.user.id, nombre: nombreTableroNuevo.trim(), es_principal: tableros.length === 0 }, session);
+      setTableros((ts) => [...ts, fila]);
+      setNombreTableroNuevo(""); setCreandoTablero(false);
+      seleccionarTablero(fila.id);
+    } catch (e) { setError(e.message); }
+  };
+
+  const renombrarTablero = async () => {
+    if (!nombreRenombrar.trim() || !tableroActualId) return;
+    try {
+      await sbWrite("PATCH", `coleccion_tableros?id=eq.${tableroActualId}`, { nombre: nombreRenombrar.trim() }, session);
+      setTableros((ts) => ts.map((t) => (t.id === tableroActualId ? { ...t, nombre: nombreRenombrar.trim() } : t)));
+      setRenombrando(false);
+    } catch (e) { setError(e.message); }
+  };
+
+  const marcarPrincipal = async () => {
+    if (!tableroActualId) return;
+    try {
+      await sbWrite("POST", "rpc/coleccion_marcar_tablero_principal", { p_tablero_id: tableroActualId }, session);
+      setTableros((ts) => ts.map((t) => ({ ...t, es_principal: t.id === tableroActualId })));
+    } catch (e) { setError(e.message); }
+  };
+
+  const borrarTablero = async () => {
+    const actual = tableros.find((t) => t.id === tableroActualId);
+    if (!actual) return;
+    if (actual.es_principal) { setError("No puedes borrar tu colección principal -- marca otra como principal primero."); return; }
+    if (tableros.length <= 1) { setError("Necesitas al menos una colección."); return; }
+    if (!window.confirm(`¿Borrar "${actual.nombre}"? Se borran también las ${items.length} carta(s) que tiene ahí. Esto no se puede deshacer.`)) return;
+    try {
+      await sbWrite("DELETE", `coleccion_tableros?id=eq.${tableroActualId}`, {}, session);
+      const restantes = tableros.filter((t) => t.id !== tableroActualId);
+      setTableros(restantes);
+      const siguiente = restantes.find((t) => t.es_principal) || restantes[0] || null;
+      if (siguiente) seleccionarTablero(siguiente.id); else { setTableroActualId(null); setItems([]); }
+    } catch (e) { setError(e.message); }
+  };
+
+  const tableroActual = tableros.find((t) => t.id === tableroActualId);
   const valorTotal = useMemo(() => items.reduce((s, it) => s + (Number(it.precio_ref_mxn) || 0) * (it.cantidad || 1), 0), [items]);
 
   const actualizarPrecio = async (it) => {
@@ -10741,11 +10817,48 @@ function MiColeccionView({ session, perfil, onIrAPlanes }) {
   if (loading) return <Loading label="Cargando tu colección..." />;
 
   if (mostrarIntercambio) {
-    return <IntercambioBuilderView session={session} perfil={perfil} onVolver={() => setMostrarIntercambio(false)} onCompletado={() => { setMostrarIntercambio(false); cargar(); }} />;
+    return <IntercambioBuilderView session={session} perfil={perfil} tableroId={tableroActualId} onVolver={() => setMostrarIntercambio(false)} onCompletado={() => { setMostrarIntercambio(false); cargarTodo(); }} />;
   }
 
   return (
     <div>
+      {/* ---- Selector de colecciones (tipo "Choose Portfolio") ---- */}
+      <div className="flex items-center gap-2 flex-wrap mb-2">
+        {tableros.map((t) => (
+          <button key={t.id} onClick={() => seleccionarTablero(t.id)}
+            style={{ background: t.id === tableroActualId ? `${COLORS.azulClaro}22` : COLORS.surface, border: `1px solid ${t.id === tableroActualId ? COLORS.azulClaro : COLORS.surface2}`, color: t.id === tableroActualId ? COLORS.azulPalido : COLORS.text }}
+            className="rounded-full px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+            {t.es_principal ? "⭐ " : ""}{t.nombre}
+          </button>
+        ))}
+        {creandoTablero ? (
+          <div className="flex items-center gap-1">
+            <input autoFocus placeholder="Nombre" value={nombreTableroNuevo} onChange={(e) => setNombreTableroNuevo(e.target.value)} onKeyDown={(e) => e.key === "Enter" && crearTablero()} style={inputStyle} className="rounded-lg px-2 py-1 text-xs w-28" />
+            <button onClick={crearTablero} style={{ color: COLORS.azulPalido }} className="text-xs font-semibold px-1">✓</button>
+            <button onClick={() => { setCreandoTablero(false); setNombreTableroNuevo(""); }} style={{ color: COLORS.muted }} className="text-xs px-1">✕</button>
+          </div>
+        ) : (
+          <button onClick={() => setCreandoTablero(true)} style={{ color: COLORS.muted, border: `1px dashed ${COLORS.surface2}` }} className="rounded-full px-3 py-1.5 text-xs font-semibold whitespace-nowrap">+ Nueva</button>
+        )}
+        {tableroActual && (
+          <button onClick={() => setMenuTablero((v) => !v)} style={{ color: COLORS.muted }} className="text-sm px-1">⋯</button>
+        )}
+      </div>
+      {menuTablero && tableroActual && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-3 mb-3 flex flex-wrap gap-3">
+          {renombrando ? (
+            <div className="flex items-center gap-2">
+              <input autoFocus value={nombreRenombrar} onChange={(e) => setNombreRenombrar(e.target.value)} onKeyDown={(e) => e.key === "Enter" && renombrarTablero()} style={inputStyle} className="rounded-lg px-2 py-1 text-sm" />
+              <button onClick={renombrarTablero} style={{ color: COLORS.azulPalido }} className="text-xs font-semibold">Guardar</button>
+            </div>
+          ) : (
+            <button onClick={() => { setRenombrando(true); setNombreRenombrar(tableroActual.nombre); }} style={{ color: COLORS.azulClaro }} className="text-xs font-semibold">✏️ Renombrar</button>
+          )}
+          {!tableroActual.es_principal && <button onClick={marcarPrincipal} style={{ color: COLORS.gold }} className="text-xs font-semibold">⭐ Marcar como principal</button>}
+          <button onClick={borrarTablero} style={{ color: "#E27070" }} className="text-xs font-semibold">🗑️ Borrar esta colección</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
         <div>
           <p style={{ color: COLORS.muted }} className="text-[11px] uppercase font-semibold">Valor de referencia (puede estar desactualizado)</p>
@@ -10757,7 +10870,7 @@ function MiColeccionView({ session, perfil, onIrAPlanes }) {
         </div>
       </div>
       {error && <div className="mb-4"><ErrorBox message={error} /></div>}
-      {mostrarAgregar && <AgregarAColeccionForm session={session} onAgregado={() => { setMostrarAgregar(false); cargar(); }} onCancelar={() => setMostrarAgregar(false)} />}
+      {mostrarAgregar && <AgregarAColeccionForm session={session} tableroId={tableroActualId} onAgregado={() => { setMostrarAgregar(false); cargarTodo(); }} onCancelar={() => setMostrarAgregar(false)} />}
 
       {items.length === 0 ? (
         <p style={{ color: COLORS.muted }} className="text-sm text-center py-12">Todavía no agregas ninguna carta a tu colección. Usa "+ Agregar a mano" o registra un intercambio.</p>
@@ -10808,7 +10921,8 @@ function MiColeccionView({ session, perfil, onIrAPlanes }) {
 
 function ColeccionView({ session, perfil, onIrAPlanes, onIrAMiTienda }) {
   const info = planDe(perfil);
-  const [tab, setTab] = useState("mia");
+  const [mostrarCarpetas, setMostrarCarpetas] = useState(true);
+  const [mostrarPrivadas, setMostrarPrivadas] = useState(true);
 
   if (!session) {
     return (
@@ -10819,42 +10933,48 @@ function ColeccionView({ session, perfil, onIrAPlanes, onIrAMiTienda }) {
     );
   }
 
-  if (!info.coleccionPersonal) {
-    return (
-      <div>
-        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-6">🗂️ Colección</h2>
-        <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
-          Lleva el control de las cartas que ya tienes -- cantidad, valor de referencia -- e intercambia cartas registrando ambos lados, con historial de entradas y salidas.
-        </UpsellCard>
-      </div>
-    );
-  }
-
+  // Dividido en dos bloques SIEMPRE visibles (no pestañas que se tapan
+  // una a otra) -- carpetas (públicas, de venta) de un lado, colecciones
+  // privadas nuevas del otro. Cada bloque respeta su propio gate de plan
+  // por separado -- son dos funciones distintas que ahora comparten
+  // pantalla, no una sola cosa.
   return (
     <div>
       <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-4">🗂️ Colección</h2>
-      <div className="flex gap-2 mb-4">
-        {[{ k: "mia", l: "Mi colección" }, { k: "carpetas", l: "Mis carpetas" }].map((t) => (
-          <button key={t.k} onClick={() => setTab(t.k)}
-            style={{ background: tab === t.k ? `${COLORS.azulClaro}22` : "transparent", border: `1px solid ${tab === t.k ? COLORS.azulClaro : COLORS.surface2}`, color: tab === t.k ? COLORS.azulPalido : COLORS.muted }}
-            className="rounded-lg px-3 py-1.5 text-sm font-semibold">
-            {t.l}
-          </button>
-        ))}
-      </div>
-      {tab === "mia" ? (
-        <MiColeccionView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
-      ) : !info.carpetas ? (
-        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
-          Las carpetas (álbumes de fotos de tu inventario para vender, compartibles u ocultas) están disponibles desde Amatista.
-        </UpsellCard>
-      ) : perfil?.tipo === "tienda" ? (
-        <div>
-          <p style={{ color: COLORS.muted }} className="text-sm mb-3">Las carpetas de tu tienda se manejan desde "Mi Tienda".</p>
-          <button onClick={onIrAMiTienda} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-4 py-2 text-sm font-semibold">Ir a Mi Tienda</button>
+
+      <button onClick={() => setMostrarCarpetas((v) => !v)} className="flex items-center gap-2 mb-3 w-full">
+        {mostrarCarpetas ? <ChevronUp size={16} style={{ color: COLORS.muted }} /> : <ChevronDown size={16} style={{ color: COLORS.muted }} />}
+        <span style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase">📁 Tus carpetas (para vender)</span>
+      </button>
+      {mostrarCarpetas && (
+        <div className="mb-6">
+          {!info.carpetas ? (
+            <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
+              Las carpetas (álbumes de fotos de tu inventario para vender, compartibles u ocultas) están disponibles desde Amatista.
+            </UpsellCard>
+          ) : perfil?.tipo === "tienda" ? (
+            <div>
+              <p style={{ color: COLORS.muted }} className="text-sm mb-3">Las carpetas de tu tienda se manejan desde "Mi Tienda".</p>
+              <button onClick={onIrAMiTienda} style={{ color: COLORS.azulClaro, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-lg px-4 py-2 text-sm font-semibold">Ir a Mi Tienda</button>
+            </div>
+          ) : (
+            <CarpetasPanel session={session} perfil={perfil} contexto="mercado" onPublicado={() => {}} />
+          )}
         </div>
-      ) : (
-        <CarpetasPanel session={session} perfil={perfil} contexto="mercado" onPublicado={() => {}} />
+      )}
+
+      <button onClick={() => setMostrarPrivadas((v) => !v)} className="flex items-center gap-2 mb-3 w-full">
+        {mostrarPrivadas ? <ChevronUp size={16} style={{ color: COLORS.muted }} /> : <ChevronDown size={16} style={{ color: COLORS.muted }} />}
+        <span style={{ color: COLORS.violeta }} className="font-semibold text-sm uppercase">🔒 Tus colecciones privadas</span>
+      </button>
+      {mostrarPrivadas && (
+        !info.coleccionPersonal ? (
+          <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+            Lleva el control de las cartas que ya tienes -- cantidad, valor de referencia -- e intercambia cartas registrando ambos lados, con historial de entradas y salidas. Nunca es pública.
+          </UpsellCard>
+        ) : (
+          <MiColeccionView session={session} perfil={perfil} onIrAPlanes={onIrAPlanes} />
+        )
       )}
     </div>
   );
