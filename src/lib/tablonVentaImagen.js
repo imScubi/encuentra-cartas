@@ -1,29 +1,28 @@
 import { COLORS } from "../theme.js";
 import { proxyImagenUrl, cargarImagen, textoTruncado, rectRedondeado, dibujarPlaceholder } from "./imagenCartasCanvas.js";
 
-// Genera una imagen descargable/compartible de una Wishlist (carpeta
-// visual de cartas "quiero", ver MiWishlistView/WishlistPublicaView en
-// App.jsx) -- pensada para quien prefiere mandar una imagen en vez de un
-// link (ej. en un grupo de WhatsApp). Todo con Canvas2D nativo, sin
-// agregar ninguna librería nueva (mismo criterio que ya se usó para el QR
-// de sorteos: preferir una solución sin dependencia nueva cuando el
-// navegador ya trae lo necesario). Las utilidades de proxy/carga/texto
-// son compartidas con tablonVentaImagen.js (ver imagenCartasCanvas.js).
-export { proxyImagenUrl };
+// Genera una imagen del "Tablón de venta" (ver TablonVentaView en
+// App.jsx): un póster con las cartas/producto que alguien eligió de su
+// inventario o sus carpetas, mostrando nombre, imagen, precio, idioma y
+// estado -- para compartir sin mandar el link. Mismo enfoque que
+// wishlistImagen.js (Canvas2D nativo, sin librería nueva), comparte sus
+// utilidades de proxy/carga/texto vía imagenCartasCanvas.js.
 
 const ANCHO = 1080;
 const COLS = 4;
 const GAP = 24;
 const CELDA = (ANCHO - GAP * (COLS + 1)) / COLS;
-const IMG_ALTO = CELDA * 1.3;
-const TEXTO_ALTO = 56;
+const IMG_ALTO = CELDA * 1.15;
+// 3 líneas de texto por celda (nombre, precio, idioma/estado) en vez de las
+// 2 de la Wishlist -- por eso una celda más baja de imagen y más alto de texto.
+const TEXTO_ALTO = 78;
 const CARD_ALTO = IMG_ALTO + TEXTO_ALTO;
 const HEADER_ALTO = 190;
 const FOOTER_ALTO = 90;
 
-// { perfil: {nombre, avatar_url}, cartas: [{carta, imagen_url, set_nombre}], linkWishlist } -> Promise<Blob>
-export async function generarImagenWishlist({ perfil, cartas, linkWishlist }) {
-  const filas = Math.max(1, Math.ceil(cartas.length / COLS));
+// { perfil: {nombre, avatar_url}, items: [{nombre, imagen_url, precio, idioma, condicion}], link } -> Promise<Blob>
+export async function generarImagenTablonVenta({ perfil, items, link }) {
+  const filas = Math.max(1, Math.ceil(items.length / COLS));
   const alto = HEADER_ALTO + filas * (CARD_ALTO + GAP) + GAP + FOOTER_ALTO;
 
   const canvas = document.createElement("canvas");
@@ -31,7 +30,6 @@ export async function generarImagenWishlist({ perfil, cartas, linkWishlist }) {
   canvas.height = alto;
   const ctx = canvas.getContext("2d");
 
-  // Fondo
   ctx.fillStyle = COLORS.bg;
   ctx.fillRect(0, 0, ANCHO, alto);
 
@@ -59,29 +57,27 @@ export async function generarImagenWishlist({ perfil, cartas, linkWishlist }) {
   ctx.fillText(textoTruncado(ctx, perfil.nombre || "Alguien", ANCHO - avatarSize - GAP * 3), avatarX + avatarSize + 20, avatarY + 36);
   ctx.fillStyle = COLORS.muted;
   ctx.font = "400 22px system-ui, sans-serif";
-  ctx.fillText("está buscando estas cartas:", avatarX + avatarSize + 20, avatarY + 68);
+  ctx.fillText("tiene esto en venta:", avatarX + avatarSize + 20, avatarY + 68);
 
   ctx.fillStyle = COLORS.azulPalido;
   ctx.font = "700 22px system-ui, sans-serif";
   ctx.textAlign = "right";
   ctx.fillText("Encuentra Cartas", ANCHO - GAP, avatarY + 36);
-  ctx.restore?.();
 
-  // ---- Grid de cartas ----
+  // ---- Grid de productos ----
   ctx.textAlign = "center";
-  for (let i = 0; i < cartas.length; i++) {
+  for (let i = 0; i < items.length; i++) {
     const fila = Math.floor(i / COLS);
     const col = i % COLS;
     const x = GAP + col * (CELDA + GAP);
     const y = HEADER_ALTO + fila * (CARD_ALTO + GAP);
-    const carta = cartas[i];
+    const item = items[i];
 
     rectRedondeado(ctx, x, y, CELDA, IMG_ALTO, 14);
     ctx.save();
     ctx.clip();
     try {
-      const img = await cargarImagen(proxyImagenUrl(carta.imagen_url));
-      // "contain" dentro de la celda, centrado
+      const img = await cargarImagen(proxyImagenUrl(item.imagen_url));
       const escala = Math.min(CELDA / img.width, IMG_ALTO / img.height);
       const w = img.width * escala;
       const h = img.height * escala;
@@ -94,12 +90,18 @@ export async function generarImagenWishlist({ perfil, cartas, linkWishlist }) {
     ctx.restore();
 
     ctx.fillStyle = COLORS.text;
-    ctx.font = "600 20px system-ui, sans-serif";
-    ctx.fillText(textoTruncado(ctx, carta.carta || "", CELDA - 12), x + CELDA / 2, y + IMG_ALTO + 26);
-    if (carta.set_nombre) {
+    ctx.font = "600 19px system-ui, sans-serif";
+    ctx.fillText(textoTruncado(ctx, item.nombre || "", CELDA - 12), x + CELDA / 2, y + IMG_ALTO + 24);
+
+    ctx.fillStyle = COLORS.gold;
+    ctx.font = "700 22px system-ui, sans-serif";
+    ctx.fillText(item.precio != null ? `$${Number(item.precio).toLocaleString("es-MX")}` : "Consultar", x + CELDA / 2, y + IMG_ALTO + 50);
+
+    const detalle = [item.idioma, item.condicion].filter(Boolean).join(" · ");
+    if (detalle) {
       ctx.fillStyle = COLORS.muted;
-      ctx.font = "400 16px system-ui, sans-serif";
-      ctx.fillText(textoTruncado(ctx, carta.set_nombre, CELDA - 12), x + CELDA / 2, y + IMG_ALTO + 48);
+      ctx.font = "400 15px system-ui, sans-serif";
+      ctx.fillText(textoTruncado(ctx, detalle, CELDA - 12), x + CELDA / 2, y + IMG_ALTO + 70);
     }
   }
 
@@ -110,7 +112,7 @@ export async function generarImagenWishlist({ perfil, cartas, linkWishlist }) {
   ctx.fillStyle = COLORS.azulPalido;
   ctx.font = "600 22px system-ui, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(linkWishlist || "encuentracartasmx.com", ANCHO / 2, footerY + 8);
+  ctx.fillText(link || "encuentracartasmx.com", ANCHO / 2, footerY + 8);
 
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }

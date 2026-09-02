@@ -5548,6 +5548,45 @@ contra el esquema real de `evento_ventas`/`evento_adquisiciones` (ya
 confirmado con Postgres real en la sección 158) para no adivinar
 nombres de columna.
 
+## 160. Tablón de venta: generar una imagen con tu inventario/carpetas seleccionadas (nombre, precio, idioma, estado)
+
+Pedido: un lugar en "Vender" (Mi Mercado para individuales, Mi Tienda
+para tiendas) donde elegir cartas/producto de tu inventario o tus
+carpetas y armar una sola imagen con todo lo elegido -- nombre, foto,
+precio, idioma y estado (condición) -- para compartir sin mandar el
+link (igual que ya existía para la Wishlist).
+
+- **`TablonVentaView`** (nuevo, botón "🖼️ Tablón de venta" junto a
+  "Tus publicaciones"/"Cartas sueltas"): mismo patrón de selección
+  agrupada por carpeta que ya se usó dos veces antes en esta sesión
+  (el importador de Modo Evento y el builder de intercambio de la
+  Colección) -- checkboxes por carpeta completa o por pieza suelta, con
+  buscador. Se reescribió en vez de reusar esos dos directamente porque
+  ambos viven anidados dentro de otro componente con su propio estado.
+  Disponible para cualquier vendedor, sin gate de plan -- las carpetas
+  mismas ya están gateadas por `CarpetasPanel`.
+- **`src/lib/tablonVentaImagen.js`** (nuevo): dibuja el póster con
+  Canvas2D (mismo enfoque que la Wishlist, sin librería nueva), 3
+  líneas de texto por carta en vez de las 2 de la Wishlist -- nombre,
+  precio, y "idioma · estado" cuando aplica (producto sellado no tiene
+  ninguno de los dos, se omite esa línea sin dejar un hueco raro).
+- **Refactor sin cambio de comportamiento**: las utilidades de Canvas2D
+  que ya tenía `wishlistImagen.js` (proxy de imágenes, carga, texto
+  truncado, rectángulo redondeado, placeholder) se movieron a
+  `src/lib/imagenCartasCanvas.js`, compartidas entre los dos
+  generadores -- antes de este cambio hubiera tocado duplicar ~50
+  líneas idénticas para el tablón.
+- El link del pie de la imagen apunta al perfil público del vendedor
+  (`?u=<slug>`) -- mismo patrón que ya usa `CopiarLinkBoton` en el resto
+  de la app.
+
+Verificado con `npm run build`. No se pudo probar generando la imagen
+de verdad con datos reales (necesita sesión + Supabase, no alcanzable
+desde este sandbox) -- se revisaron a mano los nombres de columna
+(`idioma`/`condicion` sí existen en `mercado_listings` e
+`inventario_tienda`, confirmado contra las migraciones 035/036; no
+existen en `sellado_tienda`, manejado como `null`).
+
 ## Qué falta / próximos pasos posibles
 
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.

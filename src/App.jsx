@@ -18,6 +18,7 @@ import { setUidActual } from "./lib/errorReporting.jsx";
 import { moderarFotoReal } from "./lib/moderacion.js";
 import { comprimirImagen } from "./lib/imagen.js";
 import { generarImagenWishlist } from "./lib/wishlistImagen.js";
+import { generarImagenTablonVenta } from "./lib/tablonVentaImagen.js";
 import {
   sbWriteConCola, esErrorDeRed, nuevoId, nuevoTimestamp, sincronizarCola,
   colaTieneAlgo, contarCola, guardarCacheEvento, leerCacheEvento, guardarCacheEventos, leerCacheEventos,
@@ -2092,6 +2093,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
   // de "Tus publicaciones" -- si no, estorban constantemente al revisar o
   // gestionar el inventario que sí está en venta. Colapsadas por default.
   const [mostrarExhibicion, setMostrarExhibicion] = useState(false);
+  const [mostrarTablon, setMostrarTablon] = useState(false);
 
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
 
@@ -2543,6 +2545,9 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
 
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase">Tus publicaciones</h3>
+        <button onClick={() => setMostrarTablon((v) => !v)} style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+          {mostrarTablon ? "Ocultar tablón de venta" : "🖼️ Tablón de venta"}
+        </button>
         {seleccionadas.size > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
             <span style={{ color: COLORS.muted }} className="text-xs">{seleccionadas.size} seleccionada{seleccionadas.size === 1 ? "" : "s"}</span>
@@ -2557,6 +2562,9 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
           </div>
         )}
       </div>
+
+      {mostrarTablon && <TablonVentaView session={session} perfil={perfil} />}
+
       <div className="grid gap-2">
         {publicacionesVenta.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no has publicado nada en el mercado.</p>}
         {publicacionesVenta.map(filaPublicacion)}
@@ -4709,6 +4717,182 @@ function ImportadorMasivo({ session, tiendaId, onImportado }) {
 // consecutivas nunca comparten color.
 const COLORES_CARPETA = ["#2A4C91", "#9B6FA3", "#D99A3D", "#6882AD", "#A0526D", "#4C8577", "#B0562E", "#5B4B8A"];
 
+// ---- Tablón de venta: elegir cartas/producto de tu inventario o tus
+// carpetas para generar una imagen del conjunto (nombre, imagen, precio,
+// idioma, estado) -- para compartir sin mandar el link. Mismo patrón de
+// selección agrupada por carpeta que ya usan el importador de Modo Evento
+// (abrirImportar en EventoDetalle) y el builder de intercambio de la
+// Colección personal (IntercambioBuilderView) -- se reescribe aquí, en vez
+// de reusar esos directamente, porque ambos viven anidados dentro de otros
+// componentes con su propio estado. Disponible para cualquier vendedor, sin
+// gate de plan (las carpetas mismas ya están gateadas por CarpetasPanel).
+function TablonVentaView({ session, perfil }) {
+  const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
+  const SIN_CARPETA_KEY = "__sin_carpeta__";
+  const [cargando, setCargando] = useState(true);
+  const [items, setItems] = useState([]);
+  const [carpetasMapa, setCarpetasMapa] = useState({});
+  const [buscar, setBuscar] = useState("");
+  const [seleccionados, setSeleccionados] = useState(new Set());
+  const [gruposExpandidos, setGruposExpandidos] = useState(new Set());
+  const [error, setError] = useState(null);
+  const [generando, setGenerando] = useState(false);
+  const [preview, setPreview] = useState(null);
+
+  useEffect(() => {
+    setCargando(true); setError(null);
+    (async () => {
+      let filas = [];
+      let carpetas = [];
+      if (perfil?.tipo === "individual") {
+        const [pubs, carp] = await Promise.all([
+          sb(`mercado_listings?select=id,carta,precio,imagen_url,idioma,condicion,carpeta_id&perfil_id=eq.${session.user.id}&en_venta=eq.true`, session),
+          sb(`carpetas?select=id,nombre,color&perfil_id=eq.${session.user.id}&tienda_id=is.null`, session),
+        ]);
+        filas = pubs.map((f) => ({ tabla: "mercado_listings", id: f.id, nombre: f.carta, precio: f.precio, imagen_url: f.imagen_url, idioma: f.idioma, condicion: f.condicion, carpeta_id: f.carpeta_id }));
+        carpetas = carp;
+      } else if (perfil?.tipo === "tienda") {
+        const tiendas = await sb(`tiendas?select=id&perfil_id=eq.${session.user.id}`, session);
+        const ids = tiendas.map((t) => t.id);
+        if (ids.length) {
+          const filtro = `tienda_id=in.(${ids.join(",")})`;
+          const [inv, sell, carp] = await Promise.all([
+            sb(`inventario_tienda?select=id,carta,precio,imagen_url,idioma,condicion,carpeta_id&${filtro}&en_venta=eq.true`, session),
+            sb(`sellado_tienda?select=id,producto,precio,imagen_url&${filtro}`, session),
+            sb(`carpetas?select=id,nombre,color&${filtro}`, session),
+          ]);
+          filas = [
+            ...inv.map((f) => ({ tabla: "inventario_tienda", id: f.id, nombre: f.carta, precio: f.precio, imagen_url: f.imagen_url, idioma: f.idioma, condicion: f.condicion, carpeta_id: f.carpeta_id })),
+            ...sell.map((f) => ({ tabla: "sellado_tienda", id: f.id, nombre: f.producto, precio: f.precio, imagen_url: f.imagen_url, idioma: null, condicion: null, carpeta_id: null })),
+          ];
+          carpetas = carp;
+        }
+      }
+      setItems(filas);
+      setCarpetasMapa(Object.fromEntries(carpetas.map((c) => [c.id, c])));
+    })().catch((e) => setError(e.message)).finally(() => setCargando(false));
+  }, []);
+
+  const itemsFiltrados = items.filter((it) => !buscar.trim() || it.nombre.toLowerCase().includes(buscar.trim().toLowerCase()));
+  const grupos = useMemo(() => {
+    const porCarpeta = new Map();
+    const sinCarpeta = [];
+    for (const it of itemsFiltrados) {
+      const c = it.carpeta_id ? carpetasMapa[it.carpeta_id] : null;
+      if (c) {
+        if (!porCarpeta.has(c.id)) porCarpeta.set(c.id, { key: c.id, nombre: c.nombre, color: c.color, items: [] });
+        porCarpeta.get(c.id).items.push(it);
+      } else sinCarpeta.push(it);
+    }
+    const g = Array.from(porCarpeta.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
+    if (sinCarpeta.length) g.push({ key: SIN_CARPETA_KEY, nombre: "Fuera de carpetas", color: null, items: sinCarpeta });
+    return g;
+  }, [itemsFiltrados, carpetasMapa]);
+
+  const toggleSel = (clave) => setSeleccionados((s) => { const c = new Set(s); if (c.has(clave)) c.delete(clave); else c.add(clave); return c; });
+  const toggleGrupo = (grupo) => {
+    const claves = grupo.items.map((it) => `${it.tabla}:${it.id}`);
+    const todos = claves.every((c) => seleccionados.has(c));
+    setSeleccionados((s) => { const copia = new Set(s); claves.forEach((c) => (todos ? copia.delete(c) : copia.add(c))); return copia; });
+  };
+  const toggleExpandido = (key) => setGruposExpandidos((s) => { const c = new Set(s); if (c.has(key)) c.delete(key); else c.add(key); return c; });
+
+  const seleccionadosItems = items.filter((it) => seleccionados.has(`${it.tabla}:${it.id}`));
+
+  const generar = async () => {
+    setGenerando(true); setError(null); setPreview(null);
+    try {
+      const blob = await generarImagenTablonVenta({
+        perfil,
+        items: seleccionadosItems.map((it) => ({
+          nombre: it.nombre, imagen_url: it.imagen_url, precio: it.precio,
+          idioma: it.idioma ? (IDIOMA_LABEL[it.idioma] || it.idioma) : null,
+          condicion: it.condicion || null,
+        })),
+        link: perfil?.slug ? `${window.location.origin}/?u=${encodeURIComponent(perfil.slug)}` : undefined,
+      });
+      if (!blob) throw new Error("No se pudo generar la imagen.");
+      setPreview({ url: URL.createObjectURL(blob), blob });
+    } catch (e) { setError(e.message || "No se pudo generar la imagen."); } finally { setGenerando(false); }
+  };
+
+  const compartir = async () => {
+    if (!preview) return;
+    try {
+      const archivo = new File([preview.blob], "tablon-de-venta.png", { type: "image/png" });
+      if (navigator.canShare?.({ files: [archivo] })) await navigator.share({ files: [archivo], title: "Tablón de venta -- Encuentra Cartas" });
+    } catch (e) { if (e?.name !== "AbortError") setError("No se pudo compartir la imagen."); }
+  };
+
+  if (cargando) return <Loading label="Cargando tu inventario..." />;
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-6">
+      <p style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase mb-1">🖼️ Tablón de venta</p>
+      <p style={{ color: COLORS.muted }} className="text-xs mb-3">Elige lo que quieras mostrar (de tu inventario o tus carpetas) y arma una imagen con nombre, precio, idioma y estado -- para compartir sin mandar el link.</p>
+      {error && <div className="mb-3"><ErrorBox message={error} /></div>}
+      {items.length === 0 ? (
+        <p style={{ color: COLORS.muted }} className="text-sm">No tienes nada publicado todavía.</p>
+      ) : preview ? (
+        <>
+          <img src={preview.url} alt="Vista previa del tablón" style={{ maxWidth: "100%", borderRadius: 12 }} className="mb-3" />
+          <div className="flex gap-2 flex-wrap">
+            <a href={preview.url} download="tablon-de-venta.png" style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">Descargar</a>
+            {typeof navigator !== "undefined" && navigator.share && (
+              <button onClick={compartir} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="rounded-lg px-4 py-2 text-sm font-semibold">Compartir</button>
+            )}
+            <button onClick={() => setPreview(null)} style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-4 py-2 text-sm font-semibold">Elegir otras</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <input placeholder="Buscar en tu inventario..." value={buscar} onChange={(e) => setBuscar(e.target.value)} style={inputStyle} className="rounded-lg px-3 py-2 text-sm w-full mb-3" />
+          <div className="grid gap-2 max-h-96 overflow-y-auto mb-3">
+            {grupos.map((grupo) => {
+              const claves = grupo.items.map((it) => `${it.tabla}:${it.id}`);
+              const todos = claves.every((c) => seleccionados.has(c));
+              const algunos = !todos && claves.some((c) => seleccionados.has(c));
+              const expandido = gruposExpandidos.has(grupo.key);
+              return (
+                <div key={grupo.key} style={{ background: todos ? `${COLORS.azulClaro}18` : COLORS.bg, border: `1px solid ${todos ? COLORS.azulClaro : COLORS.surface2}` }} className="rounded-lg overflow-hidden">
+                  <div className="flex items-center gap-2 p-2">
+                    <input type="checkbox" checked={todos} ref={(el) => { if (el) el.indeterminate = algunos; }} onChange={() => toggleGrupo(grupo)} />
+                    <div style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, background: `linear-gradient(160deg, ${(grupo.color || COLORS.muted)}55, ${(grupo.color || COLORS.muted)}22)`, border: `1px solid ${(grupo.color || COLORS.muted)}77` }} />
+                    <button onClick={() => toggleExpandido(grupo.key)} className="flex-1 min-w-0 flex items-center gap-1.5 text-left">
+                      <span className="text-sm font-semibold truncate">{grupo.key === SIN_CARPETA_KEY ? "📦 " : "📁 "}{grupo.nombre}</span>
+                      <span style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">({grupo.items.length})</span>
+                    </button>
+                    <button onClick={() => toggleExpandido(grupo.key)} style={{ color: COLORS.muted }}>{expandido ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
+                  </div>
+                  {expandido && (
+                    <div className="grid gap-1.5 p-2 pt-0">
+                      {grupo.items.map((it) => {
+                        const clave = `${it.tabla}:${it.id}`;
+                        const marcado = seleccionados.has(clave);
+                        return (
+                          <label key={clave} style={{ background: marcado ? `${COLORS.azulClaro}18` : "transparent", border: `1px solid ${marcado ? COLORS.azulClaro : COLORS.surface2}` }} className="rounded-lg p-2 flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={marcado} onChange={() => toggleSel(clave)} />
+                            {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
+                            <span className="text-sm flex-1 truncate">{it.nombre}</span>
+                            {it.precio != null && <span style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">${Number(it.precio).toLocaleString("es-MX")}</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={generar} disabled={seleccionados.size === 0 || generando} style={{ background: COLORS.gold, color: COLORS.textoOscuro, opacity: seleccionados.size === 0 ? 0.5 : 1 }} className="rounded-lg px-4 py-2 text-sm font-semibold">
+            {generando ? "Generando..." : `Generar imagen${seleccionados.size ? ` (${seleccionados.size})` : ""}`}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // Portada generada de una carpeta: una silueta tipo pila de cartas teñida
 // del color propio de la carpeta, con su nombre en una cintilla cruzada al
 // centro (como una etiqueta de archivero). Se usa tanto en el carrusel del
@@ -5906,6 +6090,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
   // de "Cartas sueltas" -- si no, estorban constantemente al revisar o
   // gestionar el inventario que sí está en venta. Colapsadas por default.
   const [mostrarExhibicionCartas, setMostrarExhibicionCartas] = useState(false);
+  const [mostrarTablon, setMostrarTablon] = useState(false);
   const [misSorteos, setMisSorteos] = useState([]);
   const [plantillaSorteo, setPlantillaSorteo] = useState(null);
   const [sorteoFormKey, setSorteoFormKey] = useState(0);
@@ -6471,6 +6656,9 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
 
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <h3 style={{ color: COLORS.azulPalido }} className="font-semibold text-sm uppercase">Cartas sueltas</h3>
+        <button onClick={() => setMostrarTablon((v) => !v)} style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55` }} className="rounded-lg px-3 py-1.5 text-xs font-semibold">
+          {mostrarTablon ? "Ocultar tablón de venta" : "🖼️ Tablón de venta"}
+        </button>
         {seleccionadasCartas.size > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
             <span style={{ color: COLORS.muted }} className="text-xs">{seleccionadasCartas.size} seleccionada{seleccionadasCartas.size === 1 ? "" : "s"}</span>
@@ -6485,6 +6673,8 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
           </div>
         )}
       </div>
+
+      {mostrarTablon && <TablonVentaView session={session} perfil={perfil} />}
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-4 mb-4 grid gap-2 sm:grid-cols-6">
         <select value={nuevaCarta.tcg} onChange={(e) => setNuevaCarta({ ...nuevaCarta, tcg: e.target.value, carta: "", set_nombre: "", card_api_id: "", imagen_url: "" })} style={inputStyle} className="rounded-lg px-2 py-2 text-sm sm:col-span-1">
           {TCG_OPCIONES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
