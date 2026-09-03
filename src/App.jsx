@@ -5060,6 +5060,77 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
     Estado: item.oculta ? "Oculta" : item.en_venta === false ? "Exhibición" : "En venta",
   });
 
+  // ---- Export para Mulligan POS ----
+  // El export normal es para leerlo una persona: junta el número dentro
+  // del nombre y del set, que es como se ve bien en pantalla. Un POS
+  // necesita lo contrario -- cada dato en su columna -- y sobre todo el
+  // id de catálogo, que le deja identificar la carta exacta sin volver a
+  // buscarla en ninguna API: el cruce sale perfecto y al instante.
+  //
+  // De qué fuente salió cada id se deduce del prefijo con el que se
+  // guardó, igual que lo interpreta el importador del otro lado.
+  const fuenteDeCardApiId = (cardApiId, tcg) => {
+    const v = String(cardApiId || "");
+    if (!v) return "";
+    if (v.startsWith("apitcg:")) return "apitcg";
+    if (v.startsWith("tcgcsv-")) return "tcgcsv";
+    if (tcg === "magic") return "scryfall";
+    if (tcg === "yugioh") return "ygoprodeck";
+    if (tcg === "lorcana") return "lorcana";
+    return "pokemontcg";
+  };
+
+  const filaParaPOS = (item) => {
+    // El nombre guardado a veces trae el número pegado ("Blowtorch -
+    // 117/094") y el set casi siempre trae código y número
+    // ("ME02: Phantasmal Flames 117/094"). Se separan aquí para que del
+    // otro lado no haya que adivinar nada.
+    const nombreCrudo = String(item.carta || item.producto || "").trim();
+    const cortado = nombreCrudo.match(/^(.*?)[\s\-–—#(]+(\d{1,4}[a-z]?)\s*\/\s*\d{1,4}\)?$/i);
+    const nombre = cortado ? cortado[1].trim() : nombreCrudo;
+    let numero = cortado ? cortado[2] : "";
+
+    let setCrudo = String(item.set_nombre || "").trim();
+    let setCodigo = "";
+    const dosPuntos = setCrudo.indexOf(":");
+    if (dosPuntos > 0 && dosPuntos <= 8 && !/\s/.test(setCrudo.slice(0, dosPuntos))) {
+      setCodigo = setCrudo.slice(0, dosPuntos).trim();
+      setCrudo = setCrudo.slice(dosPuntos + 1).trim();
+    }
+    const { set, numero: numeroDelSet } = parseNumeroYSet(setCrudo);
+    if (!numero && numeroDelSet) numero = String(numeroDelSet).replace(/\/.*$/, "");
+
+    return {
+      nombre,
+      set_nombre: set || setCrudo,
+      set_codigo: setCodigo,
+      numero,
+      tcg: item.tcg || "",
+      condicion: item.condicion || "",
+      idioma: item.idioma || "EN",
+      cantidad: item.cantidad ?? 1,
+      precio: item.precio ?? "",
+      catalogo_id: item.card_api_id || "",
+      catalogo_fuente: fuenteDeCardApiId(item.card_api_id, item.tcg),
+      imagen: item.imagen_url || "",
+    };
+  };
+
+  const exportarParaPOS = (carpeta, cards) => {
+    if (!cards.length) return;
+    const filas = cards.map(filaParaPOS);
+    const columnas = Object.keys(filas[0]);
+    const escapar = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [columnas.join(","), ...filas.map((f) => columnas.map((c) => escapar(f[c])).join(","))].join("\n");
+    const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(carpeta.nombre || "carpeta").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-pos.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const exportarCSV = (carpeta, cards) => {
     if (!cards.length) return;
     const filas = cards.map(filaExportable);
@@ -5595,6 +5666,11 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
                   <button onClick={() => exportarPDF(carpetaAbierta, cardsCarpeta)} disabled={exportandoPdf || !cardsCarpeta.length}
                     style={{ color: COLORS.muted, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
                     {exportandoPdf ? "..." : "⬇ PDF"}
+                  </button>
+                  <button onClick={() => exportarParaPOS(carpetaAbierta, cardsCarpeta)} disabled={!cardsCarpeta.length}
+                    title="CSV con cada dato en su columna y el id de catálogo, listo para importar en un punto de venta sin editar nada"
+                    style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
+                    ⬇ Para POS
                   </button>
                 </div>
               </div>
