@@ -8995,7 +8995,7 @@ function ModoEventoView({ session, perfil, onIrAPlanes }) {
     return (
       <div>
         <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-6">🎪 Modo Evento</h2>
-        <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
+        <UpsellCard requiere={PLAN_INFO.masterball} plan="masterball" onIrAPlanes={onIrAPlanes}>
           Lleva el control de tus ventas en un evento presencial: qué te costó cada pieza, en cuánto la vendiste, tus gastos del día (cede, comida, transporte) y tu ganancia en tiempo real -- con reporte final en PDF.
         </UpsellCard>
       </div>
@@ -10492,7 +10492,9 @@ function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdi
   );
 }
 
-// ---- Colección/Portafolio personal (Zafiro+, ver 079_coleccion_personal.sql) ----
+// ---- Colección/Portafolio personal (Diamante+, ver 079_coleccion_personal.sql
+// -- se subió de Zafiro/Amatista a Diamante en el rebalanceo de beneficios,
+// sección 168 de SUSCRIPCIONES.md) ----
 // coleccion_usuario ya se usaba (estado='quiero' para la Wishlist,
 // estado='tengo' como checkbox binario de Master Sets) -- aquí se le suma
 // cantidad/precio de referencia para que "tengo" sea un portafolio de
@@ -11002,7 +11004,7 @@ function ColeccionView({ session, perfil, onIrAPlanes, onIrAMiTienda }) {
       </button>
       {mostrarPrivadas && (
         !info.coleccionPersonal ? (
-          <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+          <UpsellCard requiere={PLAN_INFO.masterball} plan="masterball" onIrAPlanes={onIrAPlanes}>
             Lleva el control de las cartas que ya tienes -- cantidad, valor de referencia -- e intercambia cartas registrando ambos lados, con historial de entradas y salidas. Nunca es pública.
           </UpsellCard>
         ) : (
@@ -12800,7 +12802,7 @@ function PlanesPromoBanner({ perfil, onVerPlanes }) {
       <div className="flex-1 min-w-[180px]">
         <Badge color={COLORS.gold}>✨ Planes</Badge>
         <p style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-lg sm:text-xl font-bold mt-1">Lleva tu cuenta al siguiente nivel</p>
-        <p style={{ color: COLORS.muted }} className="text-xs mt-1">Wishlist compartible, Modo Evento, Colección con varios tableros y más -- desde $49/mes, o ahorra hasta 28% pagando el año.</p>
+        <p style={{ color: COLORS.muted }} className="text-xs mt-1">Insignia verificado, Wishlist compartible, Colección/Portafolio, Modo Evento y más -- desde $49/mes, o ahorra hasta 28% pagando el año.</p>
       </div>
       <span style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-bold whitespace-nowrap">Ver planes →</span>
     </button>
@@ -13658,12 +13660,12 @@ function SubastasView({ session, perfil, onIrAPlanes, onAbrirSubasta, onRequireL
           {mostrarForm ? "Cancelar" : "+ Organizar subasta"}
         </button>
       </div>
-      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Sube una carta o producto a subasta y deja que compradores compitan pujando. Disponible desde el plan Zafiro.</p>
+      <p style={{ color: COLORS.muted }} className="text-sm mb-6">Sube una carta o producto a subasta y deja que compradores compitan pujando. Disponible desde el plan Amatista.</p>
 
       {mostrarForm && (
         session && !planDe(perfil).subastas ? (
           <div className="mb-6">
-            <UpsellCard requiere={PLAN_INFO.superball} plan="superball" onIrAPlanes={onIrAPlanes}>
+            <UpsellCard requiere={PLAN_INFO.ultraball} plan="ultraball" onIrAPlanes={onIrAPlanes}>
               Organiza subastas de tus cartas o productos y deja que compradores compitan pujando.
             </UpsellCard>
           </div>

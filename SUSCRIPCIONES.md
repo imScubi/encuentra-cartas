@@ -5914,6 +5914,52 @@ Supabase real (`nulypgaaekexlbxbxdwq`) vía el MCP de Supabase --
 confirmado que el trigger quedó puesto. También se probó con
 Playwright que la app sigue renderizando bien después del cambio.
 
+## 168. Rebalanceo de beneficios: Diamante y Aurora dejan de sentirse "olvidados"
+
+El dueño sentía que Zafiro y Amatista juntaban ya todo lo bueno y
+Diamante/Aurora quedaban casi vacíos (2 cosméticos + más Boosts). Pidió
+subir las funciones más "top" de tier sin que las que se quedan abajo
+se sientan vitales/obligatorias. Se movieron solo las que tenían un
+flag de gating limpio y aislado en el código (se revisó cada una antes
+de moverla, para no romper el candado funcional):
+
+- **Colección/Portafolio** (`coleccionPersonal`): de Zafiro+Amatista a
+  **exclusivo Diamante+**. Era la función más grande construida esta
+  sesión (varios tableros, historial, intercambios) -- el candidato
+  más claro para darle peso real a Diamante.
+- **Modo Evento** (`modoEvento`): de Amatista a **exclusivo Diamante+**.
+  Herramienta profesional (POS + reporte PDF), no esencial para
+  comprar/vender básico.
+- **Subastas** (`subastas`): de Zafiro a **Amatista+** (un escalón
+  arriba, no hasta Diamante) -- para que Amatista también gane algo y
+  no se sienta un relleno entre Zafiro y Diamante.
+
+**A propósito NO se tocaron** "Competitivo" (importar mazos de
+Limitless) ni "Catálogo de sets/temas por tipo Pokémon": revisando el
+código, sus flags (`competitivo`, `wishlistPremium`) están entrelazados
+con otras pantallas (Deck Builder, Wishlist) de forma que moverlos sin
+romper nada requería más cirugía de la que valía la pena arriesgar en
+esta pasada -- quedan igual que antes.
+
+Zafiro queda con lo esencial para vender/verse confiable (verificado,
+redes directas, personalización, filtro de zona, Competitivo, Wishlist
+compartible) sin las funciones más vistosas. Diamante pasa de "2
+cosméticos + más Boosts" a un resumen real: *"Todo Amatista +
+Colección/Portafolio y Modo Evento"*. Como nadie tiene hoy una
+suscripción de verdad pagada (todas las que hay son regalos manuales o
+el regalo automático de la sección 167), este cambio no le quita nada
+a ningún cliente que ya haya pagado por lo de antes -- no hizo falta
+ninguna lógica de "respetar lo que ya tenías".
+
+Se revisaron y corrigieron 4 lugares donde el plan requerido estaba
+escrito a mano en el texto de un `UpsellCard` (Colección y Modo Evento
+decían "Zafiro"/"Amatista" en vez de "Diamante"; Subastas decía
+"Zafiro" en vez de "Amatista") y el banner de planes en el inicio (que
+prometía Modo Evento/Colección "desde $49/mes", ya no es cierto).
+Verificado con `npm run build` y con Playwright, comparando visualmente
+las 5 tarjetas de planes antes/después de expandir el banner
+condensado de "visitante nuevo".
+
 ## Qué falta / próximos pasos posibles
 
 - Falta probar el regalo de bienvenida de punta a punta con una cuenta nueva real (correo directo, confirmar correo, y Google) para confirmar que el aviso aparece y el plan expira bien a la hora esperada -- ver sección 167.
