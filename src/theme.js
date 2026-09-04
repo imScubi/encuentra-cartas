@@ -266,6 +266,15 @@ export const conBoostPrimero = (lista) => {
 export const miniaturaListing = (item) =>
   item?.tipo === "accesorio" ? (item.foto_real_url || item.imagen_url) : (item.imagen_url || item.foto_real_url);
 
+// Pasa una URL de imagen por nuestro proxy (api/tcgcsv.js, fuente=imgproxy)
+// pidiéndola ya redimensionada/comprimida a webp -- las tarjetas de las
+// grillas de Mercado/tienda solo la muestran del tamaño de una miniatura,
+// pero sin esto se bajaba el archivo original completo (a veces cientos de
+// KB) por cada una. Solo envuelve https:// -- los `data:`/blob: locales
+// (previews antes de subir una foto) se quedan tal cual.
+export const miniaturaUrl = (url, ancho = 320) =>
+  url && url.startsWith("https://") ? `/api/tcgcsv?fuente=imgproxy&url=${encodeURIComponent(url)}&w=${ancho}` : url;
+
 // ---- Apariencia: modo día/noche (Zafiro+) y temas por tipo de Pokémon (Amatista+) ----
 //
 // COLORS es un objeto compartido: en vez de hacer que cada uno de los ~700 usos
