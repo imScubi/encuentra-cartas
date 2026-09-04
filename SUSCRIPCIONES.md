@@ -5865,8 +5865,58 @@ sitio en producción** desde este sandbox -- recomendado confirmarlo
 con las DevTools reales después de desplegar (Network tab, con caché
 desactivado, comparando contra los 788 requests / 112MB reportados).
 
+## 167. Regalo de bienvenida automático (1 día del plan tope) + fix de seguridad en `perfiles`
+
+Hasta ahora el dueño le asignaba a mano, a cada cuenta nueva, un mes
+gratis del plan tope de su tipo de cuenta (Diamante para individual,
+Aurora para tienda) -- directo en Supabase, sin fecha de vencimiento
+real (`plan_vence` quedaba `NULL`). Se automatizó y se acotó a **1 día**
+(confirmado explícitamente con el dueño, más corto que el mes manual
+de antes a propósito):
+
+- **`perfiles_otorgar_regalo_bienvenida()`** (RPC, migración 082):
+  la primera vez que se llama para una cuenta, le pone `plan =
+  'masterball'` (individual) o `'enteball'` (tienda) y `plan_vence =
+  now() + 1 día`. Idempotente por un campo nuevo
+  `regalo_bienvenida_otorgado` -- llamadas repetidas no hacen nada.
+  Se dispara sola desde `procesarNuevoRegistro` (App.jsx), el único
+  punto donde ya convergían los 3 caminos posibles de registro (correo
+  directo, confirmar correo y volver, Google/Facebook) -- no hubo que
+  tocar los 3 por separado.
+- **Aviso nuevo**: `RegaloBienvenidaModal` le explica a la cuenta
+  nueva, con la fecha/hora exacta, qué se le regaló y que después
+  vuelve a Cuarzo (gratis) si no se suscribe -- a propósito explícito
+  para que nadie sienta que "le quitaron algo" cuando expire.
+
+**Se encontró y se corrigió un hueco de seguridad real revisando esto**:
+la política RLS de `perfiles` que deja a cualquiera actualizar su
+propio perfil (`id = auth.uid()`) no restringía QUÉ columnas se
+pueden cambiar -- cualquier usuario autenticado podía hacerse un PATCH
+directo y ponerse `plan = 'enteball'` con `plan_vence` lejano él
+mismo, gratis, sin pasar por Mercado Pago. Se agregó un trigger
+(`perfiles_proteger_columnas_sensibles`) que ignora cualquier intento
+de cambiar `plan`, `plan_vence`, `es_admin`, `mp_preapproval_id`,
+`aprobado`, `gestionado_por`, `diamante_desde` o
+`regalo_bienvenida_otorgado` a menos que venga de: el webhook de
+Mercado Pago (Service Role Key), el panel de Admin (ya tenía su propia
+política RLS para cambiarle el plan a cualquiera a mano -- se sigue
+permitiendo igual que antes), o la función de regalo de arriba (se
+anuncia con un flag de sesión de un solo uso, `set_config(...,
+true)`, que no se filtra fuera de esa transacción).
+
+Verificado de verdad contra un Postgres local (mismo patrón que
+migraciones anteriores): un usuario normal intentando el PATCH-trampa
+queda completamente ignorado; el panel de Admin cambiándole el plan a
+otra cuenta sigue funcionando igual; el webhook (service_role) sigue
+funcionando igual; pedir el regalo dos veces la segunda no hace nada;
+tienda vs. individual reciben el plan correcto. Ya aplicado en el
+Supabase real (`nulypgaaekexlbxbxdwq`) vía el MCP de Supabase --
+confirmado que el trigger quedó puesto. También se probó con
+Playwright que la app sigue renderizando bien después del cambio.
+
 ## Qué falta / próximos pasos posibles
 
+- Falta probar el regalo de bienvenida de punta a punta con una cuenta nueva real (correo directo, confirmar correo, y Google) para confirmar que el aviso aparece y el plan expira bien a la hora esperada -- ver sección 167.
 - Falta confirmar en producción, con DevTools reales, cuánto bajó el peso/requests de la sección 166 -- no se pudo medir desde este sandbox.
 - Revisar si conviene aplicar `miniaturaUrl` también a la vista de detalle de una publicación y al carrito (ver sección 166) -- se dejaron sin tocar por prudencia, no porque no ayudarían.
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
