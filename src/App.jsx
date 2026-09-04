@@ -34,7 +34,7 @@ import {
 import {
   FONTS, USD_TO_MXN, COLORS, STORE_COLORS, colorFor, textoSobre, conAlpha,
   PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
-  BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero, miniaturaListing,
+  BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero, miniaturaListing, miniaturaUrl,
   MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, TEMA_ICONO_KEY, aplicarTema,
   IDIOMA_OPCIONES, IDIOMA_LABEL, MUNICIPIOS_NL,
   CONDICION_OPCIONES, CONDICION_LABEL, CONDICION_DESC, normalizarCondicion,
@@ -45,7 +45,7 @@ import {
 function AvatarImg({ url, size = 36 }) {
   const [error, setError] = useState(false);
   return (
-    <img
+    <img loading="lazy"
       src={!error && url ? url : "/branding/logo-icon.png"}
       onError={() => setError(true)}
       alt=""
@@ -252,7 +252,7 @@ function RankIcon({ plan, emoji, size = 16 }) {
   const [iconError, setIconError] = useState(false);
   if (iconError) return <>{emoji}</>;
   return (
-    <img
+    <img loading="lazy"
       src={`/branding/rango-${plan}.png`}
       alt=""
       onError={() => setIconError(true)}
@@ -808,7 +808,7 @@ function PreviewPublicacion({ nombre, imagen, precio, precioAntes, idioma, condi
         className="rounded-2xl overflow-hidden flex flex-col">
         <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
           {imagen ? (
-            <img src={imagen} alt={nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            <img loading="lazy" src={imagen} alt={nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
           ) : (
             <Package size={28} color={COLORS.muted} />
           )}
@@ -1197,7 +1197,7 @@ function AccountModal({ onClose, onAuthed }) {
 
             <div className="flex items-center gap-3">
               {avatarPreview ? (
-                <img src={avatarPreview} alt="" style={{ width: 56, height: 56, borderRadius: "9999px", objectFit: "cover", border: `1px solid ${COLORS.azulMedio}` }} />
+                <img loading="lazy" src={avatarPreview} alt="" style={{ width: 56, height: 56, borderRadius: "9999px", objectFit: "cover", border: `1px solid ${COLORS.azulMedio}` }} />
               ) : (
                 <div style={{ width: 56, height: 56, borderRadius: "9999px", border: `1px dashed ${COLORS.surface2}`, color: COLORS.muted }} className="flex items-center justify-center text-xs text-center">
                   ?
@@ -1705,7 +1705,7 @@ function ChatModal({ session, otherId, otherNombre, contexto, otherWhatsapp, oth
                 className="px-3 py-2 rounded-lg text-sm max-w-[80%] grid gap-1">
                 {m.imagen_url && (
                   <a href={m.imagen_url} target="_blank" rel="noreferrer">
-                    <img src={m.imagen_url} alt="" style={{ maxWidth: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 6 }} />
+                    <img loading="lazy" src={m.imagen_url} alt="" style={{ maxWidth: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 6 }} />
                   </a>
                 )}
                 {m.texto && <span>{m.texto}</span>}
@@ -1858,7 +1858,7 @@ function TCGplayerPicker({ tcg = "pokemon", soloSellado = true, onSelect }) {
                 <button key={p.productId} type="button" onClick={() => seleccionar(p)}
                   className="flex items-center gap-3 w-full text-left p-2 hover:brightness-125"
                   style={{ borderBottom: `1px solid ${COLORS.bg}` }}>
-                  {p.imageUrl && <img src={p.imageUrl} alt={p.name} style={{ width: 40, height: 56, objectFit: "contain" }} />}
+                  {p.imageUrl && <img loading="lazy" src={p.imageUrl} alt={p.name} style={{ width: 40, height: 56, objectFit: "contain" }} />}
                   <p className="text-sm">{p.name}</p>
                 </button>
               ))}
@@ -2291,7 +2291,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
     <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${seleccionadas.has(item.id) ? COLORS.azulPalido : estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
       <div className="flex items-center gap-3">
         <input type="checkbox" checked={seleccionadas.has(item.id)} onChange={() => toggleSeleccion(item.id)} className="shrink-0" />
-        {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
+        {miniaturaListing(item) && <img loading="lazy" src={miniaturaUrl(miniaturaListing(item), 160)} alt={item.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-sm">{item.carta}</p>
@@ -2408,9 +2408,9 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
-              {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+              {nueva.foto_real_url && <img loading="lazy" src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
               <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, atras: v }))} />
-              {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+              {nueva.foto_real_reverso_url && <img loading="lazy" src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
             <p style={{ color: COLORS.muted }} className="text-xs -mt-1">Puedes publicar sin las fotos y agregarlas después -- no detienen la publicación.</p>
           </>
@@ -2422,7 +2422,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
                   <CardPickerUniversal tcg={nueva.tcg} onSelect={(c) => setNueva({ ...nueva, carta: c.name, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_ref_fuente: c.precio_ref_fuente, artista: c.artista || null, descripcion_api: c.descripcion_api || null, precio: nueva.precio || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} onNoEncontrada={() => setCartaManual(true)} />
                   {nueva.card_api_id && (
                     <div className="flex items-center gap-3 mt-2">
-                      {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                      {nueva.imagen_url && <img loading="lazy" src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                       <div>
                         <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
                         {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia{nueva.precio_ref_fuente ? ` (${nueva.precio_ref_fuente})` : ""}: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
@@ -2444,7 +2444,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
                     <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto subida" : "📷 Sube una foto de tu carta"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
                     {nueva.foto_real_url && (
                       <div className="flex items-center gap-2">
-                        <img src={nueva.foto_real_url} alt={nueva.carta} style={{ width: 44, height: 62, objectFit: "cover" }} className="rounded" />
+                        <img loading="lazy" src={nueva.foto_real_url} alt={nueva.carta} style={{ width: 44, height: 62, objectFit: "cover" }} className="rounded" />
                         <Badge color={COLORS.azulPalido}>Carta seleccionada</Badge>
                       </div>
                     )}
@@ -2468,11 +2468,11 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
               {!cartaManual && (
                 <>
                   <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
-                  {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+                  {nueva.foto_real_url && <img loading="lazy" src={nueva.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
                 </>
               )}
               <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, atras: v }))} />
-              {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+              {nueva.foto_real_reverso_url && <img loading="lazy" src={nueva.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
             <p style={{ color: COLORS.muted }} className="text-xs -mt-1">Puedes publicar sin las fotos y agregarlas después -- no detienen la publicación, y en cuanto terminen de subir y revisarse aparecen solas en tu publicación (con zoom incluido).</p>
             <GradeoFields
@@ -2485,9 +2485,9 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
             <CardPickerUniversal tcg={nueva.tcg} soloSellado onSelect={(p) => setNueva({ ...nueva, carta: p.producto, set_nombre: p.set_nombre, imagen_url: p.imagen_url, card_api_id: p.card_api_id, precio_ref_mxn: p.precio_ref_mxn, precio_ref_fuente: p.precio_ref_fuente, descripcion_api: p.descripcion_api || null, precio: nueva.precio || (p.precio_ref_mxn ? String(p.precio_ref_mxn) : "") })} />
             <div className="flex items-center gap-2 flex-wrap">
               <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, frente: v }))} />
-              {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+              {nueva.foto_real_url && <img loading="lazy" src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
               <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (opcional)"} onSubido={(url) => setNueva({ ...nueva, foto_real_reverso_url: url })} onEstadoCambia={(v) => setSubiendoFoto((s) => ({ ...s, atras: v }))} />
-              {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+              {nueva.foto_real_reverso_url && <img loading="lazy" src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
             </div>
             <p style={{ color: COLORS.muted }} className="text-xs -mt-1">Puedes publicar sin las fotos y agregarlas después -- no detienen la publicación.</p>
           </>
@@ -2495,7 +2495,7 @@ function MyMarketPanel({ session, perfil, onIrAPlanes, onIrAMiCuenta }) {
 
         {tipo === "sellado" && nueva.card_api_id && (
           <div className="flex items-center gap-3">
-            {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+            {nueva.imagen_url && <img loading="lazy" src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
             <div>
               <Badge color={COLORS.azulClaro}>{nueva.carta}</Badge>
               {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulPalido }} className="text-xs mt-1">Precio de referencia{nueva.precio_ref_fuente ? ` (${nueva.precio_ref_fuente})` : ""}: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
@@ -4217,7 +4217,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
                       {resultadosPub[grupo.key].map((r) => (
                         <div key={r.id} style={{ background: COLORS.surface, border: `1px solid ${r.imagen_url ? COLORS.surface2 : "#C24444"}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
                           {r.imagen_url ? (
-                            <img src={r.imagen_url} alt="" style={{ width: 44, height: 62, objectFit: "contain" }} />
+                            <img loading="lazy" src={r.imagen_url} alt="" style={{ width: 44, height: 62, objectFit: "contain" }} />
                           ) : (
                             <div style={{ width: 44, height: 62, background: COLORS.surface2 }} className="flex items-center justify-center rounded shrink-0">
                               <Package size={18} color="#C24444" />
@@ -4577,7 +4577,7 @@ function ImportadorShopify({ session, tiendaId, onImportado }) {
             {productos.map((p, idx) => (
               <div key={idx} className="flex items-center gap-2">
                 <input type="checkbox" checked={p.incluir} onChange={(e) => actualizarProducto(idx, { incluir: e.target.checked })} />
-                {p.imagen && <img src={p.imagen} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
+                {p.imagen && <img loading="lazy" src={p.imagen} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
                 <p className="text-xs flex-1 truncate">{p.titulo}</p>
                 <input type="number" value={p.precio ?? ""} onChange={(e) => actualizarProducto(idx, { precio: Number(e.target.value) })} style={inputStyle} className="rounded-lg px-2 py-1 text-xs w-20" />
                 <input type="number" value={p.cantidad} onChange={(e) => actualizarProducto(idx, { cantidad: e.target.value })} style={inputStyle} className="rounded-lg px-2 py-1 text-xs w-14" title="Cantidad" />
@@ -4835,7 +4835,7 @@ function TablonVentaView({ session, perfil }) {
         <p style={{ color: COLORS.muted }} className="text-sm">No tienes nada publicado todavía.</p>
       ) : preview ? (
         <>
-          <img src={preview.url} alt="Vista previa del tablón" style={{ maxWidth: "100%", borderRadius: 12 }} className="mb-3" />
+          <img loading="lazy" src={preview.url} alt="Vista previa del tablón" style={{ maxWidth: "100%", borderRadius: 12 }} className="mb-3" />
           <div className="flex gap-2 flex-wrap">
             <a href={preview.url} download="tablon-de-venta.png" style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">Descargar</a>
             {typeof navigator !== "undefined" && navigator.share && (
@@ -4872,7 +4872,7 @@ function TablonVentaView({ session, perfil }) {
                         return (
                           <label key={clave} style={{ background: marcado ? `${COLORS.azulClaro}18` : "transparent", border: `1px solid ${marcado ? COLORS.azulClaro : COLORS.surface2}` }} className="rounded-lg p-2 flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" checked={marcado} onChange={() => toggleSel(clave)} />
-                            {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
+                            {it.imagen_url && <img loading="lazy" src={it.imagen_url} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
                             <span className="text-sm flex-1 truncate">{it.nombre}</span>
                             {it.precio != null && <span style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">${Number(it.precio).toLocaleString("es-MX")}</span>}
                           </label>
@@ -5357,7 +5357,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
           <div key={idx} style={{ background: COLORS.surface, border: `1px solid ${f.nombre ? COLORS.surface2 : "#C24444"}`, opacity: f.incluir && imagen ? 1 : 0.5 }}
             className="rounded-lg p-2 flex items-center gap-2 flex-wrap">
             <input type="checkbox" checked={f.incluir && !!imagen} disabled={!imagen} onChange={(e) => actualizarFila(idx, { incluir: e.target.checked })} />
-            {imagen && <img src={imagen} alt="" style={{ width: 40, height: 56, objectFit: "contain" }} />}
+            {imagen && <img loading="lazy" src={imagen} alt="" style={{ width: 40, height: 56, objectFit: "contain" }} />}
             <div className="flex-1 min-w-[140px]">
               {f.nombre ? (
                 <>
@@ -5547,7 +5547,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
             {carpetaAbierta.carpeta_fotos?.length > 0 && (
               <div className="flex gap-2 flex-wrap">
                 {carpetaAbierta.carpeta_fotos.map((f) => (
-                  <img key={f.id} src={f.imagen_url} alt="" style={{ width: 48, height: 48, objectFit: "cover" }} className="rounded" />
+                  <img loading="lazy" key={f.id} src={f.imagen_url} alt="" style={{ width: 48, height: 48, objectFit: "cover" }} className="rounded" />
                 ))}
               </div>
             )}
@@ -5561,7 +5561,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
                 }))} /></div>
                 {manualNuevo.imagen_url && (
                   <div className="flex items-center gap-2">
-                    <img src={manualNuevo.imagen_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />
+                    <img loading="lazy" src={manualNuevo.imagen_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />
                     <p className="text-sm font-semibold">{manualNuevo.carta}</p>
                   </div>
                 )}
@@ -5635,7 +5635,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
                       )}
                       <div style={{ background: COLORS.surface2, aspectRatio: "3/4" }} className="flex items-center justify-center">
                         {miniaturaListing(item) ? (
-                          <img src={miniaturaListing(item)} alt={item.carta || item.producto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                          <img loading="lazy" src={miniaturaUrl(miniaturaListing(item), 400)} alt={item.carta || item.producto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                         ) : <Package size={20} color={COLORS.muted} />}
                       </div>
                       <div className="p-1.5">
@@ -5722,7 +5722,7 @@ function CarpetasStorefront({ carpetas, items, tabla, onAbrirDetalle, colorAcent
             className="rounded-lg overflow-hidden text-left hover:brightness-125 flex flex-col relative">
             <div style={{ background: COLORS.surface2, aspectRatio: "3/4" }} className="flex items-center justify-center">
               {miniaturaListing(item) ? (
-                <img src={miniaturaListing(item)} alt={item.carta || item.producto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                <img loading="lazy" src={miniaturaUrl(miniaturaListing(item), 400)} alt={item.carta || item.producto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
               ) : <Package size={20} color={COLORS.muted} />}
             </div>
             <div className="p-1.5">
@@ -5838,7 +5838,7 @@ function CarpetaPublicaView({ carpetaId, onAbrirDetalle, onVerPerfil, onAbrirTie
               className="text-left rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid w-full transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
               <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
                 {miniaturaListing(item) ? (
-                  <img src={miniaturaListing(item)} alt={item.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  <img loading="lazy" src={miniaturaUrl(miniaturaListing(item), 400)} alt={item.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                 ) : (
                   <Package size={40} color={COLORS.muted} />
                 )}
@@ -5930,7 +5930,7 @@ function WishlistPublicaView({ perfilId, onVerPerfil, onVolver }) {
             className="rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid">
             <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
               {c.imagen_url ? (
-                <img src={c.imagen_url} alt={c.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                <img loading="lazy" src={c.imagen_url} alt={c.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
               ) : (
                 <Package size={40} color={COLORS.muted} />
               )}
@@ -6439,7 +6439,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
     <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${seleccionadasCartas.has(item.id) ? COLORS.azulPalido : estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
       <div className="flex items-center gap-3">
         <input type="checkbox" checked={seleccionadasCartas.has(item.id)} onChange={() => toggleSeleccionCarta(item.id)} className="shrink-0" />
-        {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
+        {miniaturaListing(item) && <img loading="lazy" src={miniaturaUrl(miniaturaListing(item), 160)} alt={item.carta} style={{ width: 56, height: 78, objectFit: "contain" }} />}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-sm">{item.carta}</p>
@@ -6697,7 +6697,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
               })} onNoEncontrada={() => setCartaManual(true)} />
               {nuevaCarta.card_api_id && (
                 <div className="flex items-center gap-3 mt-2">
-                  {nuevaCarta.imagen_url && <img src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
+                  {nuevaCarta.imagen_url && <img loading="lazy" src={nuevaCarta.imagen_url} alt={nuevaCarta.carta} style={{ width: 70, height: 96, objectFit: "contain" }} />}
                   <div>
                     <Badge color={COLORS.azulPalido}>{nuevaCarta.carta}</Badge>
                     {nuevaCarta.precio_ref_mxn && (
@@ -6723,7 +6723,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
                 <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Foto subida" : "📷 Sube una foto de tu carta"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFotoCarta((s) => ({ ...s, frente: v }))} />
                 {nuevaCarta.foto_real_url && (
                   <div className="flex items-center gap-2">
-                    <img src={nuevaCarta.foto_real_url} alt={nuevaCarta.carta} style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />
+                    <img loading="lazy" src={nuevaCarta.foto_real_url} alt={nuevaCarta.carta} style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />
                     <Badge color={COLORS.azulPalido}>Carta seleccionada</Badge>
                   </div>
                 )}
@@ -6751,11 +6751,11 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
           {!cartaManual && (
             <>
               <SubirFotoManual session={session} label={nuevaCarta.foto_real_url ? "✅ Frente subido" : "📷 Foto de frente de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_url: url })} onEstadoCambia={(v) => setSubiendoFotoCarta((s) => ({ ...s, frente: v }))} />
-              {nuevaCarta.foto_real_url && <img src={nuevaCarta.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+              {nuevaCarta.foto_real_url && <img loading="lazy" src={nuevaCarta.foto_real_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
             </>
           )}
           <SubirFotoManual session={session} label={nuevaCarta.foto_real_reverso_url ? "✅ Reverso subido" : "📷 Foto de atrás de tu carta (opcional)"} onSubido={(url) => setNuevaCarta({ ...nuevaCarta, foto_real_reverso_url: url })} onEstadoCambia={(v) => setSubiendoFotoCarta((s) => ({ ...s, atras: v }))} />
-          {nuevaCarta.foto_real_reverso_url && <img src={nuevaCarta.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
+          {nuevaCarta.foto_real_reverso_url && <img loading="lazy" src={nuevaCarta.foto_real_reverso_url} alt="" style={{ width: 40, height: 56, objectFit: "cover" }} className="rounded" />}
         </div>
         <p style={{ color: COLORS.muted }} className="text-xs sm:col-span-6 -mt-1">Puedes agregar la carta sin las fotos y subirlas después -- no detienen la publicación, y en cuanto terminen de subir y revisarse aparecen solas con zoom incluido.</p>
         <div className="sm:col-span-6">
@@ -6821,7 +6821,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
             })} />
             {nuevoSellado.card_api_id && (
               <div className="flex items-center gap-3">
-                {nuevoSellado.imagen_url && <img src={nuevoSellado.imagen_url} alt={nuevoSellado.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                {nuevoSellado.imagen_url && <img loading="lazy" src={nuevoSellado.imagen_url} alt={nuevoSellado.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                 <div>
                   <Badge color={COLORS.azulClaro}>{nuevoSellado.producto}</Badge>
                   {nuevoSellado.precio_ref_mxn && (
@@ -6859,7 +6859,7 @@ function MyStorePanel({ session, perfil, onIrAPlanes, onAbrirSorteo, onIrAMiCuen
           <div key={item.id} style={{ background: COLORS.surface, border: `1px solid ${seleccionadasSellado.has(item.id) ? COLORS.azulPalido : estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.surface2}` }} className="rounded-2xl p-3 flex flex-col gap-2.5">
             <div className="flex items-center gap-3">
               <input type="checkbox" checked={seleccionadasSellado.has(item.id)} onChange={() => toggleSeleccionSellado(item.id)} className="shrink-0" />
-              {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 44, height: 62, objectFit: "contain" }} />}
+              {item.imagen_url && <img loading="lazy" src={item.imagen_url} alt={item.producto} style={{ width: 44, height: 62, objectFit: "contain" }} />}
               <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
                 <p className="font-medium text-sm">{item.producto}</p>
                 <BoostBadge item={item} />
@@ -6909,13 +6909,13 @@ function SelectorImagenesAnuncio({ existentes = [], onQuitarExistente, nuevasPre
         <div className="flex gap-2 flex-wrap">
           {existentes.map((url, i) => (
             <div key={`e${i}`} className="relative">
-              <img src={url} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />
+              <img loading="lazy" src={url} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />
               <button type="button" onClick={() => onQuitarExistente(i)} style={{ background: "#00000099", color: "#fff" }} className="absolute -top-1.5 -right-1.5 rounded-full w-5 h-5 text-xs leading-none">×</button>
             </div>
           ))}
           {nuevasPreviews.map((url, i) => (
             <div key={`n${i}`} className="relative">
-              <img src={url} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />
+              <img loading="lazy" src={url} alt="" style={{ width: 70, height: 70, objectFit: "cover" }} className="rounded-lg" />
               <button type="button" onClick={() => onQuitarNueva(i)} style={{ background: "#00000099", color: "#fff" }} className="absolute -top-1.5 -right-1.5 rounded-full w-5 h-5 text-xs leading-none">×</button>
             </div>
           ))}
@@ -6939,12 +6939,12 @@ function GaleriaAnuncio({ n, maxHeight = 140, imgClassName = "rounded-lg mb-2 w-
   const urls = imagenesDeAnuncio(n);
   if (urls.length === 0) return null;
   if (urls.length === 1) {
-    return <img src={urls[0]} alt="" style={{ maxHeight, objectFit: "cover" }} className={imgClassName} />;
+    return <img loading="lazy" src={urls[0]} alt="" style={{ maxHeight, objectFit: "cover" }} className={imgClassName} />;
   }
   return (
     <div className={`flex gap-2 overflow-x-auto ${imgClassName}`} style={{ scrollSnapType: "x mandatory" }}>
       {urls.map((u, i) => (
-        <img key={i} src={u} alt="" style={{ maxHeight, minWidth: 160, objectFit: "cover", scrollSnapAlign: "start" }} className="rounded-lg shrink-0" />
+        <img loading="lazy" key={i} src={u} alt="" style={{ maxHeight, minWidth: 160, objectFit: "cover", scrollSnapAlign: "start" }} className="rounded-lg shrink-0" />
       ))}
     </div>
   );
@@ -6957,7 +6957,7 @@ function MiniaturaAnuncio({ n, style, className }) {
   if (urls.length === 0) return null;
   return (
     <div className="relative shrink-0">
-      <img src={urls[0]} alt="" style={style} className={className} />
+      <img loading="lazy" src={urls[0]} alt="" style={style} className={className} />
       {urls.length > 1 && (
         <span style={{ background: "#000000CC", color: "#fff" }} className="absolute bottom-1 right-1 rounded-full px-1.5 text-[10px] font-semibold">+{urls.length - 1}</span>
       )}
@@ -7173,7 +7173,7 @@ function NivelIcon({ slug, emoji, size = 16 }) {
   const [iconError, setIconError] = useState(false);
   if (iconError) return <>{emoji}</>;
   return (
-    <img
+    <img loading="lazy"
       src={`/branding/nivel-${slug}.png`}
       alt=""
       onError={() => setIconError(true)}
@@ -7244,7 +7244,7 @@ function OnboardingTutorial({ onClose }) {
           <div className="flex-1 flex flex-col items-center text-center justify-start">
             <div className="flex items-center justify-center" style={{ height: 110 }}>
               {step === 0 && (
-                <img src="/branding/logo-icon.png" alt="" style={{ width: 80, height: 80, animation: "badgePop .5s ease both" }} />
+                <img loading="lazy" src="/branding/logo-icon.png" alt="" style={{ width: 80, height: 80, animation: "badgePop .5s ease both" }} />
               )}
               {step === 1 && (
                 <div className="w-full" style={{ maxWidth: 320 }}>
@@ -7585,7 +7585,7 @@ function ComunidadView({ session, onVerPerfil }) {
         <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-4 mb-6 grid gap-3">
           {preview ? (
             <div className="relative">
-              <img src={preview} alt="" style={{ maxHeight: 240, objectFit: "contain" }} className="rounded-lg mx-auto" />
+              <img loading="lazy" src={preview} alt="" style={{ maxHeight: 240, objectFit: "contain" }} className="rounded-lg mx-auto" />
               <button onClick={() => { setArchivo(null); setPreview(null); }} style={{ color: COLORS.muted }} className="text-xs mt-2">Quitar foto</button>
             </div>
           ) : (
@@ -7629,7 +7629,7 @@ function ComunidadView({ session, onVerPerfil }) {
                   </button>
                   <Badge color={COLORS.azulPalido}>{TIPO_COMUNIDAD_LABEL[p.tipo] || TIPO_COMUNIDAD_LABEL.otro}</Badge>
                 </div>
-                <img src={p.imagen_url} alt="" style={{ maxHeight: 420, objectFit: "contain", width: "100%", background: COLORS.surface2 }} />
+                <img loading="lazy" src={p.imagen_url} alt="" style={{ maxHeight: 420, objectFit: "contain", width: "100%", background: COLORS.surface2 }} />
                 <div className="p-3">
                   {p.texto && <p className="text-sm mb-2">{p.texto}</p>}
                   <div className="flex items-center justify-between gap-2">
@@ -8245,7 +8245,7 @@ function MazosView({ session, perfil, onIrAPlanes, onAbrirDetalle }) {
               <div key={mc.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl overflow-hidden flex flex-col">
                 <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
                   {mc.imagen_url ? (
-                    <img src={mc.imagen_url} alt={mc.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    <img loading="lazy" src={mc.imagen_url} alt={mc.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                   ) : (
                     <Package size={32} color={COLORS.muted} />
                   )}
@@ -8463,7 +8463,7 @@ function DeckCardsGrid({ decklist }) {
         <div key={i} style={{ background: COLORS.surface2 }} className="rounded-lg overflow-hidden flex flex-col">
           <div className="aspect-[4/5] flex items-center justify-center p-1 relative">
             {c.imagen_url ? (
-              <img src={c.imagen_url} alt={c.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+              <img loading="lazy" src={c.imagen_url} alt={c.nombre} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
             ) : (
               <Package size={18} color={COLORS.muted} />
             )}
@@ -8488,7 +8488,7 @@ function IconosArquetipo({ icons }) {
   return (
     <div className="flex -space-x-2">
       {visibles.map((src, i) => (
-        <img key={i} src={src} alt="" width={22} height={22}
+        <img loading="lazy" key={i} src={src} alt="" width={22} height={22}
           style={{ borderRadius: "9999px", border: `2px solid ${COLORS.surface}`, background: COLORS.surface2 }}
           onError={() => setRotos((r) => ({ ...r, [i]: true }))} />
       ))}
@@ -9793,7 +9793,7 @@ function EventoDetalle({ session, perfil, evento, onVolver, onEventoActualizado,
                             return (
                               <label key={clave} style={{ background: marcado ? `${COLORS.azulClaro}18` : "transparent", border: `1px solid ${marcado ? COLORS.azulClaro : COLORS.surface2}` }} className="rounded-lg p-2 flex items-center gap-2 cursor-pointer">
                                 <input type="checkbox" checked={marcado} onChange={() => toggleSeleccionado(clave)} />
-                                {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
+                                {it.imagen_url && <img loading="lazy" src={it.imagen_url} alt="" style={{ width: 32, height: 32, objectFit: "contain" }} />}
                                 <span className="text-sm flex-1 truncate">{it.nombre}</span>
                                 {it.precio != null && <span style={{ color: COLORS.muted }} className="text-xs whitespace-nowrap">${Number(it.precio).toLocaleString("es-MX")}</span>}
                               </label>
@@ -10068,7 +10068,7 @@ function CamposOperacionEvento({ valor, onChange, inputStyle }) {
             <p style={{ color: COLORS.muted }} className="text-xs -mb-0.5">¿Qué recibiste a cambio? (opcional, puedes agregar varias cartas)</p>
             {(valor.recibidas || []).map((r, i) => (
               <div key={i} className="flex items-center gap-2">
-                {r.imagenUrl && <img src={r.imagenUrl} alt="" style={{ width: 32, height: 45, objectFit: "contain" }} />}
+                {r.imagenUrl && <img loading="lazy" src={r.imagenUrl} alt="" style={{ width: 32, height: 45, objectFit: "contain" }} />}
                 <Badge color={COLORS.violeta}>{r.nombre}</Badge>
                 {!r.cardApiId && <span style={{ color: COLORS.muted }} className="text-[10px]">(a mano, no entra a tu colección)</span>}
                 <button type="button" onClick={() => onChange({ ...valor, recibidas: valor.recibidas.filter((_, j) => j !== i) })} style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
@@ -10144,7 +10144,7 @@ function FormVentaEvento({ valor, onChange, onGuardar, onCancelar, guardando, in
           <CardPickerUniversal tcg={tcg} onSelect={(c) => onChange({ ...valor, nombre: c.name || c.producto, imagen_url: c.imagen_url, carta_ref: { card_api_id: c.card_api_id, set_nombre: c.set_nombre, tcg } })} />
           {valor.nombre && (
             <div className="flex items-center gap-2">
-              {valor.imagen_url && <img src={valor.imagen_url} alt="" style={{ width: 40, height: 56, objectFit: "contain" }} />}
+              {valor.imagen_url && <img loading="lazy" src={valor.imagen_url} alt="" style={{ width: 40, height: 56, objectFit: "contain" }} />}
               <Badge color={COLORS.azulPalido}>{valor.nombre}</Badge>
               <button type="button" onClick={() => onChange({ ...valor, nombre: "", imagen_url: "", carta_ref: null })} style={{ color: COLORS.muted }} className="text-xs">Cambiar</button>
             </div>
@@ -10343,7 +10343,7 @@ function ModoEventoPOS({ session, evento, inventarioDisponible, cargandoInventar
                     <p style={{ color: COLORS.muted }} className="text-sm">Nada por aquí.</p>
                   ) : inventarioFiltrado.map((it) => (
                     <button key={`${it.tabla}:${it.id}`} onClick={() => enriquecerCon({ nombre: it.nombre, imagen_url: it.imagen_url || null })} className="rounded-lg p-2 flex items-center gap-2 text-left" style={{ border: `1px solid ${COLORS.surface2}` }}>
-                      {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 28, height: 38, objectFit: "contain" }} />}
+                      {it.imagen_url && <img loading="lazy" src={it.imagen_url} alt="" style={{ width: 28, height: 38, objectFit: "contain" }} />}
                       <span className="text-sm flex-1 truncate">{it.nombre}</span>
                     </button>
                   ))}
@@ -10374,7 +10374,7 @@ function TarjetaVentaEventoGrid({ v, onEditar, onBorrar }) {
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}`, width: 104 }} className="rounded-lg p-2 flex flex-col items-center gap-1">
       <div style={{ width: 84, height: 112, background: COLORS.bg, borderRadius: 8, overflow: "hidden" }} className="flex items-center justify-center">
-        {v.imagen_url ? <img src={v.imagen_url} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Package size={22} style={{ color: COLORS.muted }} />}
+        {v.imagen_url ? <img loading="lazy" src={v.imagen_url} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Package size={22} style={{ color: COLORS.muted }} />}
       </div>
       <p className="text-[11px] text-center line-clamp-2 leading-tight" style={{ minHeight: 28 }}>{v.nombre}</p>
       {v.cantidad > 1 && <p style={{ color: COLORS.muted }} className="text-[10px] -mt-1">×{v.cantidad}</p>}
@@ -10441,7 +10441,7 @@ function FilaVentaEvento({ v, editando, edit, onEdit, onEditChange, onGuardarEdi
 
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 flex items-center gap-3 flex-wrap">
-      {v.imagen_url && <img src={v.imagen_url} alt="" style={{ width: 36, height: 50, objectFit: "contain" }} />}
+      {v.imagen_url && <img loading="lazy" src={v.imagen_url} alt="" style={{ width: 36, height: 50, objectFit: "contain" }} />}
       <div className="flex-1 min-w-[140px]">
         <p className="text-sm font-semibold">{v.nombre}{v.cantidad > 1 ? ` ×${v.cantidad}` : ""}{v._pendiente && <span style={{ color: COLORS.gold }} className="text-[10px] font-normal ml-1">🕓 pendiente</span>}</p>
         <p style={{ color: COLORS.muted }} className="text-xs">
@@ -10507,7 +10507,7 @@ function AgregarAColeccionForm({ session, tableroId, onAgregado, onCancelar }) {
       {error && <ErrorBox message={error} />}
       {elegida ? (
         <div className="flex items-center gap-2">
-          {elegida.imagenUrl && <img src={elegida.imagenUrl} alt="" style={{ width: 32, height: 45, objectFit: "contain" }} />}
+          {elegida.imagenUrl && <img loading="lazy" src={elegida.imagenUrl} alt="" style={{ width: 32, height: 45, objectFit: "contain" }} />}
           <Badge color={COLORS.azulPalido}>{elegida.nombre}</Badge>
           <button type="button" onClick={() => setElegida(null)} style={{ color: COLORS.muted }} className="text-xs">Cambiar</button>
         </div>
@@ -10658,7 +10658,7 @@ function IntercambioBuilderView({ session, perfil, tableroId, onVolver, onComple
                 return (
                   <label key={clave} style={{ background: marcado ? `${COLORS.azulClaro}18` : "transparent", border: `1px solid ${marcado ? COLORS.azulClaro : COLORS.surface2}` }} className="rounded-lg p-2 flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={marcado} onChange={() => toggleDas(clave)} />
-                    {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 28, height: 38, objectFit: "contain" }} />}
+                    {it.imagen_url && <img loading="lazy" src={it.imagen_url} alt="" style={{ width: 28, height: 38, objectFit: "contain" }} />}
                     <span className="text-sm flex-1 min-w-0 truncate">{it.nombre}</span>
                     {it.origen === "coleccion" && <span style={{ color: COLORS.muted }} className="text-[10px]">colección{it.cantidad > 1 ? ` ×${it.cantidad}` : ""}</span>}
                   </label>
@@ -10671,7 +10671,7 @@ function IntercambioBuilderView({ session, perfil, tableroId, onVolver, onComple
           <p style={{ color: COLORS.violeta }} className="font-semibold text-sm uppercase mb-2">Su lado (lo que recibes)</p>
           {recibidas.map((r, i) => (
             <div key={i} className="flex items-center gap-2 mb-1.5">
-              {r.imagenUrl && <img src={r.imagenUrl} alt="" style={{ width: 28, height: 38, objectFit: "contain" }} />}
+              {r.imagenUrl && <img loading="lazy" src={r.imagenUrl} alt="" style={{ width: 28, height: 38, objectFit: "contain" }} />}
               <Badge color={COLORS.violeta}>{r.nombre}</Badge>
               {!r.cardApiId && <span style={{ color: COLORS.muted }} className="text-[10px]">(a mano)</span>}
               <button type="button" onClick={() => setRecibidas((rs) => rs.filter((_, j) => j !== i))} style={{ color: COLORS.muted }} className="text-xs">Quitar</button>
@@ -10879,7 +10879,7 @@ function MiColeccionView({ session, perfil, onIrAPlanes }) {
           {items.map((it) => (
             <div key={it.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-2 flex flex-col items-center gap-1">
               <div style={{ width: 72, height: 96, background: COLORS.bg, borderRadius: 8, overflow: "hidden" }} className="flex items-center justify-center">
-                {it.imagen_url ? <img src={it.imagen_url} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Package size={20} style={{ color: COLORS.muted }} />}
+                {it.imagen_url ? <img loading="lazy" src={it.imagen_url} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Package size={20} style={{ color: COLORS.muted }} />}
               </div>
               <p className="text-[11px] text-center line-clamp-2 leading-tight" style={{ minHeight: 26 }}>{it.carta}</p>
               {it.cantidad > 1 && <p style={{ color: COLORS.muted }} className="text-[10px] -mt-1">×{it.cantidad}</p>}
@@ -11080,7 +11080,7 @@ function SiguiendoView({ session, onVerPerfil, onVerTienda }) {
               {feed.map((r) => (
                 <div key={`${r._origen}-${r.id}`} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid">
                   <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
-                    {r.imagen_url ? <img src={r.imagen_url} alt={r._titulo} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
+                    {r.imagen_url ? <img loading="lazy" src={r.imagen_url} alt={r._titulo} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
                   </div>
                   <div className="p-2">
                     <p className="text-xs font-semibold line-clamp-2">{r._titulo}</p>
@@ -11528,7 +11528,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
                 {[...cartas.filter((c) => c.en_venta !== false), ...sellado].map((r) => (
                   <div key={r.id} onClick={() => onAbrirDetalle?.(r.id, "mercado_listings")} style={{ background: COLORS.surface, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.surface2}`, cursor: onAbrirDetalle ? "pointer" : "default" }} className="rounded-xl overflow-hidden flex flex-col">
                     <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
-                      {miniaturaListing(r) ? <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
+                      {miniaturaListing(r) ? <img loading="lazy" src={miniaturaUrl(miniaturaListing(r), 400)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={28} color={COLORS.muted} />}
                     </div>
                     <div className="p-2">
                       <div className="flex items-center gap-1 flex-wrap mb-1">
@@ -11562,7 +11562,7 @@ function PerfilPublicoView({ perfilId, session, onVolver, onAbrirChat, onVerTien
                   <div key={c.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl overflow-hidden mb-3 break-inside-avoid">
                     <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-2">
                       {c.imagen_url ? (
-                        <img src={c.imagen_url} alt={c.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                        <img loading="lazy" src={c.imagen_url} alt={c.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                       ) : (
                         <Package size={28} color={COLORS.muted} />
                       )}
@@ -11667,7 +11667,7 @@ function OfertaCard({ o, session, onBorrar }) {
           <div className="flex gap-2 flex-wrap mt-2">
             {o.cartas_ofrecidas.map((c, i) => (
               <div key={i} style={{ background: COLORS.bg, border: `1px solid ${COLORS.surface2}` }} className="rounded-lg p-1.5 flex items-center gap-2">
-                {c.foto_real_url && <img src={c.foto_real_url} alt={c.carta} style={{ width: 36, height: 36, objectFit: "cover" }} className="rounded" />}
+                {c.foto_real_url && <img loading="lazy" src={c.foto_real_url} alt={c.carta} style={{ width: 36, height: 36, objectFit: "cover" }} className="rounded" />}
                 <div className="min-w-0">
                   <p className="text-xs font-medium leading-tight truncate max-w-[140px]">{c.carta}</p>
                   {c.set_nombre && <p style={{ color: COLORS.muted }} className="text-[10px] leading-tight truncate max-w-[140px]">{c.set_nombre}</p>}
@@ -11818,13 +11818,13 @@ function OfertasPanel({ session, listingTabla, listingId, tcg = "pokemon", esMio
                     <CardPickerUniversal tcg={tcg} onSelect={(sel) => actualizarCartaOfrecida(idx, { carta: sel.name, set_nombre: sel.set_nombre, card_api_id: sel.card_api_id, imagen_url: sel.imagen_url, precio_ref_mxn: sel.precio_ref_mxn, precio_ref_fuente: sel.precio_ref_fuente })} />
                     {c.carta && (
                       <div className="flex items-center gap-3">
-                        {c.imagen_url && <img src={c.imagen_url} alt={c.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
+                        {c.imagen_url && <img loading="lazy" src={c.imagen_url} alt={c.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
                         <Badge color={COLORS.azulPalido}>{c.carta}</Badge>
                       </div>
                     )}
                     <div className="flex items-center gap-2 flex-wrap">
                       <SubirFotoManual session={session} label={c.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (obligatoria)"} onSubido={(url) => actualizarCartaOfrecida(idx, { foto_real_url: url })} />
-                      {c.foto_real_url && <img src={c.foto_real_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />}
+                      {c.foto_real_url && <img loading="lazy" src={c.foto_real_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />}
                       {cartasOfrecidas.length > 1 && (
                         <button type="button" onClick={() => quitarCartaOfrecida(idx)} style={{ color: COLORS.muted }} className="text-xs ml-auto">Quitar esta carta</button>
                       )}
@@ -11972,7 +11972,7 @@ function FotoZoomLightbox({ src, alt, onClose }) {
       <button onClick={onClose} style={{ color: "#fff", background: "rgba(255,255,255,0.14)" }} className="absolute top-4 right-4 z-10 rounded-full p-2">
         <X size={22} />
       </button>
-      <img
+      <img loading="lazy"
         src={src} alt={alt || ""}
         onDoubleClick={alternarZoom}
         onMouseDown={onMouseDown}
@@ -12059,7 +12059,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
         <div className="grid gap-3 sm:sticky sm:top-24 self-start">
           <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
             {item.imagen ? (
-              <img src={item.imagen} alt={item.nombre} onClick={() => setFotoZoom({ src: item.imagen, alt: item.nombre })}
+              <img loading="lazy" src={item.imagen} alt={item.nombre} onClick={() => setFotoZoom({ src: item.imagen, alt: item.nombre })}
                 style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", cursor: "zoom-in" }} />
             ) : (
               <Package size={64} color={COLORS.muted} />
@@ -12070,7 +12070,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
               {item.fotoRealFrente && (
                 <div>
                   <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
-                    <img src={item.fotoRealFrente} alt={`${item.nombre} (foto real, frente)`} onClick={() => setFotoZoom({ src: item.fotoRealFrente, alt: `${item.nombre} (foto real, frente)` })}
+                    <img loading="lazy" src={item.fotoRealFrente} alt={`${item.nombre} (foto real, frente)`} onClick={() => setFotoZoom({ src: item.fotoRealFrente, alt: `${item.nombre} (foto real, frente)` })}
                       style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", cursor: "zoom-in" }} />
                   </div>
                   <p style={{ color: COLORS.muted }} className="text-xs text-center mt-1">Foto real (frente) · toca para ampliar</p>
@@ -12079,7 +12079,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
               {item.fotoRealReverso && (
                 <div>
                   <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
-                    <img src={item.fotoRealReverso} alt={`${item.nombre} (foto real, atrás)`} onClick={() => setFotoZoom({ src: item.fotoRealReverso, alt: `${item.nombre} (foto real, atrás)` })}
+                    <img loading="lazy" src={item.fotoRealReverso} alt={`${item.nombre} (foto real, atrás)`} onClick={() => setFotoZoom({ src: item.fotoRealReverso, alt: `${item.nombre} (foto real, atrás)` })}
                       style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", cursor: "zoom-in" }} />
                   </div>
                   <p style={{ color: COLORS.muted }} className="text-xs text-center mt-1">Foto real (atrás) · toca para ampliar</p>
@@ -12313,7 +12313,7 @@ function BuscarCartaModal({ session, onClose, onCreado }) {
                   <CardPickerUniversal tcg={tcg} onSelect={(c) => { setCarta(c.name); setSetNombre(c.set_nombre); setCardApiId(c.card_api_id); setImagenUrl(c.imagen_url); }} />
                   {carta && (
                     <div className="flex items-center gap-3 mt-1">
-                      {imagenUrl && <img src={imagenUrl} alt={carta} style={{ width: 50, height: 70, objectFit: "contain" }} />}
+                      {imagenUrl && <img loading="lazy" src={imagenUrl} alt={carta} style={{ width: 50, height: 70, objectFit: "contain" }} />}
                       <div>
                         <Badge color={COLORS.azulPalido}>{carta}</Badge>
                         <button type="button" onClick={limpiarCarta} style={{ color: COLORS.muted }} className="text-xs mt-1 block">Cambiar</button>
@@ -12373,7 +12373,7 @@ function BusquedasCarrusel({ onAbrir }) {
               style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}`, width: 116 }}
               className="rounded-xl p-2 shrink-0 text-left hover:brightness-110 transition">
               <div style={{ background: COLORS.surface2 }} className="rounded-lg aspect-[3/4] flex items-center justify-center mb-1 overflow-hidden">
-                {b.imagen_url ? <img src={b.imagen_url} alt={b.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Search size={22} color={COLORS.muted} />}
+                {b.imagen_url ? <img loading="lazy" src={b.imagen_url} alt={b.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Search size={22} color={COLORS.muted} />}
               </div>
               <p className="text-xs font-semibold truncate">{b.carta}</p>
               <p style={{ color: COLORS.muted }} className="text-[10px] truncate">{TCG_LABEL[b.tcg] || b.tcg}</p>
@@ -12430,7 +12430,7 @@ function BusquedasView({ session, onAbrirChat, onVerPerfil, onRequireLogin }) {
           return (
             <div key={b.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-3 flex gap-3">
               <div style={{ background: COLORS.surface2, width: 56, height: 78 }} className="rounded-lg flex items-center justify-center overflow-hidden shrink-0">
-                {b.imagen_url ? <img src={b.imagen_url} alt={b.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Search size={22} color={COLORS.muted} />}
+                {b.imagen_url ? <img loading="lazy" src={b.imagen_url} alt={b.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Search size={22} color={COLORS.muted} />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -12528,7 +12528,7 @@ function TorneosView({ session, onRequireLogin }) {
           const interesado = interesados.has(t.id);
           return (
             <div key={t.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-xl p-5">
-              {t.imagen_url && <img src={t.imagen_url} alt="" style={{ maxHeight: 200, objectFit: "cover" }} className="rounded-lg mb-3 w-full" />}
+              {t.imagen_url && <img loading="lazy" src={t.imagen_url} alt="" style={{ maxHeight: 200, objectFit: "cover" }} className="rounded-lg mb-3 w-full" />}
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <AvatarImg url={t.tiendas?.perfiles?.avatar_url} size={22} />
                 <p style={{ color: COLORS.muted }} className="text-xs font-semibold">{t.tiendas?.nombre}</p>
@@ -12790,7 +12790,7 @@ function SorteoDestacadoBanner({ onAbrirSorteo }) {
       style={{ background: `linear-gradient(120deg, ${COLORS.gold}22, ${COLORS.violeta}22)`, border: `1px solid ${COLORS.gold}77` }}
       className="w-full rounded-2xl p-4 sm:p-5 mb-8 flex items-center gap-4 flex-wrap sm:flex-nowrap text-left hover:brightness-110 transition">
       <div style={{ background: COLORS.surface2, width: 88, height: 88 }} className="rounded-xl overflow-hidden shrink-0 flex items-center justify-center">
-        {sorteo.imagen_url ? <img src={sorteo.imagen_url} alt={sorteo.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Gift size={36} color={COLORS.gold} />}
+        {sorteo.imagen_url ? <img loading="lazy" src={sorteo.imagen_url} alt={sorteo.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Gift size={36} color={COLORS.gold} />}
       </div>
       <div className="flex-1 min-w-[180px]">
         <Badge color={COLORS.gold}>🎁 Sorteo activo</Badge>
@@ -12811,7 +12811,7 @@ function SorteoCard({ s, onAbrir }) {
     <button onClick={onAbrir} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${activo ? COLORS.gold + "66" : COLORS.surface2}`, textAlign: "left" }}
       className="rounded-2xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
       <div style={{ background: COLORS.surface2 }} className="aspect-video flex items-center justify-center">
-        {s.imagen_url ? <img src={s.imagen_url} alt={s.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Gift size={32} color={COLORS.muted} />}
+        {s.imagen_url ? <img loading="lazy" src={s.imagen_url} alt={s.titulo} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Gift size={32} color={COLORS.muted} />}
       </div>
       <div className="p-3">
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -13023,7 +13023,7 @@ function SorteoDetalleView({ sorteoId, session, perfil, onVolver, onRequireLogin
           ancho de pantalla. El texto vive en su propia tarjeta con fondo
           sólido debajo, nunca encima de la imagen. */}
       <div style={{ background: COLORS.surface2, height: 240 }} className="rounded-2xl overflow-hidden flex items-center justify-center mb-6">
-        {sorteo.imagen_url ? <img src={sorteo.imagen_url} alt={sorteo.titulo} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : <Gift size={48} color={COLORS.muted} />}
+        {sorteo.imagen_url ? <img loading="lazy" src={sorteo.imagen_url} alt={sorteo.titulo} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : <Gift size={48} color={COLORS.muted} />}
       </div>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="rounded-2xl p-5">
           <div className="flex items-center gap-2 flex-wrap mb-2">
@@ -13190,7 +13190,7 @@ function generarCodigoCampana() {
 // sin haber visto el video, tumbando el propósito de "exclusivo por
 // campaña". Usa una API pública de QR (sin llave, una sola petición GET)
 // en vez de agregar una librería nueva -- la app ya confía en imágenes de
-// terceros vía <img src> en todos lados (pokemontcg.io, Scryfall,
+// terceros vía <img loading="lazy" src> en todos lados (pokemontcg.io, Scryfall,
 // TCGdex...) y hoy no tiene ninguna dependencia de generar QR. El botón
 // de copiar el link YA es el respaldo si la imagen del QR no carga.
 function CampanaLinkBox({ sorteoId, codigo }) {
@@ -13202,7 +13202,7 @@ function CampanaLinkBox({ sorteoId, codigo }) {
   };
   return (
     <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.violeta}55` }} className="rounded-xl p-4 grid gap-2 sm:grid-cols-[auto_1fr] items-start">
-      <img src={qrUrl} alt="" width={140} height={140} className="rounded-lg" style={{ background: "#fff" }}
+      <img loading="lazy" src={qrUrl} alt="" width={140} height={140} className="rounded-lg" style={{ background: "#fff" }}
         onError={(e) => { e.target.style.display = "none"; }} />
       <div className="grid gap-2">
         <p style={{ color: COLORS.violeta }} className="text-xs font-semibold uppercase">🔒 Link exclusivo de campaña</p>
@@ -13306,7 +13306,7 @@ function CrearSorteoForm({ session, tiendaId, pendiente, plantilla, onCreado }) 
           <input type="file" accept="image/*" className="hidden" disabled={subiendoImagen}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) subirImagen(f); e.target.value = ""; }} />
         </label>
-        {nuevo.imagen_url && <img src={nuevo.imagen_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />}
+        {nuevo.imagen_url && <img loading="lazy" src={nuevo.imagen_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} className="rounded" />}
       </div>
       <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: COLORS.violeta }}>
         <input type="checkbox" checked={nuevo.exclusivo} onChange={(e) => alternarExclusivo(e.target.checked)} />
@@ -13445,7 +13445,7 @@ function SubastaCard({ s, onAbrir }) {
       className="rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
       <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
         {(s.foto_real_url || s.imagen_url) ? (
-          <img src={s.foto_real_url || s.imagen_url} alt={s.producto} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+          <img loading="lazy" src={s.foto_real_url || s.imagen_url} alt={s.producto} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
         ) : <Gavel size={28} color={COLORS.muted} />}
       </div>
       <div className="p-3">
@@ -13539,7 +13539,7 @@ function CrearSubastaForm({ session, onCreado }) {
             onSelect={(c) => setNueva((n) => ({ ...n, producto: c.name || c.producto, set_nombre: c.set_nombre, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn }))} />
           {nueva.card_api_id && (
             <div className="flex items-center gap-3 mt-2">
-              {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+              {nueva.imagen_url && <img loading="lazy" src={nueva.imagen_url} alt={nueva.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
               <Badge color={COLORS.azulPalido}>{nueva.producto}</Badge>
             </div>
           )}
@@ -13572,11 +13572,11 @@ function CrearSubastaForm({ session, onCreado }) {
       )}
       <div className="flex items-center gap-2 flex-wrap">
         <SubirFotoManual session={session} label={nueva.foto_real_url ? "✅ Foto de frente subida" : "📷 Foto de frente (obligatoria)"} onSubido={(url) => setNueva((n) => ({ ...n, foto_real_url: url }))} />
-        {nueva.foto_real_url && <img src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+        {nueva.foto_real_url && <img loading="lazy" src={nueva.foto_real_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
         {nueva.tipo === "carta" && (
           <>
             <SubirFotoManual session={session} label={nueva.foto_real_reverso_url ? "✅ Foto de atrás subida" : "📷 Foto de atrás (obligatoria)"} onSubido={(url) => setNueva((n) => ({ ...n, foto_real_reverso_url: url }))} />
-            {nueva.foto_real_reverso_url && <img src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
+            {nueva.foto_real_reverso_url && <img loading="lazy" src={nueva.foto_real_reverso_url} alt="" style={{ width: 56, height: 56, objectFit: "cover" }} className="rounded" />}
           </>
         )}
       </div>
@@ -13716,12 +13716,12 @@ function SubastaDetalleView({ subastaId, session, onAbrirChat, onVolver, onRequi
         <div className="grid gap-3">
           <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
             {(subasta.foto_real_url || subasta.imagen_url) ? (
-              <img src={subasta.foto_real_url || subasta.imagen_url} alt={subasta.producto} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+              <img loading="lazy" src={subasta.foto_real_url || subasta.imagen_url} alt={subasta.producto} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
             ) : <Gavel size={48} color={COLORS.muted} />}
           </div>
           {subasta.foto_real_reverso_url && (
             <div style={{ background: COLORS.surface2 }} className="rounded-2xl aspect-[3/4] flex items-center justify-center p-4">
-              <img src={subasta.foto_real_reverso_url} alt={`${subasta.producto} (atrás)`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+              <img loading="lazy" src={subasta.foto_real_reverso_url} alt={`${subasta.producto} (atrás)`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
             </div>
           )}
         </div>
@@ -13852,7 +13852,7 @@ function BotonGenerarImagenWishlist({ perfil, cartas, linkWishlist }) {
         </button>
       ) : (
         <>
-          <img src={preview.url} alt="Vista previa de tu wishlist" style={{ maxWidth: "100%", borderRadius: 12 }} />
+          <img loading="lazy" src={preview.url} alt="Vista previa de tu wishlist" style={{ maxWidth: "100%", borderRadius: 12 }} />
           <div className="flex gap-2 flex-wrap">
             <a href={preview.url} download={`wishlist-${(perfil?.slug || "encuentra-cartas")}.png`}
               style={{ background: COLORS.gold, color: COLORS.textoOscuro }} className="rounded-lg px-4 py-2 text-sm font-semibold">
@@ -13989,7 +13989,7 @@ function MiWishlistView({ session, perfil, onIrAPlanes, onVerWishlistPublica }) 
                     className="rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid">
                     <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
                       {c.imagen_url ? (
-                        <img src={c.imagen_url} alt={c.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                        <img loading="lazy" src={c.imagen_url} alt={c.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                       ) : (
                         <Package size={40} color={COLORS.muted} />
                       )}
@@ -14137,7 +14137,7 @@ function AlertasPrecioView({ session, perfil, onIrAPlanes }) {
           <CardPickerUniversal tcg={nueva.tcg} soloSellado={tipo === "sellado"} onSelect={(c) => setNueva({ ...nueva, carta: c.name, card_api_id: c.card_api_id, imagen_url: c.imagen_url, precio_ref_mxn: c.precio_ref_mxn, precio_ref_fuente: c.precio_ref_fuente, precio_max: nueva.precio_max || (c.precio_ref_mxn ? String(c.precio_ref_mxn) : "") })} />
           {nueva.card_api_id && (
             <div className="flex items-center gap-3 mt-2">
-              {nueva.imagen_url && <img src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+              {nueva.imagen_url && <img loading="lazy" src={nueva.imagen_url} alt={nueva.carta} style={{ width: 60, height: 84, objectFit: "contain" }} />}
               <div>
                 <Badge color={COLORS.azulPalido}>{nueva.carta}</Badge>
                 {nueva.precio_ref_mxn && <p style={{ color: COLORS.azulClaro }} className="text-xs mt-1">Precio de referencia{nueva.precio_ref_fuente ? ` (${nueva.precio_ref_fuente})` : ""}: ~${nueva.precio_ref_mxn.toLocaleString("es-MX")} MXN</p>}
@@ -14161,7 +14161,7 @@ function AlertasPrecioView({ session, perfil, onIrAPlanes }) {
           {alertas.length === 0 && <p style={{ color: COLORS.muted }} className="text-sm">Aún no tienes alertas configuradas.</p>}
           {alertas.map((a) => (
             <div key={a.id} style={{ background: COLORS.surface, border: `1px solid ${a.activa ? COLORS.azulMedio + "66" : COLORS.surface2}` }} className="rounded-lg p-3 flex items-center gap-3 flex-wrap">
-              {a.imagen_url && <img src={a.imagen_url} alt={a.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
+              {a.imagen_url && <img loading="lazy" src={a.imagen_url} alt={a.carta} style={{ width: 44, height: 62, objectFit: "contain" }} />}
               <div className="flex-1 min-w-[140px]">
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-sm">{a.carta}</p>
@@ -14522,7 +14522,7 @@ function MiCuentaView({ session, perfil, onGuardado, onVerMiPerfil }) {
       {tab === "datos" && (
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }} className="w-full max-w-md rounded-2xl p-6">
         <div className="flex items-center gap-3 mb-3">
-          <img
+          <img loading="lazy"
             src={avatarPreview || "/branding/logo-icon.png"}
             alt=""
             style={{ width: 64, height: 64, borderRadius: "9999px", objectFit: "cover", border: `1px solid ${COLORS.azulMedio}` }}
@@ -14774,7 +14774,7 @@ function EmblemaNotificacionImg({ src, size }) {
   const alto = Math.round(size * 1.5);
   return (
     <span style={{ width: alto, height: alto, borderRadius: "50%", background: "#F1E4D3", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-      <img src={src} alt="" width={size} height={size} style={{ objectFit: "contain" }} />
+      <img loading="lazy" src={src} alt="" width={size} height={size} style={{ objectFit: "contain" }} />
     </span>
   );
 }
@@ -15397,7 +15397,7 @@ function CarritoView({ carrito, onQuitar, onRequireLogin, onEnviado, session }) 
               {g.items.map((it) => (
                 <div key={`${it.tabla}-${it.id}`} className="flex items-center justify-between gap-2 text-sm">
                   <div className="flex items-center gap-2 min-w-0">
-                    {it.imagen_url && <img src={it.imagen_url} alt="" style={{ width: 32, height: 44, objectFit: "contain" }} />}
+                    {it.imagen_url && <img loading="lazy" src={it.imagen_url} alt="" style={{ width: 32, height: 44, objectFit: "contain" }} />}
                     <p className="truncate">{it.nombre}</p>
                   </div>
                   <div className="flex items-center gap-2 whitespace-nowrap">
@@ -15681,7 +15681,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
               <div key={s.id} style={{ background: COLORS.surface, border: `1px solid ${pct === 100 ? COLORS.gold + "88" : COLORS.surface2}` }} className="rounded-xl p-4">
                 <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
                   <div className="flex items-center gap-2">
-                    {s.imagen && <img src={s.imagen} alt="" style={{ maxHeight: 28, maxWidth: 70, objectFit: "contain" }} />}
+                    {s.imagen && <img loading="lazy" src={s.imagen} alt="" style={{ maxHeight: 28, maxWidth: 70, objectFit: "contain" }} />}
                     <p className="font-semibold text-sm">{s.nombre}</p>
                   </div>
                   <button onClick={() => abrirSetDesdeMasterSets(s)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azul}55` }} className="text-xs px-3 py-1.5 rounded-lg">Ver cartas</button>
@@ -15725,7 +15725,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
                   <button key={g.era} onClick={() => setEraSel(g.era)}
                     style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
                     className="rounded-xl p-4 text-left hover:brightness-125 flex items-center gap-3">
-                    {g.imagen && <img src={g.imagen} alt="" style={{ maxHeight: 36, maxWidth: 90, objectFit: "contain" }} />}
+                    {g.imagen && <img loading="lazy" src={g.imagen} alt="" style={{ maxHeight: 36, maxWidth: 90, objectFit: "contain" }} />}
                     <div>
                       <p className="font-semibold">{g.era}</p>
                       <p style={{ color: COLORS.muted }} className="text-xs">{g.sets.length} set{g.sets.length === 1 ? "" : "s"}</p>
@@ -15747,7 +15747,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
                   <button key={s.id} onClick={() => abrirSet(s)}
                     style={{ background: COLORS.surface, border: `1px solid ${COLORS.surface2}` }}
                     className="rounded-xl p-4 text-left hover:brightness-125 flex items-center gap-3">
-                    {s.imagen && <img src={s.imagen} alt="" style={{ maxHeight: 32, maxWidth: 80, objectFit: "contain" }} />}
+                    {s.imagen && <img loading="lazy" src={s.imagen} alt="" style={{ maxHeight: 32, maxWidth: 80, objectFit: "contain" }} />}
                     <div>
                       <p className="font-semibold text-sm">{s.nombre}</p>
                       {s.cardCount && <p style={{ color: COLORS.muted }} className="text-xs">{s.cardCount} cartas</p>}
@@ -15799,7 +15799,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
               return (
                 <div key={c.id} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estado === "tengo" ? "#2E8B5766" : estado === "quiero" ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}` }} className="rounded-xl overflow-hidden flex flex-col">
                   <div style={{ background: COLORS.surface2 }} className="aspect-[3/4] flex items-center justify-center p-2">
-                    {c.image ? <img src={c.image} alt={c.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={32} color={COLORS.muted} />}
+                    {c.image ? <img loading="lazy" src={c.image} alt={c.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Package size={32} color={COLORS.muted} />}
                   </div>
                   <div className="p-2 flex flex-col gap-1">
                     <p className="text-xs font-semibold leading-snug line-clamp-2">{c.name}{c.localId ? ` (${c.localId})` : ""}</p>
@@ -16738,7 +16738,7 @@ export default function EncuentraCartas() {
           <div className="flex items-center gap-2">
             <button onClick={() => setView("search")} className="flex items-center gap-2">
               {!logoError ? (
-                <img
+                <img loading="lazy"
                   src={(localStorage.getItem(TEMA_MODO_KEY) || "noche") === "dia" ? "/branding/logo.png" : "/branding/logo-noche.png"}
                   alt="Encuentra Cartas" onError={() => setLogoError(true)} style={{ height: 40, width: "auto" }} />
               ) : (
@@ -17065,7 +17065,7 @@ export default function EncuentraCartas() {
                     <div key={`${r._esTienda ? "t" : "m"}-${r.id}`} onClick={() => abrirDetalle(r.id, r._tabla)} style={{ background: `${COLORS.surface2}99`, border: `1px solid ${estaDestacado(r) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl overflow-hidden flex flex-col mb-4 break-inside-avoid transition-transform duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
                       <div style={{ background: COLORS.surface2 }} className="aspect-[4/5] flex items-center justify-center p-3">
                         {miniaturaListing(r) ? (
-                          <img src={miniaturaListing(r)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                          <img loading="lazy" src={miniaturaUrl(miniaturaListing(r), 400)} alt={r.carta} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                         ) : (
                           <Package size={40} color={COLORS.muted} />
                         )}
@@ -17193,7 +17193,7 @@ export default function EncuentraCartas() {
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
-                    {miniaturaListing(r) && <img src={miniaturaListing(r)} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                    {miniaturaListing(r) && <img loading="lazy" src={miniaturaUrl(miniaturaListing(r), 160)} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
                       <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><p className="font-semibold text-lg">{r.carta}</p><IdiomaBadge idioma={r.idioma} /><EstadoCartaBadge condicion={r.condicion} /><GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} /><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <p style={{ color: COLORS.muted }} className="text-sm">{r.set_nombre}</p>
@@ -17229,7 +17229,7 @@ export default function EncuentraCartas() {
                 <div key={r.id} onClick={() => abrirDetalle(r.id, "mercado_listings")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
-                    {miniaturaListing(r) && <img src={miniaturaListing(r)} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                    {miniaturaListing(r) && <img loading="lazy" src={miniaturaUrl(miniaturaListing(r), 160)} alt={r.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
                       <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulClaro}>Vendedor individual</Badge>{r.tipo === "sellado" && <Badge color={COLORS.azulMedio}>Sellado</Badge>}{r.tipo === "accesorio" && <Badge color={COLORS.gold}>Accesorio</Badge>}<p className="font-semibold text-lg">{r.carta}</p>{r.tipo === "carta" && <IdiomaBadge idioma={r.idioma} />}{r.tipo === "carta" && <EstadoCartaBadge condicion={r.condicion} />}{r.tipo === "carta" && <GradeoBadge gradeada={r.gradeada} grado_empresa={r.grado_empresa} grado_empresa_otro={r.grado_empresa_otro} grado_calificacion={r.grado_calificacion} />}<BuzonBadge tienda={r.buzon_tienda} /><PlanBadge perfil={r.perfiles} /><BoostBadge item={r} /></div>
                       {r.tipo === "accesorio" ? (
@@ -17269,7 +17269,7 @@ export default function EncuentraCartas() {
                 <div key={`sel-${r.id}`} onClick={() => abrirDetalle(r.id, "sellado_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${COLORS.azulClaro}29`, cursor: "pointer" }}
                   className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap transition-transform duration-200 hover:translate-x-1">
                   <div className="flex items-center gap-3">
-                    {r.imagen_url && <img src={r.imagen_url} alt={r.producto} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                    {r.imagen_url && <img loading="lazy" src={r.imagen_url} alt={r.producto} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                     <div>
                       <div className="flex gap-2 items-center mb-1 flex-wrap"><Badge color={COLORS.azulPalido}>Tienda</Badge><Badge color={COLORS.azulMedio}>Sellado</Badge><p className="font-semibold text-lg">{r.producto}</p><PlanBadge perfil={r.tiendas?.perfiles} /><BoostBadge item={r} /></div>
                       <div className="flex items-center gap-2 mt-1">
@@ -17744,7 +17744,7 @@ export default function EncuentraCartas() {
                   {storeInventory.filter((i) => i.en_venta !== false).filter(pasaFiltroTcg).map((item) => (
                     <div key={item.id} onClick={() => abrirDetalle(item.id, "inventario_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
                       <div className="flex items-center gap-3">
-                        {miniaturaListing(item) && <img src={miniaturaListing(item)} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
+                        {miniaturaListing(item) && <img loading="lazy" src={miniaturaUrl(miniaturaListing(item), 160)} alt={item.carta} style={{ width: 72, height: 100, objectFit: "contain" }} />}
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium">{item.carta}</p>
@@ -17785,7 +17785,7 @@ export default function EncuentraCartas() {
                   {storeSellado.filter(pasaFiltroTcg).map((item) => (
                     <div key={item.id} onClick={() => abrirDetalle(item.id, "sellado_tienda")} style={{ background: `${COLORS.surface2}8c`, border: `1px solid ${estaDestacado(item) ? COLORS.azulPalido + "66" : COLORS.azulClaro + "29"}`, cursor: "pointer" }} className="rounded-2xl p-4 flex justify-between items-center flex-wrap gap-2 transition-transform duration-200 hover:translate-x-1">
                       <div className="flex items-center gap-3">
-                        {item.imagen_url && <img src={item.imagen_url} alt={item.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
+                        {item.imagen_url && <img loading="lazy" src={item.imagen_url} alt={item.producto} style={{ width: 60, height: 84, objectFit: "contain" }} />}
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-medium">{item.producto}</p>
                           <BoostBadge item={item} />

@@ -10,6 +10,8 @@
 // arma la URL final a partir de un origen y una colección por separado
 // (nunca una ruta libre que mande el cliente) para no abrir un proxy
 // genérico hacia cualquier URL.
+import sharp from "sharp";
+
 const HOSTNAMES_BLOQUEADOS = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/i;
 
 function origenValido(origin) {
@@ -95,9 +97,19 @@ const HOSTS_IMAGENES_PERMITIDOS = new Set([
   "raw.githubusercontent.com", "lh3.googleusercontent.com",
 ]);
 const TAMANO_MAX_IMAGEN_BYTES = 3 * 1024 * 1024;
+// Miniatura opcional (?w=): las tarjetas de Mercado/tienda solo muestran la
+// imagen a tamaño de miniatura, pero sin esto se descargaba el archivo
+// original completo (a veces cientos de KB) por cada una -- ver comentarios
+// de Eduardo Vivar sobre >100MB/788 requests solo al entrar al sitio
+// (sección 166 de SUSCRIPCIONES.md). Sin `w`, el comportamiento es EXACTO
+// al de antes (passthrough del archivo original) -- lo sigue necesitando
+// tal cual la generación de imagen de Wishlist/Tablón de venta en canvas
+// (imagenCartasCanvas.js), que no manda `w`.
+const ANCHO_MINIATURA_MAX = 800;
+const CALIDAD_MINIATURA_DEFAULT = 75;
 
 async function imgProxy(req, res) {
-  const { url } = req.query;
+  const { url, w, q } = req.query;
   let parsed;
   try {
     parsed = new URL(String(url || ""));
@@ -127,6 +139,23 @@ async function imgProxy(req, res) {
     if (buffer.length > TAMANO_MAX_IMAGEN_BYTES) {
       return res.status(413).json({ error: "Imagen demasiado grande." });
     }
+
+    const anchoPedido = Math.min(Math.max(Number(w) || 0, 0), ANCHO_MINIATURA_MAX);
+    if (anchoPedido > 0 && !contentType.includes("svg")) {
+      try {
+        const calidad = Math.min(Math.max(Number(q) || CALIDAD_MINIATURA_DEFAULT, 40), 95);
+        const miniatura = await sharp(buffer)
+          .resize({ width: anchoPedido, withoutEnlargement: true })
+          .webp({ quality: calidad })
+          .toBuffer();
+        res.setHeader("Content-Type", "image/webp");
+        res.setHeader("Cache-Control", "s-maxage=86400, stale-while-revalidate=604800");
+        return res.status(200).send(miniatura);
+      } catch {
+        // Formato que sharp no pudo procesar (raro) -- seguimos al passthrough de abajo.
+      }
+    }
+
     res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", "s-maxage=86400, stale-while-revalidate=604800");
     res.status(200).send(buffer);

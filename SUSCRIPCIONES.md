@@ -5801,8 +5801,74 @@ pasó por el ciclo de rama/PR de este repo (es un `drop function` sobre
 una función zombie que nadie debía estar usando ya, de bajo riesgo),
 pero el archivo `.sql` sí se commiteó para que quede documentado.
 
+## 166. Lazy loading + miniaturas reales (menos datos al entrar al sitio)
+
+Un conocido (Eduardo Vivar) mandó feedback no solicitado por Messenger
+señalando dos cosas al inspeccionar el sitio con las herramientas de
+desarrollador: (1) que la contraseña "no viaja encriptada" al ver el
+cuerpo de la petición de registro en texto plano, y (2) que el sitio
+descarga más de 100MB / 788 requests solo al entrar, por falta de
+lazy loading y de miniaturas redimensionadas.
+
+**Punto 1 (contraseña) -- se investigó y es una falsa alarma, no se
+tocó nada.** `authSignUp`/`authSignIn` (`src/lib/supabase.js`) postean
+a `https://nulypgaaekexlbxbxdwq.supabase.co/auth/v1/...` -- con TLS,
+la contraseña sí viaja cifrada en tránsito. Ver el cuerpo de la
+petición en texto plano en las DevTools del propio navegador es
+normal en cualquier sitio con HTTPS (el cifrado pasa "por debajo",
+en el transporte -- lo que ves en tus propias DevTools es tu propia
+petición antes de salir). Se revisó también que ni `authSignUp` ni
+`authSignIn` mandan la contraseña a `reportarError` ni a ningún otro
+log -- no hay fuga real en ningún lado.
+
+**Punto 2 (peso de imágenes) -- sí era real, corregido:**
+
+- **Lazy loading**: de 105 etiquetas `<img>` en `App.jsx`, solo 5 ya
+  tenían `loading="lazy"` (las del buscador de catálogo -- `CardPicker`
+  y similares, que ya mostraban resultados grandes). Se le agregó
+  `loading="lazy"` a las 100 restantes con un script que ubica cada
+  `<img>` (respetando `{{...}}`/strings anidados, para no cortar mal
+  un tag con varias líneas) y solo inserta el atributo si no lo tenía
+  ya. Verificado con `npm run build` y revisando el diff a mano.
+- **Miniaturas reales**: el proxy de imágenes que ya existía
+  (`api/tcgcsv.js`, `fuente=imgproxy`) solo reenviaba el archivo
+  original tal cual (útil para CORS, pero no ahorraba nada de peso).
+  Se le agregó un parámetro opcional `?w=` que, cuando viene, usa
+  `sharp` (dependencia nueva) para redimensionar y convertir a webp
+  antes de responder -- sin `?w=`, el comportamiento es EXACTAMENTE
+  el de antes (passthrough del archivo original), así que la
+  generación de imagen de Wishlist/Tablón de venta en `<canvas>`
+  (`imagenCartasCanvas.js`, que nunca manda `?w=`) sigue recibiendo
+  el archivo completo sin cambios.
+- Se agregó `miniaturaUrl(url, ancho)` en `theme.js` (junto a
+  `miniaturaListing`, que ya elegía cuál campo de imagen mostrar) y se
+  envolvieron con ella las 10 etiquetas `<img src={miniaturaListing(...)}
+  >` que renderizan las grillas de Mercado, tiendas y sellado
+  (probablemente la mayor parte de las 788 peticiones reportadas) --
+  160px de ancho para las miniaturas de tamaño fijo pequeño (44-72px
+  en pantalla) y 400px para las tarjetas de grilla a ancho variable.
+  **A propósito no se tocó** el uso de `miniaturaListing(r)` dentro de
+  `cargarDetalleListing` (la vista de detalle de una publicación,
+  que muestra la imagen más grande) ni el que va al carrito
+  (`agregarAlCarrito`) -- para no arriesgar que se vean borrosas sin
+  poder confirmar antes su tamaño real en pantalla; queda pendiente
+  revisarlos aparte si se quiere apretar más.
+
+Verificado: `npm run build`; una prueba local del handler de
+`imgProxy` (con un `fetch` simulado, sin red real -- este sandbox no
+tiene salida a los hosts de imágenes reales) confirmó que sin `?w=`
+regresa el archivo original sin tocar, que con `?w=` sí redimensiona
+y convierte a webp, que un ancho fuera de rango se recorta a 800px en
+vez de tronar, y que un host no permitido se sigue rechazando igual
+que antes. **No se pudo medir el ahorro real en MB/requests contra el
+sitio en producción** desde este sandbox -- recomendado confirmarlo
+con las DevTools reales después de desplegar (Network tab, con caché
+desactivado, comparando contra los 788 requests / 112MB reportados).
+
 ## Qué falta / próximos pasos posibles
 
+- Falta confirmar en producción, con DevTools reales, cuánto bajó el peso/requests de la sección 166 -- no se pudo medir desde este sandbox.
+- Revisar si conviene aplicar `miniaturaUrl` también a la vista de detalle de una publicación y al carrito (ver sección 166) -- se dejaron sin tocar por prudencia, no porque no ayudarían.
 - Agregar Lorcana y One Piece al boletín el día que haya una fuente de precio real integrada para cada uno.
 - Dejar que el admin también programe (en vez de publicar de inmediato) un anuncio ya aprobado de una tienda.
 - Permitir editar un torneo ya publicado (hoy solo se puede borrar y crear uno nuevo) y adjuntarle una imagen.
