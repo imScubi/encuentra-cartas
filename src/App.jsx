@@ -1407,6 +1407,39 @@ function ConfirmarCorreoModal({ tokenHash, tipo, onConfirmado, onCerrar }) {
   );
 }
 
+// Aviso del regalo de bienvenida (1 día del plan tope de tu tipo de cuenta,
+// ver perfiles_otorgar_regalo_bienvenida en la migración 082) -- a
+// propósito le dice explícitamente hasta cuándo dura y que después vuelve
+// a Cuarzo, para que nadie se lleve la sorpresa de que "se le quitó algo".
+function RegaloBienvenidaModal({ plan, plan_vence, onCerrar, onVerPlanes }) {
+  const info = PLAN_INFO[plan];
+  if (!info) return null;
+  const vence = new Date(plan_vence).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  return (
+    <div style={{ background: "#00000099" }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div style={{ background: COLORS.surface, border: `1px solid ${info.color}66`, boxShadow: `0 0 40px ${info.color}33` }} className="w-full max-w-md rounded-2xl p-6 text-center">
+        <div className="text-4xl mb-2">🎁</div>
+        <h2 style={{ fontFamily: "'Baloo 2', sans-serif" }} className="text-xl font-bold mb-1">¡Te regalamos {info.emoji} {info.nombre} por un día!</h2>
+        <p style={{ color: COLORS.muted }} className="text-sm mb-4">
+          Para que pruebes todo lo que incluye, activamos {info.nombre} en tu cuenta nueva hasta el <strong style={{ color: COLORS.text }}>{vence}</strong>. Después, tu cuenta vuelve a Cuarzo (gratis) a menos que te suscribas.
+        </p>
+        <div className="flex flex-col gap-2">
+          <button onClick={onCerrar}
+            style={{ background: info.color, color: COLORS.textoOscuro }}
+            className="rounded-lg py-2 px-6 font-semibold">
+            ¡A explorar!
+          </button>
+          {onVerPlanes && (
+            <button onClick={() => { onCerrar(); onVerPlanes(); }} style={{ color: COLORS.muted }} className="text-xs">
+              Ver planes y precios
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SubirFotoManual({ session, onSubido, label, onEstadoCambia }) {
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState(null);
@@ -15856,6 +15889,7 @@ export default function EncuentraCartas() {
   const [perfilChecked, setPerfilChecked] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [confirmarInfo, setConfirmarInfo] = useState(null); // {tokenHash, tipo} del link "Confirma tu cuenta"
+  const [regaloBienvenida, setRegaloBienvenida] = useState(null); // {plan, plan_vence} si se le acaba de otorgar el regalo de bienvenida
   const [logoError, setLogoError] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -16040,6 +16074,19 @@ export default function EncuentraCartas() {
   // en sessionStorage -- ambos best-effort: un sorteo/código que ya no
   // existe no debe romper el registro de la cuenta nueva.
   const procesarNuevoRegistro = (s) => {
+    // Regalo de bienvenida: 1 día del plan tope de su tipo de cuenta
+    // (Diamante individual / Aurora tienda) -- lo decide y aplica
+    // perfiles_otorgar_regalo_bienvenida() del lado del servidor (ver
+    // migración 082), esto solo dispara la llamada y muestra el aviso.
+    // Best-effort: si falla (perfil aún no visible por replicación, etc.)
+    // no debe romper el registro -- el usuario simplemente no ve el aviso.
+    sbWrite("POST", "rpc/perfiles_otorgar_regalo_bienvenida", {}, s)
+      .then((filas) => {
+        const fila = Array.isArray(filas) ? filas[0] : filas;
+        if (fila?.plan) { setRegaloBienvenida(fila); cargarOCrearPerfil(s); }
+      })
+      .catch(() => {});
+
     let veniaDeSorteo = false;
     try {
       const pendienteRef = JSON.parse(sessionStorage.getItem("ec_referido_pendiente") || "null");
@@ -16816,6 +16863,10 @@ export default function EncuentraCartas() {
       )}
       {session && perfilChecked && !perfil && (
         <CompletarPerfilOAuthModal session={session} onCreado={(p) => { setPerfil(p); procesarNuevoRegistro(session); }} onCancelar={handleLogout} />
+      )}
+      {regaloBienvenida && (
+        <RegaloBienvenidaModal plan={regaloBienvenida.plan} plan_vence={regaloBienvenida.plan_vence}
+          onCerrar={() => setRegaloBienvenida(null)} onVerPlanes={() => setView("planes")} />
       )}
       {chatContext && session && (
         <ChatModal
