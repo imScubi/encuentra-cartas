@@ -197,31 +197,37 @@ export const PLAN_INFO = {
       "Publica hasta 50 cartas/productos activos", "Insignia de perfil verificado", "Enlace directo a Instagram (Google Maps si eres tienda, WhatsApp y Facebook si eres cuenta individual)",
       "Personaliza tu perfil público: biografía, color de acento y el orden de tus secciones",
       "Filtra tiendas por zona y encuentra la más cercana con tu ubicación",
-      "Organiza subastas de tus cartas/productos",
       "Competitivo: importa mazos reales de torneos de Pokémon TCG (vía Limitless TCG), marca qué cartas ya tienes y encuentra quién vende las que faltan",
       "Wishlist compartible: arma tu lista de cartas deseadas en una carpeta visual, comparte el link o descarga una imagen para mandarla directo",
-      "Colección/Portafolio: lleva el control de las cartas que ya tienes con cantidad y valor de referencia, e intercambia cartas registrando ambos lados",
     ],
-    limiteCartas: 50, verificado: true, redesExtra: true, wishlistPremium: false, wishlistCompartible: true, coleccionPersonal: true, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false, competitivo: true, subastas: true, sorteos: false, modoEvento: false,
+    // coleccionPersonal y subastas se subieron de aquí (ver Amatista/Diamante
+    // más abajo) -- Zafiro se queda con lo esencial para vender/verse
+    // confiable, sin apilar de entrada las funciones más vistosas.
+    limiteCartas: 50, verificado: true, redesExtra: true, wishlistPremium: false, wishlistCompartible: true, coleccionPersonal: false, importadorMasivo: false, soloTienda: false, carpetas: false, ubicacion: true, mazoBuilder: false, competitivo: true, subastas: false, sorteos: false, modoEvento: false,
   },
   ultraball: {
     nombre: "Amatista", emoji: "🟣", precio: 89, precioAnual: 899, color: COLORS.violeta,
     resumen: "Todo Zafiro + Alertas de precio con push",
     beneficios: [
-      "Todo lo de Zafiro", "Publicaciones ilimitadas", "Alertas de precio con notificación push", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente",
+      "Todo lo de Zafiro", "Publicaciones ilimitadas", "Alertas de precio con notificación push", "Organiza subastas de tus cartas/productos", "Carpetas: sube fotos de tu álbum y detecta las cartas automáticamente",
       "Cambia los colores de la página según tipos de Pokémon (agua, fuego, psíquico, etc.)",
       "Deck Builder visual: arma varios mazos con selector de cartas, cantidad, nombre y etiquetas",
       "Catálogo de sets: marca qué cartas ya tienes y sigue tu progreso por set (Master Sets)",
       "1 Boost gratis cada mes (destaca una publicación 3 días)",
-      "Modo Evento: lleva el control de tus ventas, costos y gastos en vivo cuando vendes en un evento presencial, con reporte en PDF al final",
     ],
-    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, wishlistCompartible: true, coleccionPersonal: true, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true, competitivo: true, boostsGratisMes: 1, subastas: true, sorteos: false, modoEvento: true,
+    // coleccionPersonal y modoEvento se subieron a Diamante (ver más abajo) --
+    // eran las dos funciones más grandes que hacían que Diamante se sintiera
+    // vacío comparado con Amatista.
+    limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, wishlistCompartible: true, coleccionPersonal: false, importadorMasivo: false, soloTienda: false, carpetas: true, ubicacion: true, mazoBuilder: true, competitivo: true, boostsGratisMes: 1, subastas: true, sorteos: false, modoEvento: false,
   },
   masterball: {
     nombre: "Diamante", emoji: "🟡", precio: 149, precioAnual: 1499, color: COLORS.azulPalido,
-    resumen: "Todos los beneficios, inventario ilimitado",
+    resumen: "Todo Amatista + Colección/Portafolio y Modo Evento",
     beneficios: [
-      "Todo lo de Amatista", "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante",
+      "Todo lo de Amatista",
+      "Colección/Portafolio: lleva el control de las cartas que ya tienes con cantidad y valor de referencia, e intercambia cartas registrando ambos lados",
+      "Modo Evento: lleva el control de tus ventas, costos y gastos en vivo cuando vendes en un evento presencial, con reporte en PDF al final",
+      "Decoración holográfica adicional en tu perfil", "Emblema con la fecha desde la que eres Diamante",
       "2 Boosts gratis cada mes", "Si eres tienda: panel de Mis Estadísticas (ventas, contactos y seguidores, con gráfica de crecimiento)",
     ],
     limiteCartas: Infinity, verificado: true, redesExtra: true, wishlistPremium: true, wishlistCompartible: true, coleccionPersonal: true, importadorMasivo: false, soloTienda: false, carpetas: true, diamante: true, ubicacion: true, mazoBuilder: true, competitivo: true, boostsGratisMes: 2, subastas: true, sorteos: false, modoEvento: true,
