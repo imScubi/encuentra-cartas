@@ -105,18 +105,23 @@ export const IDIOMA_OPCIONES = [
 ];
 export const IDIOMA_LABEL = { EN: "Inglés", ES: "Español", JP: "Japonés" };
 
-// ---- Zona: los 51 municipios de Nuevo León, en vez de texto libre -- así
-// "San Pedro" y "San pedro garza garcia" ya no son zonas distintas para el
-// buscador/filtro, y tiendas + publicaciones usan siempre el mismo catálogo ----
-export const MUNICIPIOS_NL = [
-  "Abasolo", "Agualeguas", "Los Aldamas", "Allende", "Anáhuac", "Apodaca", "Aramberri", "Bustamante",
-  "Cadereyta Jiménez", "Carmen", "Cerralvo", "Ciénega de Flores", "China", "Doctor Arroyo", "Doctor Coss",
-  "Doctor González", "Galeana", "García", "General Bravo", "General Escobedo", "General Terán",
-  "General Treviño", "General Zaragoza", "General Zuazua", "Guadalupe", "Hidalgo", "Higueras", "Hualahuises",
-  "Iturbide", "Juárez", "Lampazos de Naranjo", "Linares", "Los Herreras", "Los Ramones", "Marín",
-  "Melchor Ocampo", "Mier y Noriega", "Mina", "Montemorelos", "Monterrey", "Parás", "Pesquería", "Rayones",
-  "Sabinas Hidalgo", "Salinas Victoria", "San Nicolás de los Garza", "San Pedro Garza García", "Santa Catarina",
-  "Santiago", "Vallecillo", "Villaldama",
+// ---- Zona: los 32 estados de México, en vez de texto libre -- así "cdmx"
+// y "Ciudad de México" no son zonas distintas para el buscador/filtro, y
+// tiendas + publicaciones usan siempre el mismo catálogo. Antes era una
+// lista de los 51 municipios de Nuevo León (la app empezó enfocada solo en
+// Monterrey/NL) -- al expandir a todo México se subió un nivel, a estado
+// en vez de municipio: un catálogo completo de los ~2,469 municipios del
+// país no se puede verificar contra una fuente en vivo desde este entorno,
+// y el riesgo de un municipio mal escrito o mal asignado a esa escala es
+// real -- los 32 estados son información mucho más estable y verificable.
+// La ubicación más fina (calle, colonia) sigue viviendo en el campo de
+// dirección de cada tienda, que ya es texto libre.
+export const ESTADOS_MX = [
+  "Aguascalientes", "Baja California", "Baja California Sur", "Campeche", "Chiapas", "Chihuahua",
+  "Ciudad de México", "Coahuila", "Colima", "Durango", "Guanajuato", "Guerrero", "Hidalgo", "Jalisco",
+  "México", "Michoacán", "Morelos", "Nayarit", "Nuevo León", "Oaxaca", "Puebla", "Querétaro",
+  "Quintana Roo", "San Luis Potosí", "Sinaloa", "Sonora", "Tabasco", "Tamaulipas", "Tlaxcala",
+  "Veracruz", "Yucatán", "Zacatecas",
 ];
 
 // ---- Estado (condición) de la carta: obligatorio al publicar una carta suelta,

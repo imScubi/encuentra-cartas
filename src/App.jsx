@@ -36,7 +36,7 @@ import {
   PLAN_ORDER, PLAN_INFO, planDe, limiteAlcanzado,
   BOOST_PRECIOS, estaDestacado, esCartaFavorita, conBoostPrimero, miniaturaListing, miniaturaUrl,
   MODOS_COLOR, TIPOS_POKEMON_INFO, TEMA_MODO_KEY, TEMA_TIPO_KEY, TEMA_ICONO_KEY, aplicarTema,
-  IDIOMA_OPCIONES, IDIOMA_LABEL, MUNICIPIOS_NL,
+  IDIOMA_OPCIONES, IDIOMA_LABEL, ESTADOS_MX,
   CONDICION_OPCIONES, CONDICION_LABEL, CONDICION_DESC, normalizarCondicion,
   GRADEADORAS_OPCIONES, GRADEADORAS_LABEL, calificacionesDeEmpresa, textoGradeo,
   TCG_OPCIONES, TCG_LABEL, TCG_CON_CATALOGO,
@@ -875,15 +875,15 @@ function IdiomaSelector({ value, onChange }) {
   );
 }
 
-// ---- Selector de zona: uno de los 51 municipios de Nuevo León, en vez de
-// texto libre -- así el filtro de zona siempre hace match exacto (antes
-// "San Pedro" y "San pedro garza garcia" eran zonas distintas para el buscador). ----
+// ---- Selector de zona: uno de los 32 estados de México, en vez de texto
+// libre -- así el filtro de zona siempre hace match exacto (antes "cdmx"
+// y "Ciudad de México" serían zonas distintas para el buscador). ----
 function ZonaSelector({ value, onChange, incluirTodas, placeholder, className, style }) {
   const inputStyle = { background: COLORS.bg, color: COLORS.text, border: `1px solid ${COLORS.surface2}` };
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} style={style || inputStyle} className={className || "rounded-lg px-2 py-2 text-sm"}>
-      <option value="">{placeholder || (incluirTodas ? "Todas las zonas" : "Elige tu municipio...")}</option>
-      {MUNICIPIOS_NL.map((m) => <option key={m} value={m}>{m}</option>)}
+      <option value="">{placeholder || (incluirTodas ? "Todas las zonas" : "Elige tu estado...")}</option>
+      {ESTADOS_MX.map((m) => <option key={m} value={m}>{m}</option>)}
     </select>
   );
 }
@@ -7108,7 +7108,7 @@ function AyudaView({ perfil }) {
           <p>Ve a "Buscar" y escribe el nombre. Te muestra lo que hay en tiendas registradas y lo que otros usuarios están vendiendo en el Mercado.</p>
         </SeccionAyuda>
         <SeccionAyuda titulo="🏪 Directorio de tiendas">
-          <p>Explora las tiendas de Monterrey, con su ubicación en el mapa, plan/insignia y si están verificadas.</p>
+          <p>Explora las tiendas de todo México, con su ubicación en el mapa, plan/insignia y si están verificadas.</p>
         </SeccionAyuda>
         <SeccionAyuda titulo="🛍️ Mercado">
           <p>Aquí aparece todo lo que venden cuentas individuales (no tiendas). Cualquiera puede publicar una carta o producto sellado.</p>
@@ -9053,7 +9053,7 @@ function ModoEventoView({ session, perfil, onIrAPlanes }) {
 
       {mostrarNuevo && (
         <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.azulClaro}55` }} className="rounded-xl p-4 mb-6 grid gap-2 sm:grid-cols-2">
-          <input placeholder="Nombre del evento (ej. Expo TCG Monterrey)" value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm sm:col-span-2" />
+          <input placeholder="Nombre del evento (ej. Expo TCG de tu ciudad)" value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm sm:col-span-2" />
           <input placeholder="Lugar (opcional)" value={nuevo.lugar} onChange={(e) => setNuevo({ ...nuevo, lugar: e.target.value })} style={inputStyle} className="rounded-lg px-3 py-2 text-sm sm:col-span-2" />
           <label className="text-xs" style={{ color: COLORS.muted }}>
             Fecha de inicio

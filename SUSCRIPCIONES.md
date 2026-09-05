@@ -5960,7 +5960,58 @@ Verificado con `npm run build` y con Playwright, comparando visualmente
 las 5 tarjetas de planes antes/después de expandir el banner
 condensado de "visitante nuevo".
 
+## 169. Expansión a todo México: el filtro de zona deja de ser solo Nuevo León
+
+La app nació enfocada en Monterrey/NL -- el único candado real que
+quedaba en el código era el selector de zona (`MUNICIPIOS_NL`, 51
+municipios de Nuevo León) y dos textos sueltos ("Explora las tiendas
+de Monterrey...", un placeholder de ejemplo "Expo TCG Monterrey").
+Nada más dependía de Nuevo León específicamente (se revisó con grep
+en todo `src/`).
+
+- **`ESTADOS_MX`** (theme.js) reemplaza a `MUNICIPIOS_NL`: los 32
+  estados de México, en vez de municipio. Decisión deliberada: un
+  catálogo completo de los ~2,469 municipios del país no se puede
+  verificar contra una fuente en vivo desde este sandbox (sin acceso
+  al INEGI), y el riesgo de un municipio mal escrito o mal asignado a
+  esa escala es real -- los 32 estados son información mucho más
+  estable y fácil de verificar de memoria. La ubicación más fina
+  (calle, colonia) sigue viviendo en el campo de dirección de cada
+  tienda, que ya era texto libre.
+- `ZonaSelector` (el único componente que usaba la lista, reutilizado
+  en todos los filtros/formularios de zona) ahora dice "Elige tu
+  estado..." en vez de "Elige tu municipio...".
+- Los dos textos de Monterrey se generalizaron ("Explora las tiendas
+  de todo México...", placeholder de ejemplo cambiado a "Expo TCG de
+  tu ciudad").
+
+Verificado: conteo de `ESTADOS_MX` = 32, sin duplicados; `npm run
+build`; Playwright confirma que el directorio de tiendas sigue
+cargando bien (el selector de zona en sí está gateado a Zafiro+, no se
+pudo ver el dropdown sin una sesión real de ese plan desde este
+sandbox, pero el resto de la pantalla renderiza normal).
+
+**No incluido en este cambio** (deliberadamente fuera de alcance por
+ahora): la promoción de Meta Ads sigue apuntando solo a Monterrey (los
+4 diseños de Canva ya generados, ver conversación anterior) -- expandir
+el público de esas campañas a todo México es un cambio de marketing
+aparte, no de código.
+
+**Migración de datos ya corrida** (`083_zona_nacional.sql`, aplicada
+directo al Supabase real vía el MCP de Supabase): antes de dar esto por
+terminado se revisó qué valor real tenía `zona` hoy en las 5 tablas que
+usan esa columna (`tiendas`, `mercado_listings`, `alertas`, `carpetas`,
+`subastas`) -- el 100% de las ~200 filas con zona ya puesta eran
+municipios/colonias de Nuevo León (con variantes: "San Nicolas" vs "San
+Nicolás " vs "San Nicolás de los Garza", "Escobedo" vs "General
+Escobedo", etc.), ninguna de otro estado. Se normalizaron todas a
+exactamente "Nuevo León" para que sigan haciendo match con el nuevo
+filtro por estado -- confirmado después que las 4 tablas con filas
+quedaron con un solo valor de zona ("Nuevo León": 162 en
+mercado_listings, 32 en tiendas, 4 en carpetas, 2 en alertas).
+
 ## Qué falta / próximos pasos posibles
+
 
 - Falta probar el regalo de bienvenida de punta a punta con una cuenta nueva real (correo directo, confirmar correo, y Google) para confirmar que el aviso aparece y el plan expira bien a la hora esperada -- ver sección 167.
 - Falta confirmar en producción, con DevTools reales, cuánto bajó el peso/requests de la sección 166 -- no se pudo medir desde este sandbox.
