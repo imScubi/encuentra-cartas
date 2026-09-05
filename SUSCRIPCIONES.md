@@ -6010,7 +6010,90 @@ filtro por estado -- confirmado después que las 4 tablas con filas
 quedaron con un solo valor de zona ("Nuevo León": 162 en
 mercado_listings, 32 en tiendas, 4 en carpetas, 2 en alertas).
 
+## 170. Encuentra Cartas en Google Play (Capacitor) -- lo que se pudo hacer desde aquí
+
+Se agregó Capacitor para poder empaquetar la web actual como una app de
+Android instalable desde Google Play. Importante ser honesto sobre el
+alcance: **este sandbox no tiene el Android SDK** (el host de descarga,
+`dl.google.com`, está bloqueado por el proxy de este entorno) -- así
+que todo lo que se hizo es configuración y código; **compilar, firmar,
+probar en un dispositivo/emulador real y subir a Play Console solo se
+puede hacer desde la computadora del dueño**, con Android Studio
+instalado (no hace falta Mac, solo para Android).
+
+**Lo que sí se dejó listo:**
+
+- `@capacitor/core`, `@capacitor/cli`, `@capacitor/android` y
+  `@capacitor/browser` instalados; `capacitor.config.json`
+  (`appId: com.encuentracartas.app`, `webDir: dist`); carpeta
+  `android/` completa (proyecto nativo generado con
+  `npx cap add android`, sí se puede generar sin el SDK -- solo copia
+  plantillas).
+- **Íconos y splash screen de verdad**, no los genéricos de Capacitor:
+  generados con `sharp` a partir del logo real (`public/branding/
+  logo-icon.png` para el ícono, `logo-noche.png` para el splash) sobre
+  el café oscuro de la marca (`#2E2216`) -- ícono adaptativo (Android
+  8+) y los legacy/redondos para versiones viejas, en las 5
+  densidades.
+- **El candado de Google Play Billing** (la decisión que confirmaste:
+  no vender planes dentro de la app de Android): `esNativo()` nuevo en
+  `lib/supabase.js` (`Capacitor.isNativePlatform()`). Cuando la app
+  corre nativa: el botón de suscribirse/pagar el año en `PlanesView` y
+  el de destacar una publicación (`BoostButton`) ya no llaman a
+  Mercado Pago desde dentro de la app -- abren
+  `https://encuentracartasmx.com` en el navegador del sistema (vía
+  `@capacitor/browser`) para que la compra ocurra ahí. Las compras
+  entre usuarios (comprar/vender cartas por Mercado Pago normal, fuera
+  de la app) NO se tocaron -- Google exime bienes físicos, el problema
+  es solo con contenido digital vendido dentro de la app.
+- **Login con Google deshabilitado dentro de la app nativa** (se
+  oculta el botón, con correo/contraseña sigue funcionando igual): se
+  encontró, revisando el flujo de login, que Google bloquea el login
+  OAuth dentro de un WebView embebido ("disallowed_useragent") -- el
+  botón actual simplemente redirige la misma pantalla a Supabase, que
+  no es un contexto de navegador del sistema. Arreglarlo bien requiere
+  un flujo distinto (`@capacitor/browser` + un deep link de vuelta a la
+  app) que no se pudo construir ni probar sin un dispositivo/emulador
+  real -- se prefirió apagar el botón por ahora a arriesgar subir un
+  login roto.
+
+**Lo que queda, y es del dueño (no se puede hacer desde este
+sandbox):**
+
+1. Instalar Android Studio (gratis, con el Android SDK incluido) y
+   abrir la carpeta `android/` de este repo.
+2. Crear una cuenta de Google Play Developer (pago único de $25 USD).
+3. Generar una llave de firma (keystore) para la app -- Android Studio
+   tiene un asistente para esto (Build > Generate Signed Bundle/APK).
+   **Guardar esa llave en un lugar seguro y hacerle respaldo** -- si se
+   pierde, no se puede volver a actualizar la misma app en Play Store,
+   solo publicar una nueva desde cero.
+4. Probar la app de verdad en un emulador o celular Android antes de
+   subir nada: entrar con correo/contraseña, navegar el Mercado,
+   confirmar que el botón de "Suscribirme"/"Destacar" abre bien el
+   navegador del sistema hacia la página web.
+5. Preparar la ficha de Play Console: capturas de pantalla,
+   descripción, política de privacidad (ya existe en el sitio,
+   `/Aviso de Privacidad`), cuestionario de clasificación de contenido,
+   formulario de seguridad de datos.
+6. Subir el primer Android App Bundle (`.aab`) firmado y mandarlo a
+   revisión.
+7. Si más adelante se quiere login con Google dentro de la app: hay
+   que construir el flujo de `@capacitor/browser` + deep link (agregar
+   un Android App Link o esquema personalizado, registrar esa URL de
+   redirect en la configuración de Auth de Supabase, y escuchar el
+   evento `appUrlOpen` de `@capacitor/app` para capturar los tokens de
+   vuelta) -- y probarlo en un dispositivo real antes de reactivar el
+   botón.
+
+No se pudo correr `npm run build`/`npx cap sync` contra un emulador
+real (no hay SDK), pero sí se verificó que el build de la web sigue
+compilando bien con las dependencias nuevas, y que `npx cap add
+android`/`npx cap sync android` corrieron sin errores.
+
 ## Qué falta / próximos pasos posibles
+
+- Google Play: ver la lista completa de pasos pendientes (del dueño, no de código) en la sección 170.
 
 
 - Falta probar el regalo de bienvenida de punta a punta con una cuenta nueva real (correo directo, confirmar correo, y Google) para confirmar que el aviso aparece y el plan expira bien a la hora esperada -- ver sección 167.

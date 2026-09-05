@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Encuentra Cartas</string>
+    <string name="title_activity_main">Encuentra Cartas</string>
+    <string name="package_name">com.encuentracartas.app</string>
+    <string name="custom_url_scheme">com.encuentracartas.app</string>
+</resources>
