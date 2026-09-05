@@ -1,4 +1,17 @@
 import { reportarError } from "./errorReporting.jsx";
+import { Capacitor } from "@capacitor/core";
+
+// ---- App nativa (Capacitor, Google Play) vs. la web normal ----
+// Se usa en dos lugares: (1) el botón de Google se oculta en la app nativa
+// -- Google bloquea el login OAuth dentro de un WebView embebido
+// ("disallowed_useragent"), y arreglarlo bien requiere un flujo de
+// navegador del sistema + deep link que no se pudo construir ni probar
+// sin un dispositivo/emulador real; (2) suscribirse a un plan de pago
+// dentro de la app de Android mandaría a Mercado Pago dentro del WebView
+// -- Google Play exige usar Google Play Billing para vender contenido
+// digital dentro de la app, así que en vez de eso se manda a la persona a
+// la página web (mismo patrón que usa Netflix en su app).
+export const esNativo = () => Capacitor.isNativePlatform();
 
 // ---- Conexión a Supabase (usa la anon key, es segura para el navegador) ----
 export const SUPABASE_URL = "https://nulypgaaekexlbxbxdwq.supabase.co";

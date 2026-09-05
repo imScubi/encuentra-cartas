@@ -12,8 +12,9 @@ import {
   setOnSesionRefrescada,
   sb, sbWrite, authSignUp, authSignIn, authVerifyOtp,
   subirAvatar, subirImagenAnuncio, subirImagenABucket, subirImagenCarta, subirImagenMensaje,
-  urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken, pgLikeValor,
+  urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken, pgLikeValor, esNativo,
 } from "./lib/supabase.js";
+import { Browser } from "@capacitor/browser";
 import { setUidActual } from "./lib/errorReporting.jsx";
 import { moderarFotoReal } from "./lib/moderacion.js";
 import { comprimirImagen } from "./lib/imagen.js";
@@ -209,7 +210,11 @@ function BoostButton({ session, tabla, item, onBoosted }) {
     );
   }
 
+  // Mismo motivo que en PlanesView: Google Play exige Play Billing para
+  // vender contenido digital (destacar una publicación) dentro de la app --
+  // se manda a la web en vez de procesar el pago aquí.
   const destacar = async (dias) => {
+    if (esNativo()) return Browser.open({ url: "https://encuentracartasmx.com/" });
     setPagando(dias); setError(null);
     try {
       const res = await fetch("/api/mercadopago/gestionar", {
@@ -228,8 +233,8 @@ function BoostButton({ session, tabla, item, onBoosted }) {
 
   if (!abierto) {
     return (
-      <button onClick={() => setAbierto(true)} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
-        🚀 Destacar
+      <button onClick={() => (esNativo() ? destacar() : setAbierto(true))} style={{ color: COLORS.azulPalido, border: `1px solid ${COLORS.azulPalido}55` }} className="text-xs px-2 py-1 rounded-lg whitespace-nowrap">
+        🚀 {esNativo() ? "Destacar en la web" : "Destacar"}
       </button>
     );
   }
@@ -1043,6 +1048,11 @@ function ErrorBox({ message }) {
 // existente, en Editar perfil) se queda igual, solo que no sirve para
 // autenticarse.
 function BotonesLoginSocial() {
+  // En la app nativa de Android (Capacitor) este botón se oculta -- Google
+  // bloquea el login OAuth dentro de un WebView embebido ("disallowed_
+  // useragent"). Solo correo/contraseña (un POST normal, sin ese problema)
+  // funciona ahí por ahora. Ver esNativo() en lib/supabase.js.
+  if (esNativo()) return null;
   return (
     <div className="grid gap-2">
       <div className="flex items-center gap-2 my-1">
@@ -14228,8 +14238,19 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
   const planActual = perfil?.plan || "pokeball";
   const renovacionActiva = !!perfil?.mp_preapproval_id;
 
+  // Google Play exige usar Google Play Billing para vender contenido
+  // digital dentro de una app en su tienda -- no se puede simplemente
+  // seguir cobrando los planes con Mercado Pago dentro de la app de
+  // Android. En vez de integrar Play Billing (aparte de Mercado Pago) para
+  // esta primera versión, se manda a la persona a suscribirse desde la
+  // página web (mismo patrón que usa Netflix en su app). Las compras de
+  // cartas/producto entre usuarios (Mercado Pago normal) no se tocan --
+  // Google exime las compras de bienes físicos.
+  const irAWebParaSuscribirse = () => Browser.open({ url: "https://encuentracartasmx.com/?ir=planes" });
+
   const suscribirse = async (plan) => {
     if (!session) { onRequireLogin(); return; }
+    if (esNativo()) return irAWebParaSuscribirse();
     setSuscribiendo(plan); setError(null);
     try {
       const res = await fetch("/api/mercadopago/gestionar", {
@@ -14253,6 +14274,7 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
   // webhook.js (procesarPagoAnual).
   const pagarAnual = async (plan) => {
     if (!session) { onRequireLogin(); return; }
+    if (esNativo()) return irAWebParaSuscribirse();
     setSuscribiendo(plan); setError(null);
     try {
       const res = await fetch("/api/mercadopago/gestionar", {
@@ -14356,12 +14378,12 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
               ) : periodo === "mensual" ? (
                 <button onClick={() => suscribirse(key)} disabled={suscribiendo === key}
                   style={{ background: info.color, color: textoSobre(info.color) }} className="rounded-lg py-2 text-sm font-semibold">
-                  {suscribiendo === key ? "Redirigiendo a Mercado Pago..." : "Suscribirme"}
+                  {esNativo() ? "Suscríbete en la web" : suscribiendo === key ? "Redirigiendo a Mercado Pago..." : "Suscribirme"}
                 </button>
               ) : (
                 <button onClick={() => pagarAnual(key)} disabled={suscribiendo === key}
                   style={{ background: info.color, color: textoSobre(info.color) }} className="rounded-lg py-2 text-sm font-semibold">
-                  {suscribiendo === key ? "Redirigiendo a Mercado Pago..." : "Pagar 1 año"}
+                  {esNativo() ? "Suscríbete en la web" : suscribiendo === key ? "Redirigiendo a Mercado Pago..." : "Pagar 1 año"}
                 </button>
               )}
             </div>
