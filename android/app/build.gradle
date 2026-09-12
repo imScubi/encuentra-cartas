@@ -4,7 +4,7 @@ android {
     namespace = "com.encuentracartas.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.encuentracartas.app"
+        applicationId "encuentra.cartas.mx"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
