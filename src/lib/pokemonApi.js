@@ -1,4 +1,5 @@
 import { USD_TO_MXN, EUR_TO_MXN } from "../theme.js";
+import { apiUrl } from "./entorno.js";
 
 // ---- Llave gratuita opcional de pokemontcg.io ----
 // pokemontcg.io es, con mucho, la fuente más castigada por su propio límite
@@ -907,7 +908,7 @@ function mapearProductoApiTCG(p) {
 
 async function pedirProductosApiTCG(query, signal) {
   const path = `api/products?${query}`;
-  const res = await fetch(`/api/tcgcsv?fuente=apitcg&path=${encodeURIComponent(path)}`, { signal });
+  const res = await fetch(apiUrl(`/api/tcgcsv?fuente=apitcg&path=${encodeURIComponent(path)}`), { signal });
   if (!res.ok) return [];
   const data = await res.json();
   return (data?.data || []).map(mapearProductoApiTCG);
@@ -924,7 +925,7 @@ async function obtenerSetsApiTCG(slug, signal) {
   if (_apitcgSetsCache[slug]) return _apitcgSetsCache[slug];
   try {
     const path = `api/${slug}/sets?${new URLSearchParams({ sortBy: "release_date", sortOrder: "desc", limit: "100" })}`;
-    const res = await fetch(`/api/tcgcsv?fuente=apitcg&path=${encodeURIComponent(path)}`, { signal });
+    const res = await fetch(apiUrl(`/api/tcgcsv?fuente=apitcg&path=${encodeURIComponent(path)}`), { signal });
     if (!res.ok) return [];
     const data = await res.json();
     const sets = data?.data || [];
@@ -1177,7 +1178,7 @@ let _categoriasTCGplayerCache = null;
 async function obtenerCategoriasTCGplayer() {
   if (_categoriasTCGplayerCache) return _categoriasTCGplayerCache;
   // No se cachea un [] por error — mismo criterio que obtenerErasYSetsPokemon.
-  const res = await fetchConReintento("/api/tcgcsv?path=tcgplayer/categories");
+  const res = await fetchConReintento(apiUrl("/api/tcgcsv?path=tcgplayer/categories"));
   const data = await res.json();
   _categoriasTCGplayerCache = data?.results || [];
   return _categoriasTCGplayerCache;

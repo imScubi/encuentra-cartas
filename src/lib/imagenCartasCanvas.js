@@ -1,4 +1,5 @@
 import { COLORS } from "../theme.js";
+import { apiUrl } from "./entorno.js";
 
 // Utilidades de Canvas2D compartidas por los generadores de imagen de
 // cartas (Wishlist en wishlistImagen.js, Tablón de venta en
@@ -13,7 +14,7 @@ import { COLORS } from "../theme.js";
 // servirlas desde nuestro propio origen primero.
 export function proxyImagenUrl(url) {
   if (!url) return null;
-  return `/api/tcgcsv?fuente=imgproxy&url=${encodeURIComponent(url)}`;
+  return apiUrl(`/api/tcgcsv?fuente=imgproxy&url=${encodeURIComponent(url)}`);
 }
 
 // Carga una imagen y resuelve el elemento <img> ya listo para dibujar --

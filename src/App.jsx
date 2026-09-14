@@ -12,7 +12,7 @@ import {
   setOnSesionRefrescada,
   sb, sbWrite, authSignUp, authSignIn, authVerifyOtp,
   subirAvatar, subirImagenAnuncio, subirImagenABucket, subirImagenCarta, subirImagenMensaje,
-  urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken, pgLikeValor, esNativo,
+  urlLoginSocial, leerSesionDeUrl, obtenerUsuarioDeToken, pgLikeValor, esNativo, apiUrl,
 } from "./lib/supabase.js";
 import { Browser } from "@capacitor/browser";
 import { setUidActual } from "./lib/errorReporting.jsx";
@@ -217,7 +217,7 @@ function BoostButton({ session, tabla, item, onBoosted }) {
     if (esNativo()) return Browser.open({ url: "https://encuentracartasmx.com/" });
     setPagando(dias); setError(null);
     try {
-      const res = await fetch("/api/mercadopago/gestionar", {
+      const res = await fetch(apiUrl("/api/mercadopago/gestionar"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accion: "crear_boost", perfilId: session.user.id, tabla, listingId: item.id, dias, email: session.user.email }),
@@ -1833,7 +1833,7 @@ function TCGplayerPicker({ tcg = "pokemon", soloSellado = true, onSelect }) {
     categoriaIdTCGplayer(tcg).then((id) => {
       setCategoriaId(id);
       if (!id) { setLoadingGrupos(false); return; }
-      fetch(`/api/tcgcsv?path=tcgplayer/${id}/groups`)
+      fetch(apiUrl(`/api/tcgcsv?path=tcgplayer/${id}/groups`))
         .then((r) => r.json())
         .then((d) => setGrupos((d.results || []).slice().sort((a, b) => (b.publishedOn || "").localeCompare(a.publishedOn || ""))))
         .catch(() => {})
@@ -1845,8 +1845,8 @@ function TCGplayerPicker({ tcg = "pokemon", soloSellado = true, onSelect }) {
     if (!grupoId || !categoriaId) { setProductos([]); setPrecios([]); return; }
     setLoadingProductos(true);
     Promise.all([
-      fetch(`/api/tcgcsv?path=tcgplayer/${categoriaId}/${grupoId}/products`).then((r) => r.json()),
-      fetch(`/api/tcgcsv?path=tcgplayer/${categoriaId}/${grupoId}/prices`).then((r) => r.json()),
+      fetch(apiUrl(`/api/tcgcsv?path=tcgplayer/${categoriaId}/${grupoId}/products`)).then((r) => r.json()),
+      fetch(apiUrl(`/api/tcgcsv?path=tcgplayer/${categoriaId}/${grupoId}/prices`)).then((r) => r.json()),
     ])
       .then(([p, pr]) => {
         const filtrados = (p.results || []).filter((item) => (soloSellado ? !looksLikeCard(item) : looksLikeCard(item)));
@@ -2786,7 +2786,7 @@ function UsuariosAdmin({ session }) {
   const borrar = async (u) => {
     setBorrando(u.id); setError(null);
     try {
-      const res = await fetch("/api/admin/usuarios", {
+      const res = await fetch(apiUrl("/api/admin/usuarios"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ accion: "borrar", perfilId: u.id }),
@@ -3475,7 +3475,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
 
   const notificarAnuncio = async (anuncioId) => {
     try {
-      await fetch("/api/anuncios/notificar", {
+      await fetch(apiUrl("/api/anuncios/notificar"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ anuncioId }),
@@ -3776,7 +3776,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
     if (!nombreSubperfil.trim()) return;
     setCreandoSubperfil(true); setErrorSubperfil(null);
     try {
-      const res = await fetch("/api/admin/usuarios", {
+      const res = await fetch(apiUrl("/api/admin/usuarios"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ accion: "crear", nombre: nombreSubperfil.trim(), tipo: tipoSubperfil }),
@@ -3799,7 +3799,7 @@ function AdminPanel({ session, onVerPerfil, onEntrarComoSubperfil, onAbrirSorteo
   const entrarComoSub = async (subperfilId) => {
     setEntrandoSub(subperfilId); setErrorSubperfil(null);
     try {
-      const res = await fetch("/api/admin/usuarios", {
+      const res = await fetch(apiUrl("/api/admin/usuarios"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ accion: "entrar", subperfilId }),
@@ -4435,7 +4435,7 @@ function MigrarDescripcionesAdmin({ session }) {
   const patchEstado = (tabla, cambios) => setEstado((e) => ({ ...e, [tabla]: { ...e[tabla], ...cambios } }));
 
   const correrUnLote = async (tabla, cursor) => {
-    const res = await fetch("/api/tcgcsv?fuente=migrar-descripciones", {
+    const res = await fetch(apiUrl("/api/tcgcsv?fuente=migrar-descripciones"), {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
       body: JSON.stringify({ tabla, cursor }),
@@ -4553,7 +4553,7 @@ function ImportadorShopify({ session, tiendaId, onImportado }) {
         coleccion = m[1];
         setOrigenActual(origin); setColeccionActual(coleccion);
       }
-      const res = await fetch(`/api/tcgcsv?fuente=shopify&origin=${encodeURIComponent(origin)}&coleccion=${encodeURIComponent(coleccion)}&page=${siguientePagina}`);
+      const res = await fetch(apiUrl(`/api/tcgcsv?fuente=shopify&origin=${encodeURIComponent(origin)}&coleccion=${encodeURIComponent(coleccion)}&page=${siguientePagina}`));
       const data = await res.json();
       if (!res.ok || data.bloqueado) {
         setBloqueado(true);
@@ -5248,7 +5248,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
   const detectar = async (carpetaId, fotoUrl) => {
     setError(null);
     try {
-      const res = await fetch("/api/carpetas/detectar", {
+      const res = await fetch(apiUrl("/api/carpetas/detectar"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ perfilId: session.user.id, imagenUrl: fotoUrl }),
@@ -5298,7 +5298,7 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
       for (const file of files) {
         const url = await subirImagenABucket("carpetas", file, session);
         await sbWrite("POST", "carpeta_fotos", { carpeta_id: carpetaId, imagen_url: url }, session);
-        const res = await fetch("/api/carpetas/detectar", {
+        const res = await fetch(apiUrl("/api/carpetas/detectar"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ perfilId: session.user.id, imagenUrl: url }),
@@ -7448,7 +7448,7 @@ function RecompensasView({ session, perfil }) {
   const canjear = async (item, dias) => {
     setCanjeando(`${item.id}-${dias}`); setError(null); setOk(null);
     try {
-      const res = await fetch("/api/recompensas/canjear", {
+      const res = await fetch(apiUrl("/api/recompensas/canjear"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ tabla: item.tabla, listingId: item.id, dias }),
@@ -7969,7 +7969,7 @@ const DECKLIST_EJEMPLO = {
 // popularidad/winrate).
 async function importarDecklistLimitlessEnMazo({ session, mazoId, torneoId, jugador, standingsYaObtenidos, signal }) {
   const standings = standingsYaObtenidos || await fetch(
-    `/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments/${torneoId}/standings`)}`,
+    apiUrl(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments/${torneoId}/standings`)}`),
     { signal }
   ).then((r) => r.json());
   if (!Array.isArray(standings)) throw new Error("No se pudo leer ese torneo -- revisa el ID.");
@@ -8569,7 +8569,7 @@ function CompetitivoTorneosView({ session, perfil, onIrAPlanes }) {
 
   useEffect(() => {
     setLoading(true); setError(null);
-    fetch(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent("tournaments?game=PTCG&limit=15")}`)
+    fetch(apiUrl(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent("tournaments?game=PTCG&limit=15")}`))
       .then((r) => r.json())
       .then((data) => setTorneos(Array.isArray(data) ? data : []))
       .catch((e) => setError(e.message))
@@ -8580,7 +8580,7 @@ function CompetitivoTorneosView({ session, perfil, onIrAPlanes }) {
     setTorneoAbierto(torneo);
     setStandings(null); setErrorStandings(null); setErrorImportar(null); setAbierto(null);
     setLoadingStandings(true);
-    fetch(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments/${torneo.id}/standings`)}`)
+    fetch(apiUrl(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments/${torneo.id}/standings`)}`))
       .then((r) => r.json())
       .then((data) => {
         if (!Array.isArray(data)) throw new Error("No se pudo leer este torneo.");
@@ -8707,12 +8707,12 @@ function CompetitivoDecksView({ session, perfil, onIrAPlanes }) {
     setCargando(true); setError(null);
     (async () => {
       try {
-        const torneos = await fetch(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments?game=PTCG&limit=${TORNEOS_MUESTRA_DECKS}`)}`).then((r) => r.json());
+        const torneos = await fetch(apiUrl(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments?game=PTCG&limit=${TORNEOS_MUESTRA_DECKS}`)}`)).then((r) => r.json());
         const lista = Array.isArray(torneos) ? torneos : [];
         const standingsPorTorneoLocal = {};
         const resultados = await Promise.all(lista.map(async (t) => {
           try {
-            const st = await fetch(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments/${t.id}/standings`)}`).then((r) => r.json());
+            const st = await fetch(apiUrl(`/api/tcgcsv?fuente=limitless&path=${encodeURIComponent(`tournaments/${t.id}/standings`)}`)).then((r) => r.json());
             if (Array.isArray(st)) { standingsPorTorneoLocal[t.id] = st; return { torneo: t, standings: st }; }
           } catch { /* un torneo individual fallando no debe tumbar el ranking completo */ }
           return null;
@@ -12068,7 +12068,7 @@ function CartaDetalleView({ id, tabla, session, onVolver, onAbrirChat, onVerPerf
     if (item.descripcionApiEs) { setMostrarTraduccion(true); return; }
     setTraduciendo(true);
     try {
-      const res = await fetch("/api/tcgcsv?fuente=traducir", {
+      const res = await fetch(apiUrl("/api/tcgcsv?fuente=traducir"), {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) },
         body: JSON.stringify({ texto: item.descripcionApi, tabla, id }),
@@ -14253,7 +14253,7 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
     if (esNativo()) return irAWebParaSuscribirse();
     setSuscribiendo(plan); setError(null);
     try {
-      const res = await fetch("/api/mercadopago/gestionar", {
+      const res = await fetch(apiUrl("/api/mercadopago/gestionar"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accion: "crear_suscripcion", perfilId: session.user.id, plan, email: session.user.email }),
@@ -14277,7 +14277,7 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
     if (esNativo()) return irAWebParaSuscribirse();
     setSuscribiendo(plan); setError(null);
     try {
-      const res = await fetch("/api/mercadopago/gestionar", {
+      const res = await fetch(apiUrl("/api/mercadopago/gestionar"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accion: "crear_pago_anual", perfilId: session.user.id, plan, email: session.user.email }),
@@ -14295,7 +14295,7 @@ function PlanesView({ session, perfil, onRequireLogin, onPlanActualizado }) {
     if (!session) return;
     setCancelando(true); setError(null);
     try {
-      const res = await fetch("/api/mercadopago/gestionar", {
+      const res = await fetch(apiUrl("/api/mercadopago/gestionar"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accion: "cancelar_suscripcion", perfilId: session.user.id }),
@@ -15534,7 +15534,7 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
         setCategoriaIdOP(catId);
         if (!catId) { setEras([]); setLoadingEras(false); return; }
         try {
-          const res = await fetch(`/api/tcgcsv?path=tcgplayer/${catId}/groups`);
+          const res = await fetch(apiUrl(`/api/tcgcsv?path=tcgplayer/${catId}/groups`));
           const data = await res.json();
           if (cancelado) return;
           const sets = (data.results || [])
@@ -15613,8 +15613,8 @@ function CatalogoView({ session, perfil, onIrAPlanes }) {
     try {
       if (tcgSel === "onepiece") {
         const [dataProd, dataPrecios] = await Promise.all([
-          fetch(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/products`).then((r) => r.json()),
-          fetch(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/prices`).then((r) => r.json()),
+          fetch(apiUrl(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/products`)).then((r) => r.json()),
+          fetch(apiUrl(`/api/tcgcsv?path=tcgplayer/${categoriaIdOP}/${set.id}/prices`)).then((r) => r.json()),
         ]);
         if (abrirSetTokenRef.current !== miToken) return;
         const productos = (dataProd.results || []).filter(looksLikeCard);

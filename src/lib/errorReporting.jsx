@@ -1,4 +1,5 @@
 import React from "react";
+import { apiUrl } from "./entorno.js";
 
 // ---- Captura de errores: avisa al admin sin que nadie tenga que reportarlo a mano ----
 let uidActual = null; // lo actualiza EncuentraCartas (vía setUidActual) cuando hay sesión, para poder incluirlo en el reporte
@@ -67,7 +68,7 @@ function esRuidoConocido(texto) {
 export function reportarError(mensaje, stack) {
   if (!mensaje || esRuidoConocido(mensaje) || esRuidoConocido(stack)) return;
   try {
-    fetch("/api/errores/reportar", {
+    fetch(apiUrl("/api/errores/reportar"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mensaje: String(mensaje).slice(0, 500), stack, url: window.location.href, perfilId: uidActual }),
