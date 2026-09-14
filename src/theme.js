@@ -1,3 +1,5 @@
+import { apiUrl } from "./lib/entorno.js";
+
 export const FONTS = `
 @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Cabin:wght@400;500;600;700&display=swap');
 @keyframes drift { 0% { transform: translate(0,0); } 50% { transform: translate(-2%,3%); } 100% { transform: translate(0,0); } }
@@ -284,7 +286,7 @@ export const miniaturaListing = (item) =>
 // KB) por cada una. Solo envuelve https:// -- los `data:`/blob: locales
 // (previews antes de subir una foto) se quedan tal cual.
 export const miniaturaUrl = (url, ancho = 320) =>
-  url && url.startsWith("https://") ? `/api/tcgcsv?fuente=imgproxy&url=${encodeURIComponent(url)}&w=${ancho}` : url;
+  url && url.startsWith("https://") ? apiUrl(`/api/tcgcsv?fuente=imgproxy&url=${encodeURIComponent(url)}&w=${ancho}`) : url;
 
 // ---- Apariencia: modo día/noche (Zafiro+) y temas por tipo de Pokémon (Amatista+) ----
 //

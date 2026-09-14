@@ -6091,7 +6091,57 @@ real (no hay SDK), pero sí se verificó que el build de la web sigue
 compilando bien con las dependencias nuevas, y que `npx cap add
 android`/`npx cap sync android` corrieron sin errores.
 
+## 171. Fix crítico: las imágenes (y otras llamadas a /api/) no cargaban dentro de la app de Android
+
+El dueño ya llegó a subir la primera versión beta a Play Console
+(prueba interna) y la probó de verdad en su celular -- reportó que las
+imágenes de las cartas no cargaban en el inicio, en "Vender" ni en las
+carpetas, pero sí al entrar al detalle de una publicación.
+
+**Causa real**: todas las llamadas a rutas como `/api/tcgcsv`,
+`/api/mercadopago/gestionar`, `/api/carpetas/detectar`, etc. usaban
+rutas RELATIVAS (`fetch("/api/...")`). En la web eso funciona porque
+el navegador las resuelve contra el dominio real
+(`encuentracartasmx.com/api/...`) -- pero dentro de la app nativa de
+Android, Capacitor sirve los archivos empaquetados desde un origen
+local falso (`https://localhost`), así que esa misma ruta relativa
+apuntaba a un servidor que no existe. El detalle de una publicación sí
+cargaba su imagen porque esa pantalla usa la URL original de la
+imagen sin pasar por el proxy (`cargarDetalleListing`, a propósito
+dejado así en la sección 166) -- las miniaturas de las grillas sí
+pasan por `miniaturaUrl()` → `/api/tcgcsv?fuente=imgproxy`, de ahí que
+solo esas fallaran.
+
+**No era solo un bug de imágenes** -- CUALQUIER llamada a un endpoint
+de Vercel desde dentro de la app nativa estaba rota en silencio:
+moderación de fotos al subir a una carpeta, el catálogo de sets
+(TCGCSV/apitcg/Limitless), reportar errores, canjear recompensas, el
+panel de Admin, etc. Se corrigieron las 32 apariciones de `/api/...`
+en `src/` (25 en App.jsx, el resto repartidas en `theme.js` y
+`lib/`), envolviéndolas todas con una función nueva `apiUrl(path)`
+(en `src/lib/entorno.js`, archivo nuevo) que antepone
+`https://encuentracartasmx.com` cuando `Capacitor.isNativePlatform()`
+es cierto, y se queda igual (ruta relativa) en la web.
+
+`entorno.js` es un archivo aparte a propósito (no viven ahí `esNativo`/
+`apiUrl` dentro de `supabase.js` como antes) -- evita una importación
+circular: `errorReporting.jsx` también necesita `apiUrl` (para poder
+reportar errores desde dentro de la app nativa), y `supabase.js` ya
+importa DE `errorReporting.jsx`. `supabase.js` ahora solo re-exporta
+`esNativo`/`apiUrl` desde `entorno.js` para no tener que tocar los
+imports que ya existían en `App.jsx`.
+
+Verificado: `npm run build`, y con Playwright que la app sigue
+cargando sin errores de JavaScript nuevos (nada de "está circular" ni
+módulos rotos). **No se pudo probar el comportamiento real dentro de
+un WebView nativo** desde este sandbox (no hay Android SDK/emulador) --
+hace falta que el dueño compile una nueva versión (con este fix) y la
+vuelva a probar en su celular para confirmar que las imágenes ya
+cargan bien en el inicio/Vender/Carpetas.
+
 ## Qué falta / próximos pasos posibles
+
+- Compilar y subir una nueva versión de prueba interna con el fix de la sección 171, y confirmar en el celular real que las imágenes ya cargan en inicio/Vender/Carpetas.
 
 - Google Play: ver la lista completa de pasos pendientes (del dueño, no de código) en la sección 170.
 

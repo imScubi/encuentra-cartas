@@ -10,6 +10,8 @@
 // vendiendo por un problema que no es suyo. Esta moderación es una primera
 // barrera automática, no reemplaza el botón "Reportar" ni la revisión de
 // Admin -- sigue habiendo forma de bajar algo que se cuele.
+import { apiUrl } from "./entorno.js";
+
 function archivoABase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -22,7 +24,7 @@ function archivoABase64(file) {
 export async function moderarFotoReal(file) {
   try {
     const imagenBase64 = await archivoABase64(file);
-    const res = await fetch("/api/carpetas/detectar", {
+    const res = await fetch(apiUrl("/api/carpetas/detectar"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ modo: "moderar", imagenBase64, mimeType: file.type || "image/jpeg" }),
