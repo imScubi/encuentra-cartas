@@ -5668,9 +5668,9 @@ function CarpetasPanel({ session, perfil, contexto, tiendaId, onPublicado }) {
                     {exportandoPdf ? "..." : "⬇ PDF"}
                   </button>
                   <button onClick={() => exportarParaPOS(carpetaAbierta, cardsCarpeta)} disabled={!cardsCarpeta.length}
-                    title="CSV con cada dato en su columna y el id de catálogo, listo para importar en un punto de venta sin editar nada"
+                    title="CSV con cada dato en su columna y el id de catálogo, listo para importar en Mulligan POS sin editar nada"
                     style={{ color: COLORS.gold, border: `1px solid ${COLORS.gold}55` }} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold">
-                    ⬇ Para POS
+                    ⬇ Para Mulligan POS
                   </button>
                 </div>
               </div>
