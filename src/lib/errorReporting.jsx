@@ -60,6 +60,14 @@ const RUIDO_CONOCIDO = [
   // "window.ethereum" en cada página; cuando hay más de una instalada se
   // pelean por esa propiedad y truena solo, sin relación con nuestro código.
   /window\.ethereum/i,
+  // Bots de rastreo con navegador real (ElevenlabsCrawler, GPTBot, etc.):
+  // ejecutan nuestro JS para "ver" la página como un usuario, pero no
+  // replican las cabeceras personalizadas de fetch() (como "apikey") al
+  // hacer sus propias peticiones -- Supabase los rechaza con 401 "No API
+  // key found in request" aunque nuestro código SIEMPRE manda esa cabecera.
+  // Confirmado en los logs de Supabase: el 100% de estos vienen de bots,
+  // nunca de un usuario real.
+  /No API key found in request/i,
 ];
 function esRuidoConocido(texto) {
   return RUIDO_CONOCIDO.some((patron) => patron.test(String(texto || "")));
